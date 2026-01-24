@@ -22,4 +22,36 @@ Decision intelligence platform with SME OS core and vertical applications.
 
 ## Getting Started
 
-See individual README files in each directory for specific guidance.
+### Prerequisites
+
+- Node.js 18+ 
+- npm or yarn
+
+### Setup
+
+```bash
+# Install dependencies
+npm install
+
+# Run Hospitality AI development server
+cd apps/hospitality-ai
+npm run dev
+```
+
+Visit http://localhost:3000/home to see the decision feed.
+
+## Development
+
+- `main` branch - stable, reviewable code
+- `develop` branch - daily work
+- `feature/*` branches - short-lived experiments
+
+See `docs/architecture/git-workflow.md` for details.
+
+## Architecture
+
+See `docs/architecture/` for:
+- Data flow documentation
+- Contract definitions
+- Boundary definitions
+- Git workflow
