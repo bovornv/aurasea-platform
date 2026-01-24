@@ -39,3 +39,25 @@ yarn-error.log*
 tmp/
 temp/
 .cache/
+
+# Project-specific exclusions
+# Crystal Resort real data
+**/crystal*
+**/*crystal*
+
+# Experimental/exploratory code
+**/experimental/
+**/*experimental*
+**/exploratory/
+**/*exploratory*
+
+# Cursor-generated junk
+**/.cursor/
+**/*cursor-junk*
+**/*exploratory-*
+
+# API keys and secrets (already covered by .env, but being explicit)
+**/*secret*
+**/*key*
+**/*api-key*
+**/*apikey*
