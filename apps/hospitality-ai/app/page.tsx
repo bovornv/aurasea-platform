@@ -1,4 +1,4 @@
-// Redirect to home page
+// Root page - redirect to home
 import { redirect } from 'next/navigation';
 
 export default function RootPage() {

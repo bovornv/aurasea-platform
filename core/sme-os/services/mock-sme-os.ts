@@ -3,6 +3,7 @@
 
 import type { InputContract, OutputContract } from '../contracts';
 import type { AlertContract } from '../contracts/alerts';
+import { generateMockAlerts } from './mock-data-generator';
 
 /**
  * Mock SME OS service that returns mock alerts
@@ -17,7 +18,7 @@ export class MockSMEOS {
     await new Promise(resolve => setTimeout(resolve, 100));
 
     // Generate mock alerts
-    const alerts = this.generateMockAlerts();
+    const alerts = generateMockAlerts();
 
     return {
       evaluation: {
@@ -29,7 +30,7 @@ export class MockSMEOS {
       },
       alerts,
       explanation: {
-        reasoning: 'Mock evaluation completed. This is placeholder output.',
+        reasoning: 'Evaluation completed based on provided inputs. Analysis considers cash flow patterns, resource utilization, and historical trends.',
         contributingFactors: [
           {
             factor: 'Cash flow patterns',
@@ -42,8 +43,8 @@ export class MockSMEOS {
             direction: 'positive',
           },
         ],
-        context: 'Mock context for skeleton demonstration',
-        implications: 'Mock implications for skeleton demonstration',
+        context: 'Analysis based on current business state and historical patterns',
+        implications: 'Current trends suggest attention to cash flow management and resource optimization',
       },
       recommendations: [
         {
@@ -60,82 +61,25 @@ export class MockSMEOS {
   }
 
   /**
-   * Generate mock alerts for demonstration
-   */
-  private generateMockAlerts(): AlertContract[] {
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const nextWeek = new Date(now);
-    nextWeek.setDate(nextWeek.getDate() + 7);
-
-    return [
-      {
-        id: 'alert-1',
-        timestamp: now,
-        type: 'risk',
-        severity: 'warning',
-        domain: 'cash',
-        timeHorizon: 'near-term',
-        relevanceWindow: {
-          start: now,
-          end: tomorrow,
-        },
-        message: 'Cash flow projection indicates potential shortfall in the next 7 days',
-        confidence: 0.75,
-        contributingFactors: [
-          { factor: 'Reduced revenue trend', weight: 0.6 },
-          { factor: 'Increased operational costs', weight: 0.4 },
-        ],
-        conditions: ['Revenue below historical average', 'Costs above baseline'],
-      },
-      {
-        id: 'alert-2',
-        timestamp: now,
-        type: 'opportunity',
-        severity: 'informational',
-        domain: 'labor',
-        timeHorizon: 'medium-term',
-        relevanceWindow: {
-          start: now,
-          end: nextWeek,
-        },
-        message: 'Resource utilization patterns suggest optimization opportunity',
-        confidence: 0.65,
-        contributingFactors: [
-          { factor: 'Underutilized capacity', weight: 0.7 },
-          { factor: 'Peak demand patterns', weight: 0.3 },
-        ],
-        conditions: ['Consistent low utilization periods detected'],
-      },
-      {
-        id: 'alert-3',
-        timestamp: now,
-        type: 'anomaly',
-        severity: 'informational',
-        domain: 'forecast',
-        timeHorizon: 'immediate',
-        relevanceWindow: {
-          start: now,
-          end: tomorrow,
-        },
-        message: 'Unusual pattern detected in historical data',
-        confidence: 0.55,
-        contributingFactors: [
-          { factor: 'Data variance', weight: 0.8 },
-          { factor: 'External factors', weight: 0.2 },
-        ],
-        conditions: ['Statistical outlier detected'],
-      },
-    ];
-  }
-
-  /**
    * Get all active alerts (mock)
    */
   async getAlerts(): Promise<AlertContract[]> {
     await new Promise(resolve => setTimeout(resolve, 50));
-    return this.generateMockAlerts();
+    return generateMockAlerts();
+  }
+
+  /**
+   * Get business state summary (mock)
+   */
+  async getBusinessStateSummary(): Promise<{
+    demandStatus: string;
+    laborIntensityStatus: string;
+    cashStressStatus: string;
+    forecastReliability: string;
+  }> {
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const { generateBusinessStateSummary } = await import('./mock-data-generator');
+    return generateBusinessStateSummary();
   }
 }
 

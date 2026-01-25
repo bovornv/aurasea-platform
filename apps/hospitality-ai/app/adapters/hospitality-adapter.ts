@@ -131,7 +131,7 @@ export function translateToSMEOS(input: HospitalityInput): InputContract {
 /**
  * Translate SME OS alert to hospitality alert
  */
-export function translateAlertFromSMEOS(alert: AlertContract): HospitalityAlert {
+export function translateAlertFromSMEOS(alert: AlertContract, locale: 'en' | 'th' = 'en'): HospitalityAlert {
   // Map generic domain to hospitality category
   const categoryMap: Record<string, 'revenue' | 'occupancy' | 'staffing' | 'cash' | 'forecast'> = {
     cash: 'cash',
@@ -140,19 +140,63 @@ export function translateAlertFromSMEOS(alert: AlertContract): HospitalityAlert 
     risk: 'forecast', // Generic risk maps to forecast
   };
 
+  // Translation maps
+  const translations = {
+    en: {
+      cashFlowAlert: 'Cash Flow Alert',
+      staffingAlert: 'Staffing Alert',
+      forecastAlert: 'Forecast Alert',
+      cashFlowConcern: 'Cash flow concern:',
+      staffingConsideration: 'Staffing consideration:',
+      forecastInsight: 'Forecast insight:',
+      // Alert message translations
+      cashRunwayRisk: 'Projected cash balance will fall below critical threshold within 7 days based on current cash flow patterns',
+      laborOptimization: 'Resource utilization patterns suggest optimization opportunity',
+      forecastAnomaly: 'Unusual pattern detected in historical data',
+      cashThresholdWarning: 'Cash balance approaching lower threshold',
+    },
+    th: {
+      cashFlowAlert: 'การแจ้งเตือนกระแสเงินสด',
+      staffingAlert: 'การแจ้งเตือนทรัพยากรบุคคล',
+      forecastAlert: 'การแจ้งเตือนการคาดการณ์',
+      cashFlowConcern: 'ความกังวลเรื่องกระแสเงินสด:',
+      staffingConsideration: 'การพิจารณาทรัพยากรบุคคล:',
+      forecastInsight: 'ข้อมูลเชิงลึกการคาดการณ์:',
+      // Alert message translations
+      cashRunwayRisk: 'ยอดเงินสดที่คาดการณ์จะต่ำกว่าเกณฑ์วิกฤตภายใน 7 วันตามรูปแบบกระแสเงินสดปัจจุบัน',
+      laborOptimization: 'รูปแบบการใช้ทรัพยากรบ่งชี้ถึงโอกาสในการปรับปรุง',
+      forecastAnomaly: 'ตรวจพบรูปแบบผิดปกติในข้อมูลในอดีต',
+      cashThresholdWarning: 'ยอดเงินสดใกล้ถึงเกณฑ์ต่ำ',
+    },
+  };
+
+  const t = translations[locale];
+
   // Translate generic message to hospitality context
   let title = alert.message;
+  let message = alert.message;
   let context = alert.message;
 
+  // Translate alert messages based on content
+  if (alert.message.includes('Projected cash balance will fall below critical threshold')) {
+    message = t.cashRunwayRisk;
+  } else if (alert.message.includes('Resource utilization patterns suggest')) {
+    message = t.laborOptimization;
+  } else if (alert.message.includes('Unusual pattern detected')) {
+    message = t.forecastAnomaly;
+  } else if (alert.message.includes('Cash balance approaching lower threshold')) {
+    message = t.cashThresholdWarning;
+  }
+
   if (alert.domain === 'cash') {
-    title = 'Cash Flow Alert';
-    context = `Cash flow concern: ${alert.message}`;
+    title = t.cashFlowAlert;
+    context = `${t.cashFlowConcern} ${message}`;
   } else if (alert.domain === 'labor') {
-    title = 'Staffing Alert';
-    context = `Staffing consideration: ${alert.message}`;
+    title = t.staffingAlert;
+    context = `${t.staffingConsideration} ${message}`;
   } else if (alert.domain === 'forecast') {
-    title = 'Forecast Alert';
-    context = `Forecast insight: ${alert.message}`;
+    title = t.forecastAlert;
+    context = `${t.forecastInsight} ${message}`;
   }
 
   return {
@@ -163,7 +207,7 @@ export function translateAlertFromSMEOS(alert: AlertContract): HospitalityAlert 
     category: categoryMap[alert.domain] || 'forecast',
     timeHorizon: alert.timeHorizon,
     title,
-    message: alert.message,
+    message,
     confidence: alert.confidence,
     context,
   };
@@ -172,13 +216,13 @@ export function translateAlertFromSMEOS(alert: AlertContract): HospitalityAlert 
 /**
  * Translate SME OS output to hospitality representation
  */
-export function translateOutputFromSMEOS(output: OutputContract): {
+export function translateOutputFromSMEOS(output: OutputContract, locale: 'en' | 'th' = 'en'): {
   alerts: HospitalityAlert[];
   explanation: string;
   confidence: number;
 } {
   return {
-    alerts: output.alerts.map(translateAlertFromSMEOS),
+    alerts: output.alerts.map(alert => translateAlertFromSMEOS(alert, locale)),
     explanation: output.explanation.reasoning,
     confidence: output.evaluation.confidence,
   };
