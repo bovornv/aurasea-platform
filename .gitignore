@@ -25,6 +25,7 @@ out/
 *.swp
 *.swo
 *~
+*.code-workspace
 
 # OS
 .DS_Store
@@ -63,3 +64,4 @@ temp/
 **/*key*
 **/*api-key*
 **/*apikey*
+.aider*
