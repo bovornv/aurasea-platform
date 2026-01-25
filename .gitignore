@@ -15,9 +15,7 @@ dist/
 out/
 
 # Environment
-.env
-.env.local
-.env.*.local
+# (Note: .env files are ignored by *.env pattern in secrets section below)
 
 # IDE
 .vscode/
@@ -44,24 +42,27 @@ temp/
 .cache/
 
 # Project-specific exclusions
-# Crystal Resort real data
-**/crystal*
-**/*crystal*
+# Crystal Resort real data (data and fixtures only, not code)
+**/data/crystal/
+**/fixtures/crystal-private/
 
 # Experimental/exploratory code
 **/experimental/
-**/*experimental*
 **/exploratory/
-**/*exploratory*
 
 # Cursor-generated junk
 **/.cursor/
 **/*cursor-junk*
-**/*exploratory-*
 
-# API keys and secrets (already covered by .env, but being explicit)
-**/*secret*
-**/*key*
-**/*api-key*
-**/*apikey*
+# API keys and secrets (specific file patterns only)
+*.env
+*.env.*
+# Exceptions: allow example/template files to be committed
+!.env.example
+!.env.sample
+*.secret
+*.secret.*
+*.key.json
+*.pem
+*.p12
 .aider*
