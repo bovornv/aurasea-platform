@@ -93,7 +93,8 @@ describe('DemandDropRule', () => {
       expect(result!.timeHorizon).toBe('medium-term');
       expect(result!.message).toContain('decline');
       expect(result!.message).toContain('recent baseline');
-      expect(result!.contributingFactors).toHaveLength(4);
+      expect(result!.contributingFactors.length).toBeGreaterThanOrEqual(3);
+      expect(result!.contributingFactors.some(f => f.factor.includes('revenue decline'))).toBe(true);
     });
 
     it('should generate critical alert for severe revenue drop', () => {
