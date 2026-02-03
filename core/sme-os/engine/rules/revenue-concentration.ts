@@ -128,27 +128,33 @@ export class RevenueConcentrationRule {
     const weekendSeverity = this.determineWeekendSeverity(weekendShare);
     const topDaySeverity = this.determineTopDaySeverity(top5Share);
     
-    // Return the highest severity level
-    const severityLevels = { 'informational': 1, 'warning': 2, 'critical': 3 };
-    const maxSeverity = Math.max(severityLevels[weekendSeverity], severityLevels[topDaySeverity]);
+    // Only consider severities that are above 'none'
+    const severityLevels = { 'none': 0, 'informational': 1, 'warning': 2, 'critical': 3 };
+    const applicableSeverities = [weekendSeverity, topDaySeverity].filter(s => s !== 'none');
+    
+    if (applicableSeverities.length === 0) {
+      return 'informational'; // Fallback
+    }
+    
+    const maxSeverity = Math.max(...applicableSeverities.map(s => severityLevels[s]));
     
     if (maxSeverity === 3) return 'critical';
     if (maxSeverity === 2) return 'warning';
     return 'informational';
   }
 
-  private determineWeekendSeverity(weekendShare: number): 'critical' | 'warning' | 'informational' {
+  private determineWeekendSeverity(weekendShare: number): 'critical' | 'warning' | 'informational' | 'none' {
     if (weekendShare >= 75) return 'critical';
     if (weekendShare >= 65) return 'warning';
     if (weekendShare >= 55) return 'informational';
-    return 'informational'; // Below threshold
+    return 'none'; // Below threshold
   }
 
-  private determineTopDaySeverity(top5Share: number): 'critical' | 'warning' | 'informational' {
+  private determineTopDaySeverity(top5Share: number): 'critical' | 'warning' | 'informational' | 'none' {
     if (top5Share >= 65) return 'critical';
     if (top5Share >= 55) return 'warning';
     if (top5Share >= 45) return 'informational';
-    return 'informational'; // Below threshold
+    return 'none'; // Below threshold
   }
 
   private calculateConfidence(dataPoints: number, weekendRevenue: number, totalRevenue: number): number {
