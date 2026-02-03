@@ -35,7 +35,10 @@ describe('RevenueConcentrationRule', () => {
     const signals = [];
     const today = new Date();
 
-    // Generate 28 days of signals with proper weekend/weekday distribution
+    // First, create base revenue distribution
+    const baseRevenues: number[] = [];
+    
+    // Generate 28 days of base revenues
     for (let i = 0; i < 28; i++) {
       const signalDate = new Date(today);
       signalDate.setDate(today.getDate() - i);
@@ -43,40 +46,63 @@ describe('RevenueConcentrationRule', () => {
       const dayOfWeek = signalDate.getDay();
       const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6; // Fri-Sun
       
-      // Calculate base daily revenue to achieve weekend share
-      const weekendDays = 12; // 3 days * 4 weeks
-      const weekdayDays = 16; // 4 days * 4 weeks
+      // Start with equal distribution
+      const baseRevenue = totalRevenue / 28;
+      baseRevenues.push(baseRevenue);
+    }
+
+    // Adjust for weekend concentration
+    const weekendDays = 12; // 3 days * 4 weeks
+    const weekdayDays = 16; // 4 days * 4 weeks
+    
+    for (let i = 0; i < 28; i++) {
+      const signalDate = new Date(today);
+      signalDate.setDate(today.getDate() - i);
+      const dayOfWeek = signalDate.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 5 || dayOfWeek === 6;
       
-      let dailyRevenue;
       if (isWeekend) {
-        dailyRevenue = (totalRevenue * weekendShare) / weekendDays;
+        baseRevenues[i] = (totalRevenue * weekendShare) / weekendDays;
       } else {
-        dailyRevenue = (totalRevenue * (1 - weekendShare)) / weekdayDays;
+        baseRevenues[i] = (totalRevenue * (1 - weekendShare)) / weekdayDays;
       }
+    }
+
+    // Adjust for top-5 concentration if needed
+    if (top5Concentration > 0.4) {
+      // Sort indices by revenue to find top 5
+      const revenueWithIndex = baseRevenues.map((rev, idx) => ({ revenue: rev, index: idx }));
+      revenueWithIndex.sort((a, b) => b.revenue - a.revenue);
       
-      signals.push({
-        timestamp: signalDate,
-        dailyRevenue
+      const top5Indices = revenueWithIndex.slice(0, 5).map(item => item.index);
+      const currentTop5Total = top5Indices.reduce((sum, idx) => sum + baseRevenues[idx], 0);
+      const targetTop5Total = totalRevenue * top5Concentration;
+      
+      // Calculate boost needed
+      const totalBoost = targetTop5Total - currentTop5Total;
+      const boostPerDay = totalBoost / 5;
+      
+      // Apply boost to top 5 days
+      top5Indices.forEach(idx => {
+        baseRevenues[idx] += boostPerDay;
+      });
+      
+      // Reduce other days proportionally to maintain total
+      const otherIndices = baseRevenues.map((_, idx) => idx).filter(idx => !top5Indices.includes(idx));
+      const reductionPerDay = totalBoost / otherIndices.length;
+      otherIndices.forEach(idx => {
+        baseRevenues[idx] = Math.max(0, baseRevenues[idx] - reductionPerDay);
       });
     }
 
-    // If we need high top-5 concentration, boost the top 5 days
-    if (top5Concentration > 0.4) {
-      // Sort signals by revenue to find current top 5
-      const sortedSignals = [...signals].sort((a, b) => b.dailyRevenue - a.dailyRevenue);
-      const currentTop5Revenue = sortedSignals.slice(0, 5).reduce((sum, s) => sum + s.dailyRevenue, 0);
-      const currentTotalRevenue = signals.reduce((sum, s) => sum + s.dailyRevenue, 0);
-      const targetTop5Revenue = currentTotalRevenue * top5Concentration;
+    // Create final signals
+    for (let i = 0; i < 28; i++) {
+      const signalDate = new Date(today);
+      signalDate.setDate(today.getDate() - i);
       
-      // Calculate how much to boost each of the top 5 days
-      const boostPerDay = Math.max(0, (targetTop5Revenue - currentTop5Revenue) / 5);
-      
-      // Boost the actual top 5 signals
-      const top5Timestamps = sortedSignals.slice(0, 5).map(s => s.timestamp.getTime());
-      signals.forEach(signal => {
-        if (top5Timestamps.includes(signal.timestamp.getTime())) {
-          signal.dailyRevenue += boostPerDay;
-        }
+      signals.push({
+        timestamp: signalDate,
+        dailyRevenue: baseRevenues[i]
       });
     }
 
