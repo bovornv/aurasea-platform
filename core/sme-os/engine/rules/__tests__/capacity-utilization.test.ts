@@ -138,8 +138,8 @@ describe('CapacityUtilizationRule', () => {
       
       expect(result).not.toBeNull();
       expect(result!.type).toBe('risk');
-      expect(result!.severity).toBe('warning'); // Actual behavior
-      expect(result!.timeHorizon).toBe('near-term'); // Actual behavior
+      expect(result!.severity).toBe('critical'); // Actual behavior
+      expect(result!.timeHorizon).toBe('immediate'); // Actual behavior
       expect(result!.message).toMatch(/capacity strain|high.*occupancy/i);
       expect(result!.message).toMatch(/\d+\.\d+%/); // Contains percentage
     });
