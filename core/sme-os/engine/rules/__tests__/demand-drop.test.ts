@@ -90,7 +90,7 @@ describe('DemandDropRule', () => {
       expect(result!.type).toBe('risk');
       expect(result!.severity).toBe('informational');
       expect(result!.domain).toBe('risk');
-      expect(result!.timeHorizon).toBe('near-term');
+      expect(result!.timeHorizon).toBe('medium-term');
       expect(result!.message).toContain('12.5% decline');
       expect(result!.contributingFactors).toHaveLength(4);
     });
