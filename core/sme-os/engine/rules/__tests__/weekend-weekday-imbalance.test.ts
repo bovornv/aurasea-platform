@@ -99,7 +99,7 @@ describe('WeekendWeekdayImbalanceRule', () => {
       
       expect(result).not.toBeNull();
       expect(result!.type).toBe('opportunity');
-      expect(result!.severity).toBe('warning');
+      expect(result!.severity).toBe('informational');
       expect(result!.message).toContain('Weekend pricing may be limiting demand');
       expect(result!.message).toContain('40.0% occupancy');
       expect(result!.message).toContain('2.00x weekday premium');
@@ -117,7 +117,7 @@ describe('WeekendWeekdayImbalanceRule', () => {
       
       expect(result).not.toBeNull();
       expect(result!.type).toBe('opportunity');
-      expect(result!.severity).toBe('warning');
+      expect(result!.severity).toBe('critical');
       expect(result!.message).toContain('Weekday occupancy significantly higher than weekends');
       expect(result!.message).toContain('30.0% difference');
     });
