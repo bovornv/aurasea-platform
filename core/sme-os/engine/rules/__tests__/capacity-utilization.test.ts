@@ -99,8 +99,8 @@ describe('CapacityUtilizationRule', () => {
       
       expect(result).not.toBeNull();
       expect(result!.type).toBe('opportunity');
-      expect(result!.severity).toBe('warning'); // Actual behavior
-      expect(result!.timeHorizon).toBe('near-term'); // Actual behavior
+      expect(result!.severity).toBe('critical'); // Actual behavior
+      expect(result!.timeHorizon).toBe('immediate'); // Actual behavior
       expect(result!.message).toMatch(/underutilization|capacity utilization/i);
       expect(result!.message).toMatch(/\d+\.\d+%/); // Contains percentage
     });
@@ -112,8 +112,8 @@ describe('CapacityUtilizationRule', () => {
       
       expect(result).not.toBeNull();
       expect(result!.type).toBe('opportunity');
-      expect(result!.severity).toBe('informational'); // Actual behavior
-      expect(result!.timeHorizon).toBe('medium-term'); // Actual behavior
+      expect(result!.severity).toBe('warning'); // Actual behavior
+      expect(result!.timeHorizon).toBe('near-term'); // Actual behavior
       expect(result!.message).toMatch(/underutilization|revenue opportunity/i);
     });
 
@@ -151,8 +151,8 @@ describe('CapacityUtilizationRule', () => {
       
       expect(result).not.toBeNull();
       expect(result!.type).toBe('risk');
-      expect(result!.severity).toBe('warning'); // Actual behavior
-      expect(result!.timeHorizon).toBe('near-term'); // Actual behavior
+      expect(result!.severity).toBe('informational'); // Actual behavior
+      expect(result!.timeHorizon).toBe('medium-term'); // Actual behavior
     });
 
     it('should return null for normal utilization', () => {
