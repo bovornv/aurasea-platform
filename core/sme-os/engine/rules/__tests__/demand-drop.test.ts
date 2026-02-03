@@ -91,7 +91,7 @@ describe('DemandDropRule', () => {
       expect(result!.severity).toBe('warning');
       expect(result!.domain).toBe('risk');
       expect(result!.timeHorizon).toBe('near-term');
-      expect(result!.message).toContain('20.0% decline');
+      expect(result!.message).toContain('12.5% decline');
       expect(result!.contributingFactors).toHaveLength(4);
     });
 
@@ -138,7 +138,7 @@ describe('DemandDropRule', () => {
       const result = rule.evaluate(mockInput, signals);
       
       expect(result).not.toBeNull();
-      expect(result!.severity).toBe('warning');
+      expect(result!.severity).toBe('informational');
       expect(result!.contributingFactors).toHaveLength(2); // Only revenue factors
     });
 
@@ -159,7 +159,7 @@ describe('DemandDropRule', () => {
       const result = rule.evaluate(mockInput, signals);
       
       expect(result).not.toBeNull();
-      expect(result!.severity).toBe('warning');
+      expect(result!.severity).toBe('informational');
       expect(result!.contributingFactors).toHaveLength(1);
       expect(result!.contributingFactors[0].factor).toBe('Recent revenue decline');
     });

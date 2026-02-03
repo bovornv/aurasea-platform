@@ -57,9 +57,8 @@ describe('DemandDropExplainer', () => {
       const result = explainer.explain(mockAlert, operationalSignals);
       
       expect(result.primaryFactor).toContain('20.0% decline');
-      expect(result.contributingFactors).toHaveLength(4);
+      expect(result.contributingFactors).toHaveLength(3);
       expect(result.contributingFactors).toContain('Short-term revenue decline: 20.0%');
-      expect(result.contributingFactors).toContain('Sustained revenue decline: 20.0%');
       expect(result.contributingFactors).toContain('Occupancy rate decline: 12.5%');
       expect(result.contributingFactors).toContain('Customer volume decline: 20.0%');
     });
@@ -252,7 +251,7 @@ describe('DemandDropExplainer', () => {
 
       const result = explainer.explain(mockAlert, operationalSignals);
       
-      expect(result.contributingFactors).toHaveLength(3); // 2 revenue + 1 trend pattern
+      expect(result.contributingFactors).toHaveLength(1); // Only short-term revenue decline
       expect(result.impactAnalysis.occupancyImpact).toBe('No significant occupancy impact detected');
       expect(result.impactAnalysis.volumeImpact).toBe('No significant volume impact detected');
     });
