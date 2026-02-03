@@ -14,7 +14,8 @@
     "type-check": "turbo run type-check",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:demand-drop": "vitest run demand-drop"
+    "test:demand-drop": "vitest run demand-drop",
+    "test:weekend-weekday": "vitest run weekend-weekday"
   },
   "devDependencies": {
     "@types/node": "^25.0.10",
