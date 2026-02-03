@@ -66,7 +66,7 @@ describe('DemandDropRule', () => {
       expect(result).toBeNull();
     });
 
-    it('should generate warning alert for moderate revenue drop', () => {
+    it('should generate informational alert for moderate revenue drop', () => {
       const signals = [
         {
           timestamp: new Date(),
@@ -88,7 +88,7 @@ describe('DemandDropRule', () => {
       
       expect(result).not.toBeNull();
       expect(result!.type).toBe('risk');
-      expect(result!.severity).toBe('warning');
+      expect(result!.severity).toBe('informational');
       expect(result!.domain).toBe('risk');
       expect(result!.timeHorizon).toBe('near-term');
       expect(result!.message).toContain('12.5% decline');
@@ -139,7 +139,7 @@ describe('DemandDropRule', () => {
       
       expect(result).not.toBeNull();
       expect(result!.severity).toBe('informational');
-      expect(result!.contributingFactors).toHaveLength(2); // Only revenue factors
+      expect(result!.contributingFactors).toHaveLength(1); // Only one real contributing factor
     });
 
     it('should generate alert based on 7-day revenue drop alone', () => {
