@@ -28,41 +28,120 @@ export class SeasonalityRiskRule {
 
     // Aggregate revenue by month
     const monthlyRevenue = this.aggregateMonthlyRevenue(recentSignals);
-    const monthlyValues = Object.values(monthlyRevenue);
     
-    if (monthlyValues.length < 3 || monthlyValues.some(val => val <= 0)) {
+    // Create immutable array of raw monthly totals with chronological month numbers
+    // Use insertion order from Object.keys() which preserves the order months were first encountered
+    // aggregateMonthlyRevenue processes signals in order (newest to oldest), so insertion order = dataset order
+    const monthKeys = Object.keys(monthlyRevenue);
+    
+    // Create raw monthly totals array preserving insertion order (newest first)
+    const rawMonthlyTotals: Array<{ month: number; revenue: number }> = [];
+    monthKeys.forEach((key, index) => {
+      rawMonthlyTotals.push({
+        month: index + 1, // 1-based month number (Month 1 = first month encountered = newest, Month 2 = second, etc.)
+        revenue: monthlyRevenue[key]
+      });
+    });
+    
+    // Early validation checks
+    if (rawMonthlyTotals.length < 3 || rawMonthlyTotals.some(item => item.revenue <= 0)) {
+      return null;
+    }
+    
+    // Extract raw revenue values for calculations
+    const rawRevenueValues = rawMonthlyTotals.map(item => item.revenue);
+    
+    // Calculate max and min from raw monthly totals ONLY
+    const maxMonthlyRevenue = Math.max(...rawRevenueValues);
+    const minMonthlyRevenue = Math.min(...rawRevenueValues);
+    
+    // Early return: return null if minMonthlyRevenue is 0
+    if (minMonthlyRevenue === 0) {
+      return null;
+    }
+    
+    // Compute total revenue across all months
+    const totalRevenue = rawRevenueValues.reduce((sum, val) => sum + val, 0);
+    
+    // Early return: return null if totalRevenue === 0
+    if (totalRevenue === 0) {
       return null;
     }
 
-    // Calculate seasonality metrics
-    const maxMonthlyRevenue = Math.max(...monthlyValues);
-    const minMonthlyRevenue = Math.min(...monthlyValues);
-    const seasonalityRatio = maxMonthlyRevenue / minMonthlyRevenue;
+    // Compute averageMonthlyRevenue = mean of all monthly totals (normalized average)
+    const averageMonthlyRevenue = rawRevenueValues.reduce((sum, val) => sum + val, 0) / rawRevenueValues.length;
 
-    // Find peak and low months
-    const peakMonth = Object.keys(monthlyRevenue).find(month => monthlyRevenue[month] === maxMonthlyRevenue) || 'Unknown';
-    const lowMonth = Object.keys(monthlyRevenue).find(month => monthlyRevenue[month] === minMonthlyRevenue) || 'Unknown';
-
-    // Detect seasonality risk
-    if (seasonalityRatio < 2.0) {
-      return null; // No significant seasonality
+    // Compute seasonalityRatio = maxMonthlyRevenue / averageMonthlyRevenue
+    // Used for informational and warning severity levels
+    const seasonalityRatio = averageMonthlyRevenue > 0 ? maxMonthlyRevenue / averageMonthlyRevenue : 0;
+    
+    // Compute criticalRatio = maxMonthlyRevenue / minMonthlyRevenue
+    // Used for critical severity level check (uses raw max/min)
+    const criticalRatio = maxMonthlyRevenue / minMonthlyRevenue;
+    
+    // Early return for stable seasonal patterns (ratio < 1.5)
+    if (seasonalityRatio < 1.5) {
+      return null;
     }
 
-    // Determine severity
-    const severity = this.determineSeverity(seasonalityRatio);
+    // Calculate coefficient of variation (for contributing factors only, not used for severity)
+    const variance = rawRevenueValues.reduce((sum, val) => sum + Math.pow(val - averageMonthlyRevenue, 2), 0) / rawRevenueValues.length;
+    const standardDeviation = Math.sqrt(variance);
+    const coefficientOfVariation = averageMonthlyRevenue > 0 ? standardDeviation / averageMonthlyRevenue : 0;
 
-    // Determine time horizon
-    const timeHorizon = severity === 'critical' ? 'immediate' : 
-                      severity === 'warning' ? 'near-term' : 'medium-term';
+    // Find peak and low months using ONLY the raw monthly totals array
+    // Do NOT use normalized, sorted, or filtered arrays
+    const peakMonthItem = rawMonthlyTotals.find(item => item.revenue === maxMonthlyRevenue);
+    const lowMonthItem = rawMonthlyTotals.find(item => item.revenue === minMonthlyRevenue);
+    
+    // Use the original chronological month number from rawMonthlyTotals
+    const peakMonth = peakMonthItem ? `Month ${peakMonthItem.month}` : 'Unknown';
+    const lowMonth = lowMonthItem ? `Month ${lowMonthItem.month}` : 'Unknown';
+
+    // ============================================================
+    // SEVERITY CALCULATION - DONE ONCE, LOCKED AFTER ASSIGNMENT
+    // ============================================================
+    // Severity is determined ONCE, based SOLELY on seasonalityRatio
+    // Evaluated from HIGHEST to LOWEST ratio (order matters)
+    // Severity mapping (based ONLY on ratio, no other factors):
+    // - criticalRatio >= 3.0 → critical, timeHorizon = immediate
+    // - seasonalityRatio >= 2.0 → warning, timeHorizon = near-term
+    // - seasonalityRatio >= 1.5 → informational, timeHorizon = medium-term
+    // - seasonalityRatio < 1.5 → return null
+    //
+    // Severity is NOT affected by:
+    // - coefficient of variation
+    // - peak month dominance
+    // - revenue concentration
+    // - number of volatile months
+    // - confidence level
+    //
+    // IMPORTANT: Severity MUST NOT be changed after this point
+    // Early return if no significant seasonality (ratio < 1.5)
+    // Note: ratio < 1.3 already handled above for stable patterns
+    if (seasonalityRatio < 1.5) {
+      return null;
+    }
+    
+    const severity: 'critical' | 'warning' | 'informational' = 
+      criticalRatio >= 3.0 ? 'critical' :
+      seasonalityRatio >= 2.0 ? 'warning' :
+      'informational'; // Already checked seasonalityRatio >= 1.5 above
+    
+    const timeHorizon: 'immediate' | 'near-term' | 'medium-term' = 
+      severity === 'critical' ? 'immediate' :
+      severity === 'warning' ? 'near-term' :
+      'medium-term'; // informational
 
     // Calculate confidence
-    const confidence = this.calculateConfidence(recentSignals.length, monthlyValues.length);
+    const confidence = this.calculateConfidence(recentSignals.length, rawMonthlyTotals.length);
 
-    // Generate message and recommendations
+    // Generate message and recommendations (pass severity to ensure message reflects assigned severity)
     const { message, recommendations } = this.generateMessageAndRecommendations(
       seasonalityRatio,
       peakMonth,
-      lowMonth
+      lowMonth,
+      severity
     );
 
     // Contributing factors
@@ -73,6 +152,20 @@ export class SeasonalityRiskRule {
       maxMonthlyRevenue,
       minMonthlyRevenue
     );
+
+    // Build conditions array
+    const conditions = [
+      `Seasonality ratio: ${seasonalityRatio.toFixed(1)}x`,
+      `Peak month: ${peakMonth} ($${maxMonthlyRevenue.toLocaleString()})`,
+      `Low month: ${lowMonth} ($${minMonthlyRevenue.toLocaleString()})`,
+      `Data points: ${recentSignals.length} days`,
+      `Recommendations: ${recommendations}`
+    ];
+
+    // Add seasonal planning condition for warning and critical severity
+    if (severity === 'warning' || severity === 'critical') {
+      conditions.push('Requires seasonal planning to mitigate risk');
+    }
 
     const alert: AlertContract = {
       id: `seasonality-risk-${Date.now()}`,
@@ -88,13 +181,7 @@ export class SeasonalityRiskRule {
       message,
       confidence,
       contributingFactors,
-      conditions: [
-        `Seasonality ratio: ${seasonalityRatio.toFixed(1)}x`,
-        `Peak month: ${peakMonth} ($${maxMonthlyRevenue.toLocaleString()})`,
-        `Low month: ${lowMonth} ($${minMonthlyRevenue.toLocaleString()})`,
-        `Data points: ${recentSignals.length} days`,
-        `Recommendations: ${recommendations}`
-      ]
+      conditions
     };
 
     return alert;
@@ -103,31 +190,31 @@ export class SeasonalityRiskRule {
   private aggregateMonthlyRevenue(signals: Array<{ timestamp: Date; dailyRevenue: number }>) {
     const monthlyRevenue: { [key: string]: number } = {};
     
+    // Group revenue by calendar month using year + month
+    // Each day's revenue contributes exactly once to its correct calendar month
+    // Monthly totals represent true per-month revenue (no rolling windows, no normalization)
     signals.forEach(signal => {
-      const monthKey = `Month ${signal.timestamp.getMonth() + 1}`;
+      // Extract year and month from timestamp
+      const year = signal.timestamp.getFullYear();
+      const month = signal.timestamp.getMonth(); // Returns 0-11 (January = 0, December = 11)
+      
+      // Create unique key for year-month combination (format: "2024-01", "2024-02", etc.)
+      const monthKey = `${year}-${(month + 1).toString().padStart(2, '0')}`;
+      
+      // Initialize month total if this is the first day for this month
       if (!monthlyRevenue[monthKey]) {
         monthlyRevenue[monthKey] = 0;
       }
+      
+      // Add this day's revenue exactly once to its calendar month
+      // No normalization, no scaling, no rolling windows - just sum of daily revenues
       monthlyRevenue[monthKey] += signal.dailyRevenue;
     });
     
     return monthlyRevenue;
   }
 
-  private determineSeverity(seasonalityRatio: number): 'critical' | 'warning' | 'informational' {
-    // Critical: Extreme seasonality (6x or higher)
-    if (seasonalityRatio >= 6.0) {
-      return 'critical';
-    }
 
-    // Warning: High seasonality (3x to 6x)
-    if (seasonalityRatio >= 3.0) {
-      return 'warning';
-    }
-
-    // Informational: Moderate seasonality (2x to 3x)
-    return 'informational';
-  }
 
   private calculateConfidence(dataPoints: number, monthCount: number): number {
     let confidence = 0.75; // Base confidence
@@ -154,17 +241,19 @@ export class SeasonalityRiskRule {
   private generateMessageAndRecommendations(
     seasonalityRatio: number,
     peakMonth: string,
-    lowMonth: string
+    lowMonth: string,
+    severity: 'critical' | 'warning' | 'informational'
   ): { message: string; recommendations: string } {
-    const severityLevel = seasonalityRatio >= 6.0 ? 'Extreme' :
-                         seasonalityRatio >= 3.0 ? 'High' : 'Moderate';
+    // Message reflects the assigned severity (not recalculated)
+    const severityLevel = severity === 'critical' ? 'Extreme' :
+                         severity === 'warning' ? 'High' : 'Moderate';
 
     const message = `${severityLevel} revenue seasonality detected: ${seasonalityRatio.toFixed(1)}x variation between peak and low months`;
 
     let recommendations: string;
-    if (seasonalityRatio >= 6.0) {
+    if (severity === 'critical') {
       recommendations = 'Urgent seasonal risk management and diversification required';
-    } else if (seasonalityRatio >= 3.0) {
+    } else if (severity === 'warning') {
       recommendations = 'Implement seasonal risk mitigation and revenue smoothing';
     } else {
       recommendations = 'Develop seasonal planning and cash flow management';
@@ -182,13 +271,13 @@ export class SeasonalityRiskRule {
   ) {
     const factors = [];
 
-    // Seasonality ratio factor
-    if (seasonalityRatio >= 6.0) {
+    // Seasonality ratio factor - use severity thresholds
+    if (seasonalityRatio >= 3.5) {
       factors.push({
         factor: `Extreme seasonal variation: ${seasonalityRatio.toFixed(1)}x ratio creates severe vulnerability`,
         weight: Math.min(1.0, seasonalityRatio / 10)
       });
-    } else if (seasonalityRatio >= 3.0) {
+    } else if (seasonalityRatio >= 2.0) {
       factors.push({
         factor: `High seasonal variation: ${seasonalityRatio.toFixed(1)}x ratio indicates significant risk`,
         weight: Math.min(1.0, seasonalityRatio / 6)
