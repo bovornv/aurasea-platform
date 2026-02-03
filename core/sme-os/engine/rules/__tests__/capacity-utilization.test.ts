@@ -1,0 +1,255 @@
+import { CapacityUtilizationRule } from '../capacity-utilization';
+import { InputContract } from '../../../contracts/inputs';
+
+describe('CapacityUtilizationRule', () => {
+  let rule: CapacityUtilizationRule;
+  let mockInput: InputContract;
+
+  beforeEach(() => {
+    rule = new CapacityUtilizationRule();
+    mockInput = {
+      timePeriod: {
+        start: new Date('2024-01-01'),
+        end: new Date('2024-01-31'),
+        granularity: 'day'
+      },
+      financial: {
+        cashFlows: [],
+        currentBalance: 100000,
+        projectedBalance: 90000
+      },
+      operational: {
+        resources: [],
+        constraints: [],
+        historicalPatterns: [],
+        previousDecisions: []
+      }
+    };
+  });
+
+  const generateOccupancySignals = (
+    avgOccupancy: number,
+    peakDays: number = 0,
+    lowDays: number = 0,
+    variance: number = 0.1
+  ) => {
+    const signals = [];
+    const today = new Date();
+    const totalDays = 28;
+
+    for (let i = 0; i < totalDays; i++) {
+      const signalDate = new Date(today);
+      signalDate.setDate(today.getDate() - i);
+      
+      let occupancyRate = avgOccupancy;
+      
+      // Add peak days
+      if (i < peakDays) {
+        occupancyRate = 0.95 + Math.random() * 0.05;
+      }
+      // Add low days
+      else if (i < peakDays + lowDays) {
+        occupancyRate = 0.20 + Math.random() * 0.15;
+      }
+      // Add variance to other days
+      else {
+        occupancyRate += (Math.random() - 0.5) * variance * 2;
+        occupancyRate = Math.max(0, Math.min(1, occupancyRate));
+      }
+      
+      signals.push({
+        timestamp: signalDate,
+        occupancyRate
+      });
+    }
+
+    return signals;
+  };
+
+  describe('evaluate', () => {
+    it('should return null when insufficient data provided', () => {
+      const result = rule.evaluate(mockInput, []);
+      expect(result).toBeNull();
+    });
+
+    it('should return null when less than 21 days of data', () => {
+      const signals = generateOccupancySignals(0.7).slice(0, 15);
+      const result = rule.evaluate(mockInput, signals);
+      expect(result).toBeNull();
+    });
+
+    it('should detect critical underutilization (very low occupancy)', () => {
+      const signals = generateOccupancySignals(0.35, 0, 15); // 35% avg, 15 low days
+
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('opportunity');
+      expect(result!.severity).toBe('critical');
+      expect(result!.domain).toBe('forecast');
+      expect(result!.timeHorizon).toBe('immediate');
+      expect(result!.message).toContain('Severe underutilization');
+      expect(result!.message).toContain('35.0%');
+    });
+
+    it('should detect warning underutilization (low occupancy)', () => {
+      const signals = generateOccupancySignals(0.45, 0, 8); // 45% avg, 8 low days
+
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('opportunity');
+      expect(result!.severity).toBe('warning');
+      expect(result!.timeHorizon).toBe('near-term');
+      expect(result!.message).toContain('Low capacity utilization');
+      expect(result!.message).toContain('45.0%');
+    });
+
+    it('should detect informational underutilization (moderate low occupancy)', () => {
+      const signals = generateOccupancySignals(0.55, 0, 5); // 55% avg, 5 low days
+
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('opportunity');
+      expect(result!.severity).toBe('informational');
+      expect(result!.timeHorizon).toBe('medium-term');
+      expect(result!.message).toContain('revenue opportunity');
+    });
+
+    it('should detect critical overutilization (very high occupancy)', () => {
+      const signals = generateOccupancySignals(0.92, 8); // 92% avg, 8 peak days
+
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('risk');
+      expect(result!.severity).toBe('critical');
+      expect(result!.domain).toBe('risk');
+      expect(result!.timeHorizon).toBe('immediate');
+      expect(result!.message).toContain('High capacity strain');
+      expect(result!.message).toContain('92.0%');
+    });
+
+    it('should detect warning overutilization (high occupancy)', () => {
+      const signals = generateOccupancySignals(0.87, 5); // 87% avg, 5 peak days
+
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('risk');
+      expect(result!.severity).toBe('warning');
+      expect(result!.timeHorizon).toBe('near-term');
+      expect(result!.message).toContain('High average occupancy');
+      expect(result!.message).toContain('87.0%');
+    });
+
+    it('should detect informational overutilization (elevated occupancy)', () => {
+      const signals = generateOccupancySignals(0.82, 3); // 82% avg, 3 peak days
+
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('risk');
+      expect(result!.severity).toBe('informational');
+      expect(result!.timeHorizon).toBe('medium-term');
+    });
+
+    it('should return null for normal utilization', () => {
+      const signals = generateOccupancySignals(0.72, 1); // 72% avg, 1 peak day
+
+      const result = rule.evaluate(mockInput, signals);
+      expect(result).toBeNull();
+    });
+
+    it('should calculate confidence based on data points and variance', () => {
+      const signals = generateOccupancySignals(0.35, 0, 10, 0.05); // Low variance
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.confidence).toBeGreaterThan(0.70); // Should get bonus for low variance
+    });
+
+    it('should penalize confidence for high variance', () => {
+      const signals = generateOccupancySignals(0.35, 0, 10, 0.35); // High variance
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.confidence).toBeLessThan(0.70); // Should get penalty for high variance
+    });
+
+    it('should include appropriate contributing factors for underutilization', () => {
+      const signals = generateOccupancySignals(0.35, 0, 15);
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.contributingFactors).toHaveLength(2);
+      expect(result!.contributingFactors[0].factor).toContain('Low average occupancy rate');
+      expect(result!.contributingFactors[1].factor).toContain('Multiple low occupancy days');
+    });
+
+    it('should include appropriate contributing factors for overutilization', () => {
+      const signals = generateOccupancySignals(0.92, 8);
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.contributingFactors).toHaveLength(2);
+      expect(result!.contributingFactors[0].factor).toContain('Consistently high average occupancy');
+      expect(result!.contributingFactors[1].factor).toContain('Multiple peak occupancy days');
+    });
+
+    it('should include relevant conditions in alert', () => {
+      const signals = generateOccupancySignals(0.35, 0, 15);
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.conditions).toContain('Average occupancy: 35.0%');
+      expect(result!.conditions).toContain('Peak days (≥95%): 0 days');
+      expect(result!.conditions).toContain('Low days (<40%): 15 days');
+      expect(result!.conditions).toContain('Data points: 28 days');
+      expect(result!.conditions.some(c => c.includes('Recommendations:'))).toBe(true);
+    });
+
+    it('should generate appropriate recommendations for underutilization', () => {
+      const signals = generateOccupancySignals(0.35);
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.conditions.some(c => c.includes('aggressive pricing strategy'))).toBe(true);
+    });
+
+    it('should generate appropriate recommendations for overutilization', () => {
+      const signals = generateOccupancySignals(0.92, 8);
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.conditions.some(c => c.includes('demand management'))).toBe(true);
+    });
+
+    it('should handle edge case with exactly 21 days of data', () => {
+      const signals = generateOccupancySignals(0.35).slice(0, 21);
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.conditions).toContain('Data points: 21 days');
+    });
+
+    it('should detect overutilization based on peak days alone', () => {
+      const signals = generateOccupancySignals(0.75, 5); // 75% avg but 5 peak days
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('risk');
+      expect(result!.severity).toBe('warning');
+    });
+
+    it('should set confidence bonus for extra data points', () => {
+      const signals = generateOccupancySignals(0.35, 0, 10);
+      const result = rule.evaluate(mockInput, signals);
+      
+      expect(result).not.toBeNull();
+      // Should get bonus for having 28 days (7 extra beyond minimum 21)
+      expect(result!.confidence).toBeGreaterThan(0.70);
+    });
+  });
+});
