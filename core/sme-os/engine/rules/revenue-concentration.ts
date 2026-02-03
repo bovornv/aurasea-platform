@@ -205,10 +205,27 @@ export class RevenueConcentrationRule {
         };
 
       case 'both':
-        return {
-          message: `Dual concentration risk: ${weekendShare.toFixed(1)}% weekend share and ${top5Share.toFixed(1)}% top-day concentration`,
-          recommendations: 'Implement comprehensive revenue diversification strategy with dynamic pricing across time periods'
-        };
+        // Only use "Dual concentration risk" for critical severity
+        const severity = this.determineSeverity(weekendShare, top5Share);
+        if (severity === 'critical') {
+          return {
+            message: `Dual concentration risk: ${weekendShare.toFixed(1)}% weekend share and ${top5Share.toFixed(1)}% top-day concentration`,
+            recommendations: 'Implement comprehensive revenue diversification strategy with dynamic pricing across time periods'
+          };
+        } else {
+          // For warning level, prioritize the higher concentration
+          if (top5Share >= weekendShare) {
+            return {
+              message: `High top-day revenue concentration: ${top5Share.toFixed(1)}% of revenue from top 5 days creates risk`,
+              recommendations: 'Implement revenue smoothing strategies and demand spreading through dynamic pricing'
+            };
+          } else {
+            return {
+              message: `High weekend revenue concentration: ${weekendShare.toFixed(1)}% of revenue from weekends creates vulnerability`,
+              recommendations: 'Develop weekday revenue streams and corporate partnerships'
+            };
+          }
+        }
 
       default:
         return {
