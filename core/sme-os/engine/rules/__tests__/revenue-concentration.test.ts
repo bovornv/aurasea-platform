@@ -61,12 +61,15 @@ describe('RevenueConcentrationRule', () => {
     }
 
     // If we need high top-5 concentration, boost the top 5 days
-    if (top5Concentration > 0.5) {
+    if (top5Concentration > 0.4) {
       // Sort signals by revenue to find current top 5
       const sortedSignals = [...signals].sort((a, b) => b.dailyRevenue - a.dailyRevenue);
       const currentTop5Revenue = sortedSignals.slice(0, 5).reduce((sum, s) => sum + s.dailyRevenue, 0);
-      const targetTop5Revenue = totalRevenue * top5Concentration;
-      const boostPerDay = (targetTop5Revenue - currentTop5Revenue) / 5;
+      const currentTotalRevenue = signals.reduce((sum, s) => sum + s.dailyRevenue, 0);
+      const targetTop5Revenue = currentTotalRevenue * top5Concentration;
+      
+      // Calculate how much to boost each of the top 5 days
+      const boostPerDay = Math.max(0, (targetTop5Revenue - currentTop5Revenue) / 5);
       
       // Boost the actual top 5 signals
       const top5Timestamps = sortedSignals.slice(0, 5).map(s => s.timestamp.getTime());
