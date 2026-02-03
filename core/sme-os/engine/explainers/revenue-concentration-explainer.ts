@@ -281,7 +281,7 @@ export class RevenueConcentrationExplainer {
       }
 
       strategic.push('Implement revenue management best practices');
-      strategic.push('Develop demand forecasting and optimization');
+      strategic.push('Develop revenue diversification and optimization');
       strategic.push('Create balanced demand distribution strategy');
     }
 
