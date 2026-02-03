@@ -183,9 +183,9 @@ export class RevenueConcentrationExplainer {
 
     // Weekend concentration analysis
     if (weekendShare >= 75) {
-      factors.push(`Extreme weekend dependency: ${weekendShare.toFixed(1)}% concentration creates severe vulnerability`);
+      factors.push(`Extreme weekend concentration: ${weekendShare.toFixed(1)}% dependency creates severe vulnerability`);
     } else if (weekendShare >= 65) {
-      factors.push(`High weekend dependency: ${weekendShare.toFixed(1)}% concentration indicates significant risk`);
+      factors.push(`High weekend concentration: ${weekendShare.toFixed(1)}% dependency indicates significant risk`);
     } else if (weekendShare >= 55) {
       factors.push(`Moderate weekend concentration: ${weekendShare.toFixed(1)}% indicates emerging risk pattern`);
     }
