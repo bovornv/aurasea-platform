@@ -11,6 +11,7 @@
     "test:weekend-weekday": "vitest run weekend-weekday",
     "test:capacity-utilization": "vitest run capacity-utilization",
     "test:revenue-concentration": "vitest run revenue-concentration",
+    "test:seasonality-risk": "vitest run seasonality-risk",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {

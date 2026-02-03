@@ -17,7 +17,8 @@
     "test:demand-drop": "vitest run demand-drop",
     "test:weekend-weekday": "vitest run weekend-weekday",
     "test:capacity-utilization": "vitest run capacity-utilization",
-    "test:revenue-concentration": "vitest run revenue-concentration"
+    "test:revenue-concentration": "vitest run revenue-concentration",
+    "test:seasonality-risk": "vitest run seasonality-risk"
   },
   "devDependencies": {
     "@types/node": "^25.0.10",
