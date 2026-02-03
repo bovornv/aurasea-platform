@@ -194,14 +194,14 @@ export class RevenueConcentrationRule {
           recommendations: top5Share >= 65
             ? 'Diversify revenue across more days through dynamic pricing and promotions'
             : top5Share >= 55
-            ? 'Implement revenue smoothing strategies and demand spreading'
-            : 'Monitor revenue distribution and consider demand leveling'
+            ? 'Implement revenue smoothing strategies and demand spreading through dynamic pricing'
+            : 'Monitor revenue distribution and consider demand leveling with dynamic pricing'
         };
 
       case 'both':
         return {
           message: `Dual concentration risk: ${weekendShare.toFixed(1)}% weekend share and ${top5Share.toFixed(1)}% top-day concentration`,
-          recommendations: 'Implement comprehensive revenue diversification strategy across time periods'
+          recommendations: 'Implement comprehensive revenue diversification strategy with dynamic pricing across time periods'
         };
 
       default:
