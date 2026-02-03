@@ -9,6 +9,7 @@
     "test:watch": "vitest",
     "test:demand-drop": "vitest run demand-drop",
     "test:weekend-weekday": "vitest run weekend-weekday",
+    "test:capacity-utilization": "vitest run capacity-utilization",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {

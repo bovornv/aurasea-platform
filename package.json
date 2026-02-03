@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:demand-drop": "vitest run demand-drop",
-    "test:weekend-weekday": "vitest run weekend-weekday"
+    "test:weekend-weekday": "vitest run weekend-weekday",
+    "test:capacity-utilization": "vitest run capacity-utilization"
   },
   "devDependencies": {
     "@types/node": "^25.0.10",
