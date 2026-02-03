@@ -28,56 +28,20 @@ export class SeasonalityRiskRule {
 
     // Aggregate revenue by month
     const monthlyRevenue = this.aggregateMonthlyRevenue(recentSignals);
+    const monthlyValues = Object.values(monthlyRevenue);
     
-    // Create immutable array of raw monthly totals with chronological month numbers
-    // Use insertion order from Object.keys() which preserves the order months were first encountered
-    // aggregateMonthlyRevenue processes signals in order (newest to oldest), so insertion order = dataset order
-    const monthKeys = Object.keys(monthlyRevenue);
-    
-    // Create raw monthly totals array preserving insertion order (newest first)
-    const rawMonthlyTotals: Array<{ month: number; revenue: number }> = [];
-    monthKeys.forEach((key, index) => {
-      rawMonthlyTotals.push({
-        month: index + 1, // 1-based month number (Month 1 = first month encountered = newest, Month 2 = second, etc.)
-        revenue: monthlyRevenue[key]
-      });
-    });
-    
-    // Early validation checks
-    if (rawMonthlyTotals.length < 3 || rawMonthlyTotals.some(item => item.revenue <= 0)) {
-      return null;
-    }
-    
-    // Extract raw revenue values for calculations
-    const rawRevenueValues = rawMonthlyTotals.map(item => item.revenue);
-    
-    // Calculate max and min from raw monthly totals ONLY
-    const maxMonthlyRevenue = Math.max(...rawRevenueValues);
-    const minMonthlyRevenue = Math.min(...rawRevenueValues);
-    
-    // Early return: return null if minMonthlyRevenue is 0
-    if (minMonthlyRevenue === 0) {
-      return null;
-    }
-    
-    // Compute total revenue across all months
-    const totalRevenue = rawRevenueValues.reduce((sum, val) => sum + val, 0);
-    
-    // Early return: return null if totalRevenue === 0
-    if (totalRevenue === 0) {
+    if (monthlyValues.length < 3 || monthlyValues.some(val => val <= 0)) {
       return null;
     }
 
-    // Compute averageMonthlyRevenue = mean of all monthly totals (normalized average)
-    const averageMonthlyRevenue = rawRevenueValues.reduce((sum, val) => sum + val, 0) / rawRevenueValues.length;
+    // Calculate seasonality metrics
+    const maxMonthlyRevenue = Math.max(...monthlyValues);
+    const minMonthlyRevenue = Math.min(...monthlyValues);
+    const seasonalityRatio = maxMonthlyRevenue / minMonthlyRevenue;
 
-    // Compute seasonalityRatio = maxMonthlyRevenue / averageMonthlyRevenue
-    // Used for informational and warning severity levels
-    const seasonalityRatio = averageMonthlyRevenue > 0 ? maxMonthlyRevenue / averageMonthlyRevenue : 0;
-    
-    // Compute criticalRatio = maxMonthlyRevenue / minMonthlyRevenue
-    // Used for critical severity level check (uses raw max/min)
-    const criticalRatio = maxMonthlyRevenue / minMonthlyRevenue;
+    // Find peak and low months
+    const peakMonth = Object.keys(monthlyRevenue).find(month => monthlyRevenue[month] === maxMonthlyRevenue) || 'Unknown';
+    const lowMonth = Object.keys(monthlyRevenue).find(month => monthlyRevenue[month] === minMonthlyRevenue) || 'Unknown';
     
     // Early return for stable seasonal patterns (ratio < 2.0)
     if (seasonalityRatio < 2.0) {
@@ -89,14 +53,6 @@ export class SeasonalityRiskRule {
     const standardDeviation = Math.sqrt(variance);
     const coefficientOfVariation = averageMonthlyRevenue > 0 ? standardDeviation / averageMonthlyRevenue : 0;
 
-    // Find peak and low months using ONLY the raw monthly totals array
-    // Do NOT use normalized, sorted, or filtered arrays
-    const peakMonthItem = rawMonthlyTotals.find(item => item.revenue === maxMonthlyRevenue);
-    const lowMonthItem = rawMonthlyTotals.find(item => item.revenue === minMonthlyRevenue);
-    
-    // Use the original chronological month number from rawMonthlyTotals
-    const peakMonth = peakMonthItem ? `Month ${peakMonthItem.month}` : 'Unknown';
-    const lowMonth = lowMonthItem ? `Month ${lowMonthItem.month}` : 'Unknown';
 
     // Determine severity based on seasonality ratio
     // Use seasonalityRatio (max/average) for all severity levels to match test expectations
@@ -111,7 +67,7 @@ export class SeasonalityRiskRule {
       'medium-term'; // informational
 
     // Calculate confidence
-    const confidence = this.calculateConfidence(recentSignals.length, rawMonthlyTotals.length);
+    const confidence = this.calculateConfidence(recentSignals.length, monthlyValues.length);
 
     // Generate message and recommendations (pass severity to ensure message reflects assigned severity)
     const { message, recommendations } = this.generateMessageAndRecommendations(
@@ -167,24 +123,11 @@ export class SeasonalityRiskRule {
   private aggregateMonthlyRevenue(signals: Array<{ timestamp: Date; dailyRevenue: number }>) {
     const monthlyRevenue: { [key: string]: number } = {};
     
-    // Group revenue by calendar month using year + month
-    // Each day's revenue contributes exactly once to its correct calendar month
-    // Monthly totals represent true per-month revenue (no rolling windows, no normalization)
     signals.forEach(signal => {
-      // Extract year and month from timestamp
-      const year = signal.timestamp.getFullYear();
-      const month = signal.timestamp.getMonth(); // Returns 0-11 (January = 0, December = 11)
-      
-      // Create unique key for year-month combination (format: "2024-01", "2024-02", etc.)
-      const monthKey = `${year}-${(month + 1).toString().padStart(2, '0')}`;
-      
-      // Initialize month total if this is the first day for this month
+      const monthKey = `Month ${signal.timestamp.getMonth() + 1}`;
       if (!monthlyRevenue[monthKey]) {
         monthlyRevenue[monthKey] = 0;
       }
-      
-      // Add this day's revenue exactly once to its calendar month
-      // No normalization, no scaling, no rolling windows - just sum of daily revenues
       monthlyRevenue[monthKey] += signal.dailyRevenue;
     });
     

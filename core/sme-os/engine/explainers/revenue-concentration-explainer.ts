@@ -303,9 +303,9 @@ export class RevenueConcentrationExplainer {
     }
 
     if (concentrationType === 'general_concentration') {
-      immediate.push('Analyze revenue distribution patterns');
+      immediate.push('Analyze seasonal revenue patterns');
       immediate.push('Identify concentration risk factors');
-      strategic.push('Develop revenue diversification strategy');
+      strategic.push('Develop seasonal planning strategy');
       strategic.push('Implement risk mitigation planning');
     }
 
