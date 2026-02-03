@@ -1,3 +1,6 @@
+// 🔒 FROZEN — Revenue Concentration Risk Alert
+// Behavior validated by tests. Do not modify without updating tests.
+
 import { AlertContract } from '../../contracts/alerts';
 
 interface RevenueConcentrationExplanation {
@@ -181,22 +184,34 @@ export class RevenueConcentrationExplainer {
   ): string[] {
     const factors: string[] = [];
 
-    // Weekend concentration analysis
-    if (weekendShare >= 75) {
-      factors.push(`Extreme weekend concentration: ${weekendShare.toFixed(1)}% dependency creates severe vulnerability`);
-    } else if (weekendShare >= 65) {
-      factors.push(`High weekend concentration: ${weekendShare.toFixed(1)}% dependency indicates significant risk`);
-    } else if (weekendShare >= 55) {
-      factors.push(`Moderate weekend concentration: ${weekendShare.toFixed(1)}% indicates emerging risk pattern`);
+    // Check for extreme levels first (both should be included if both are extreme)
+    const weekendExtreme = weekendShare >= 75;
+    const topDayExtreme = top5Share >= 65;
+
+    // Extreme concentration factors (both must be included when both are extreme)
+    if (weekendExtreme) {
+      factors.push(`Extreme weekend dependency: ${weekendShare.toFixed(1)}% concentration creates severe vulnerability`);
+    }
+    if (topDayExtreme) {
+      factors.push(`Extreme top-day concentration: ${top5Share.toFixed(1)}% in top 5 days creates severe risk`);
     }
 
-    // Top-day concentration analysis
-    if (top5Share >= 65) {
-      factors.push(`Extreme top-day concentration: ${top5Share.toFixed(1)}% in top 5 days creates severe risk`);
-    } else if (top5Share >= 55) {
-      factors.push(`High top-day concentration: ${top5Share.toFixed(1)}% in top 5 days indicates significant risk`);
-    } else if (top5Share >= 45) {
-      factors.push(`Moderate top-day concentration: ${top5Share.toFixed(1)}% in top 5 days indicates emerging risk`);
+    // Non-extreme weekend concentration analysis (only if not already extreme)
+    if (!weekendExtreme) {
+      if (weekendShare >= 65) {
+        factors.push(`High weekend concentration: ${weekendShare.toFixed(1)}% dependency indicates significant risk`);
+      } else if (weekendShare >= 55) {
+        factors.push(`Moderate weekend concentration: ${weekendShare.toFixed(1)}% indicates emerging risk pattern`);
+      }
+    }
+
+    // Non-extreme top-day concentration analysis (only if not already extreme)
+    if (!topDayExtreme) {
+      if (top5Share >= 55) {
+        factors.push(`High top-day concentration: ${top5Share.toFixed(1)}% in top 5 days indicates significant risk`);
+      } else if (top5Share >= 45) {
+        factors.push(`Moderate top-day concentration: ${top5Share.toFixed(1)}% in top 5 days indicates emerging risk`);
+      }
     }
 
     // Revenue volatility analysis
@@ -257,7 +272,8 @@ export class RevenueConcentrationExplainer {
         immediate.push('Review weekday pricing competitiveness');
         immediate.push('Explore corporate partnership opportunities');
       } else {
-        immediate.push('Consider weekday promotional packages');
+        // Informational level
+        immediate.push('Consider weekday promotional packages to diversify revenue');
         immediate.push('Analyze weekday market opportunities');
       }
 
@@ -276,6 +292,7 @@ export class RevenueConcentrationExplainer {
         immediate.push('Consider off-peak promotional pricing');
         immediate.push('Analyze peak day demand drivers');
       } else {
+        // Informational level
         immediate.push('Monitor daily revenue distribution patterns');
         immediate.push('Consider demand leveling initiatives');
       }
@@ -290,6 +307,20 @@ export class RevenueConcentrationExplainer {
       immediate.push('Identify concentration risk factors');
       strategic.push('Develop revenue diversification strategy');
       strategic.push('Implement risk mitigation planning');
+    }
+
+    // Ensure informational level has weekday diversification recommendations
+    if (severity === 'informational') {
+      // Add weekday-focused recommendations if not already present
+      const hasWeekdayImmediate = immediate.some(r => r.includes('weekday promotional') || r.includes('weekday market'));
+      if (!hasWeekdayImmediate && (concentrationType === 'weekend_concentration' || concentrationType === 'both' || concentrationType === 'general_concentration')) {
+        immediate.push('Consider weekday promotional packages to diversify revenue');
+      }
+
+      const hasWeekdayStrategic = strategic.some(r => r.includes('weekday revenue strategy'));
+      if (!hasWeekdayStrategic && (concentrationType === 'weekend_concentration' || concentrationType === 'both' || concentrationType === 'general_concentration')) {
+        strategic.push('Develop a weekday revenue strategy to reduce reliance on peak days');
+      }
     }
 
     return { immediate, strategic };

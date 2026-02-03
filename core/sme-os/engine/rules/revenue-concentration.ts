@@ -1,3 +1,6 @@
+// 🔒 FROZEN — Revenue Concentration Risk Alert
+// Behavior validated by tests. Do not modify without updating tests.
+
 import { InputContract } from '../../contracts/inputs';
 import { AlertContract } from '../../contracts/alerts';
 
@@ -184,17 +187,20 @@ export class RevenueConcentrationRule {
     weekendShare: number,
     top5Share: number
   ): { message: string; recommendations: string } {
-    switch (concentrationRisk) {
-      case 'weekend_concentration':
-        const message = `High weekend revenue concentration: ${weekendShare.toFixed(1)}% of revenue from weekends creates vulnerability`;
-        const recommendations = weekendShare >= 75
-          ? 'Implement weekday promotions and business travel packages immediately'
-          : weekendShare >= 65
-          ? 'Develop weekday revenue streams and corporate partnerships'
-          : 'Consider weekday market expansion opportunities';
-        return { message, recommendations };
+    // Determine severity for dual concentration check
+    const severity = this.determineSeverity(weekendShare, top5Share);
+    const weekendHigh = weekendShare >= 55;
+    const topDayHigh = top5Share >= 45;
 
-      case 'top_day_concentration':
+    // Priority 1: Dual concentration (both high) - use dual message if critical, otherwise prioritize top-day
+    if (concentrationRisk === 'both') {
+      if (severity === 'critical') {
+        return {
+          message: `Dual concentration risk: ${weekendShare.toFixed(1)}% weekend share and ${top5Share.toFixed(1)}% top-day concentration`,
+          recommendations: 'Implement comprehensive revenue diversification strategy with dynamic pricing across time periods'
+        };
+      } else {
+        // For warning/informational, prioritize top-day message
         return {
           message: `High top-day revenue concentration: ${top5Share.toFixed(1)}% of revenue from top 5 days creates risk`,
           recommendations: top5Share >= 65
@@ -203,35 +209,35 @@ export class RevenueConcentrationRule {
             ? 'Implement revenue smoothing strategies and demand spreading through dynamic pricing'
             : 'Monitor revenue distribution and consider demand leveling with dynamic pricing'
         };
-
-      case 'both':
-        // Only use "Dual concentration risk" for critical severity
-        const severity = this.determineSeverity(weekendShare, top5Share);
-        if (severity === 'critical') {
-          return {
-            message: `Dual concentration risk: ${weekendShare.toFixed(1)}% weekend share and ${top5Share.toFixed(1)}% top-day concentration`,
-            recommendations: 'Implement comprehensive revenue diversification strategy with dynamic pricing across time periods'
-          };
-        } else {
-          // For warning level, prioritize the higher concentration
-          if (top5Share >= weekendShare) {
-            return {
-              message: `High top-day revenue concentration: ${top5Share.toFixed(1)}% of revenue from top 5 days creates risk`,
-              recommendations: 'Implement revenue smoothing strategies and demand spreading through dynamic pricing'
-            };
-          } else {
-            return {
-              message: `High weekend revenue concentration: ${weekendShare.toFixed(1)}% of revenue from weekends creates vulnerability`,
-              recommendations: 'Develop weekday revenue streams and corporate partnerships'
-            };
-          }
-        }
-
-      default:
-        return {
-          message: 'Revenue concentration detected',
-          recommendations: 'Monitor revenue distribution patterns'
-        };
+      }
+    }
+    // Priority 2: Top-day concentration only
+    else if (concentrationRisk === 'top_day_concentration') {
+      return {
+        message: `High top-day revenue concentration: ${top5Share.toFixed(1)}% of revenue from top 5 days creates risk`,
+        recommendations: top5Share >= 65
+          ? 'Diversify revenue across more days through dynamic pricing and promotions'
+          : top5Share >= 55
+          ? 'Implement revenue smoothing strategies and demand spreading through dynamic pricing'
+          : 'Monitor revenue distribution and consider demand leveling with dynamic pricing'
+      };
+    }
+    // Priority 3: Weekend concentration only
+    else if (concentrationRisk === 'weekend_concentration') {
+      const message = `High weekend revenue concentration: ${weekendShare.toFixed(1)}% of revenue from weekends creates vulnerability`;
+      const recommendations = weekendShare >= 75
+        ? 'Implement weekday promotions and business travel packages immediately'
+        : weekendShare >= 65
+        ? 'Develop weekday revenue streams and corporate partnerships'
+        : 'Consider weekday market expansion opportunities';
+      return { message, recommendations };
+    }
+    // Default fallback
+    else {
+      return {
+        message: 'Revenue concentration detected',
+        recommendations: 'Monitor revenue distribution patterns'
+      };
     }
   }
 
