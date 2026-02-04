@@ -13,6 +13,7 @@
     "test:revenue-concentration": "vitest run revenue-concentration",
     "test:seasonality-risk": "vitest run seasonality-risk",
     "test:cash-flow-volatility": "vitest run cash-flow-volatility",
+    "test:liquidity-runway-risk": "vitest run liquidity-runway-risk",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
