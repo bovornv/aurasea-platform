@@ -21,7 +21,7 @@ const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
 /** Columns allowed in accommodation_daily_metrics. */
 const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
   'branch_id', 'metric_date', 'revenue', 'cost', 'cash_balance', 'additional_cost_today',
-  'rooms_sold', 'rooms_available', 'adr', 'accommodation_staff',
+  'rooms_sold', 'rooms_available', 'adr', 'accommodation_staff', 'monthly_fixed_cost',
 ]);
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
@@ -112,6 +112,10 @@ export async function saveDailyMetric(
     const table = getWriteTable(metric);
     const allowedColumns = table === TABLE_FNB ? ALLOWED_COLUMNS_FNB : ALLOWED_COLUMNS_ACCOMMODATION;
     const payload = buildPayloadForTable(dbFormat, allowedColumns);
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[DailyMetricsService] Saving metrics:', payload);
+    }
 
     const { error } = await supabase
       .from(table)

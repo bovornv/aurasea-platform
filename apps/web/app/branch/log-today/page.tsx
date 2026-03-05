@@ -320,9 +320,12 @@ export default function LogTodayPage() {
         cashBalance: isOwner && financeData.cashBalance ? safeNumber(financeData.cashBalance, undefined) : undefined,
       };
       
-      // Accommodation fields
+      // Accommodation fields (rooms_available, monthly_fixed_cost, staff_count)
       if (isAccommodation) {
         dailyMetric.roomsSold = safeNumber(todayData.roomsSold, undefined);
+        dailyMetric.roomsAvailable = safeNumber(financeData.totalRoomsAvailable, undefined) ?? (branchSetup as any)?.rooms_available;
+        dailyMetric.monthlyFixedCost = safeNumber(financeData.monthlyFixedCost, undefined) ?? (branchSetup as any)?.monthly_fixed_cost;
+        dailyMetric.accommodationStaff = safeNumber(financeData.accommodationStaffCount, undefined) ?? (branchSetup as any)?.accommodation_staff_count;
       }
       
       // F&B fields

@@ -18,9 +18,10 @@ export interface DailyMetric {
   
   // Accommodation Fields (nullable)
   roomsSold?: number;
-  roomsAvailable?: number; // Total rooms capacity (from branches setup)
+  roomsAvailable?: number;
   adr?: number; // Average Daily Rate (THB)
-  accommodationStaff?: number; // From branches setup
+  accommodationStaff?: number;
+  monthlyFixedCost?: number;
   
   // F&B Fields (nullable)
   customers?: number;
@@ -52,9 +53,10 @@ export interface DailyMetricInput {
 
   // Accommodation Fields (optional)
   roomsSold?: number;
-  roomsAvailable?: number; // From branches setup, not daily input
+  roomsAvailable?: number; // จำนวนห้องทั้งหมด
   adr?: number;
-  accommodationStaff?: number; // From branches setup, not daily input
+  accommodationStaff?: number; // จำนวนพนักงานที่พัก (staff_count)
+  monthlyFixedCost?: number; // อัปเดตต้นทุนคงที่รายเดือน
 
   // F&B Fields (optional)
   customers?: number;
@@ -123,9 +125,10 @@ export interface DailyMetricDb {
   
   // Accommodation Fields (nullable)
   rooms_sold?: number | null;
-  rooms_available?: number | null; // From branches setup
-  adr?: number | null; // Average Daily Rate
-  accommodation_staff?: number | null; // From branches setup
+  rooms_available?: number | null;
+  adr?: number | null;
+  accommodation_staff?: number | null; // staff_count
+  monthly_fixed_cost?: number | null;
   
   // F&B Fields (nullable)
   customers?: number | null;
@@ -159,6 +162,7 @@ export function dailyMetricFromDb(db: DailyMetricDb): DailyMetric {
     roomsAvailable: db.rooms_available ? Number(db.rooms_available) : undefined,
     adr: db.adr ? Number(db.adr) : undefined,
     accommodationStaff: db.accommodation_staff ? Number(db.accommodation_staff) : undefined,
+    monthlyFixedCost: db.monthly_fixed_cost != null ? Number(db.monthly_fixed_cost) : undefined,
     customers: db.customers ? Number(db.customers) : undefined,
     avgTicket: db.avg_ticket ? Number(db.avg_ticket) : undefined,
     top3MenuRevenue: db.top3_menu_revenue !== null && db.top3_menu_revenue !== undefined ? Number(db.top3_menu_revenue) : undefined,
@@ -180,9 +184,10 @@ export function dailyMetricToDb(metric: DailyMetricInput): Omit<DailyMetricDb, '
     additional_cost_today: metric.additionalCostToday != null ? metric.additionalCostToday : null,
     cash_balance: metric.cashBalance ?? null, // Optional - owner can update weekly
     rooms_sold: metric.roomsSold ?? null,
-    rooms_available: metric.roomsAvailable ?? null, // From branches setup
+    rooms_available: metric.roomsAvailable ?? null,
     adr: metric.adr ?? null,
-    accommodation_staff: metric.accommodationStaff ?? null, // From branches setup
+    accommodation_staff: metric.accommodationStaff ?? null,
+    monthly_fixed_cost: metric.monthlyFixedCost ?? null,
     customers: metric.customers ?? null,
     avg_ticket: metric.avgTicket ?? null,
     top3_menu_revenue: metric.top3MenuRevenue !== undefined ? metric.top3MenuRevenue : null,
