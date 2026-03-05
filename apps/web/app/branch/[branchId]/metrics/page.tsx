@@ -358,10 +358,12 @@ export default function BranchMetricsPage() {
         calculatedRevenue += customers * avgTicket;
       }
       
-      // Save unified daily metric with canonical fields
+      // Save to branch-type table: accommodation_daily_metrics (hotel) or fnb_daily_metrics (restaurant)
+      const branchType = (branch as { moduleType?: string })?.moduleType === 'fnb' ? 'fnb' : (branch as { moduleType?: string })?.moduleType === 'accommodation' ? 'accommodation' : hasFnb ? 'fnb' : 'accommodation';
       await saveDailyMetric({
         branchId: branch.id,
         date: todayStr,
+        branchType,
         revenue: calculatedRevenue,
         cost: cost!,
         cashBalance: cashBalance!,

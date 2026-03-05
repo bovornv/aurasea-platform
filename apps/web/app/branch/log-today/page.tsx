@@ -339,8 +339,11 @@ export default function LogTodayPage() {
       const parsedAdditionalCost = todayData.additionalCostToday ? safeNumber(todayData.additionalCostToday, undefined) : undefined;
       dailyMetric.additionalCostToday = parsedAdditionalCost != null && parsedAdditionalCost >= 0 ? Math.round(parsedAdditionalCost) : 0;
       
-      // Save to database
-      const saveResult = await saveDailyMetric(dailyMetric);
+      // Save to database (branch type routes to accommodation_daily_metrics vs fnb_daily_metrics)
+      const saveResult = await saveDailyMetric({
+        ...dailyMetric,
+        branchType: moduleType === 'accommodation' ? 'accommodation' : moduleType === 'fnb' ? 'fnb' : undefined,
+      });
       
       // PART 4: Validate Log Today submission
       if (process.env.NODE_ENV === 'development' && saveResult) {

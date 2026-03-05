@@ -4,10 +4,10 @@
  * branchId must come from Supabase branches table (UUID). Mock ids (e.g. bg_*) are rejected.
  * No localStorage fallback; no default business/branch. Supabase only.
  *
- * When daily_metrics is a VIEW: writes target base tables to avoid PGRST204/view write errors.
- * - fnb_daily_metrics: restaurant/F&B metrics
- * - accommodation_daily_metrics: hotel/accommodation metrics
- * READS: Use daily_metrics (view) for analytics.
+ * Writes are routed by branch type:
+ * - hotel / accommodation → accommodation_daily_metrics
+ * - restaurant / fnb → fnb_daily_metrics
+ * Pass metric.branchType (or infer from metric fields). READS use daily_metrics (view) for analytics.
  */
 const DAILY_METRICS_READ = 'daily_metrics';
 const TABLE_FNB = 'fnb_daily_metrics';
@@ -44,8 +44,11 @@ function buildPayloadForTable(
   );
 }
 
-/** Decide which base table to write to from metric content (F&B vs accommodation). */
+/** Decide which base table to write to: by branch type (hotel/accommodation vs restaurant/fnb), else infer from metric content. */
 function getWriteTable(metric: DailyMetricInput): typeof TABLE_FNB | typeof TABLE_ACCOMMODATION {
+  const t = (metric.branchType ?? '').toLowerCase();
+  if (t === 'accommodation' || t === 'hotel') return TABLE_ACCOMMODATION;
+  if (t === 'fnb' || t === 'restaurant') return TABLE_FNB;
   const hasFnb =
     metric.customers !== undefined ||
     metric.avgTicket !== undefined ||

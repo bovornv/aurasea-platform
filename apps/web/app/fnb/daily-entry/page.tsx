@@ -125,6 +125,7 @@ export default function FnbDailyEntryPage() {
       const saved = await saveDailyMetric({
         branchId: branch.id,
         date: todayStr,
+        branchType: 'fnb',
         revenue: totalSales!,
         cost: totalOperatingCost!,
         cashBalance: cashBalance!,

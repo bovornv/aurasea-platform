@@ -32,25 +32,30 @@ export interface DailyMetric {
   createdAt: string; // ISO timestamp
 }
 
+/** Branch type for routing writes to accommodation_daily_metrics vs fnb_daily_metrics. */
+export type DailyMetricBranchType = 'accommodation' | 'fnb';
+
 /**
  * Daily metric input (for creating/updating)
  */
 export interface DailyMetricInput {
   branchId: string;
   date: string; // ISO date string (YYYY-MM-DD)
-  
+  /** Branch type: hotel/accommodation → accommodation_daily_metrics, restaurant/fnb → fnb_daily_metrics. Omit to infer from metric fields. */
+  branchType?: DailyMetricBranchType;
+
   // Shared Financial Fields (FINAL PRODUCTION SCHEMA)
   revenue: number; // Required
   cost?: number; // Optional (will be estimated if not provided)
   additionalCostToday?: number; // Optional THB - increases daily cost
   cashBalance?: number; // Optional (owner can update weekly)
-  
+
   // Accommodation Fields (optional)
   roomsSold?: number;
   roomsAvailable?: number; // From branches setup, not daily input
   adr?: number;
   accommodationStaff?: number; // From branches setup, not daily input
-  
+
   // F&B Fields (optional)
   customers?: number;
   avgTicket?: number;
