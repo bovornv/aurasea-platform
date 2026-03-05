@@ -3,11 +3,57 @@
  *
  * branchId must come from Supabase branches table (UUID). Mock ids (e.g. bg_*) are rejected.
  * No localStorage fallback; no default business/branch. Supabase only.
+ *
+ * When daily_metrics is a VIEW: writes target base tables to avoid PGRST204/view write errors.
+ * - fnb_daily_metrics: restaurant/F&B metrics
+ * - accommodation_daily_metrics: hotel/accommodation metrics
+ * READS: Use daily_metrics (view) for analytics.
  */
+const DAILY_METRICS_READ = 'daily_metrics';
+const TABLE_FNB = 'fnb_daily_metrics';
+const TABLE_ACCOMMODATION = 'accommodation_daily_metrics';
+
+/** Columns allowed in fnb_daily_metrics (avoids PGRST204 schema mismatch). */
+const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
+  'branch_id', 'metric_date', 'revenue', 'cost', 'cash_balance', 'additional_cost_today',
+  'customers', 'avg_ticket', 'top3_menu_revenue', 'fnb_staff', 'promo_spend',
+]);
+/** Columns allowed in accommodation_daily_metrics. */
+const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
+  'branch_id', 'metric_date', 'revenue', 'cost', 'cash_balance', 'additional_cost_today',
+  'rooms_sold', 'rooms_available', 'adr', 'accommodation_staff',
+]);
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import type { DailyMetric, DailyMetricInput } from '../../models/daily-metrics';
 import { dailyMetricFromDb, dailyMetricToDb } from '../../models/daily-metrics';
+
+/**
+ * Schema guard: strip undefined and restrict to allowed columns for the target table.
+ * Prevents PGRST204 errors from extra or mismatched columns.
+ */
+function buildPayloadForTable(
+  data: Record<string, unknown>,
+  allowedColumns: Set<string>
+): Record<string, unknown> {
+  const withoutUndefined = Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined)
+  );
+  return Object.fromEntries(
+    Object.entries(withoutUndefined).filter(([key]) => allowedColumns.has(key))
+  );
+}
+
+/** Decide which base table to write to from metric content (F&B vs accommodation). */
+function getWriteTable(metric: DailyMetricInput): typeof TABLE_FNB | typeof TABLE_ACCOMMODATION {
+  const hasFnb =
+    metric.customers !== undefined ||
+    metric.avgTicket !== undefined ||
+    metric.top3MenuRevenue !== undefined ||
+    metric.fnbStaff !== undefined ||
+    metric.promoSpend !== undefined;
+  return hasFnb ? TABLE_FNB : TABLE_ACCOMMODATION;
+}
 
 // Simple cache to prevent duplicate calls within 5 seconds
 const metricsCache = new Map<string, { data: DailyMetric[]; timestamp: number; isEmpty?: boolean }>();
@@ -59,10 +105,14 @@ export async function saveDailyMetric(
   if (!supabase) return false;
 
   try {
-    const dbFormat = dailyMetricToDb(metric);
+    const dbFormat = dailyMetricToDb(metric) as Record<string, unknown>;
+    const table = getWriteTable(metric);
+    const allowedColumns = table === TABLE_FNB ? ALLOWED_COLUMNS_FNB : ALLOWED_COLUMNS_ACCOMMODATION;
+    const payload = buildPayloadForTable(dbFormat, allowedColumns);
+
     const { error } = await supabase
-      .from('daily_metrics')
-      .upsert(dbFormat as never, {
+      .from(table)
+      .upsert(payload as never, {
         onConflict: 'branch_id,metric_date',
       });
 
@@ -146,7 +196,7 @@ export async function getDailyMetrics(
     })() : undefined;
     
     let query = supabase
-      .from('daily_metrics')
+      .from(DAILY_METRICS_READ)
       .select('*')
       .eq('branch_id', branchId);
     
