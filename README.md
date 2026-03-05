@@ -15,7 +15,8 @@ Decision intelligence platform with SME OS core and vertical applications.
 ## Structure
 
 - `core/sme-os/` - Core intelligence engine (protected)
-- `apps/` - Vertical applications (hospitality-ai, retail-ai)
+- `apps/` - Vertical applications (web, retail-ai)
+  - Owner Summary functionality is now integrated into `web` at `/owner-summary`
 - `packages/` - Shared packages (ui, adapters, i18n)
 - `docs/` - Documentation
 - `infra/` - Infrastructure configuration
@@ -33,8 +34,8 @@ Decision intelligence platform with SME OS core and vertical applications.
 # Install dependencies
 npm install
 
-# Run Hospitality AI development server
-cd apps/hospitality-ai
+# Run web application development server
+cd apps/web
 npm run dev
 ```
 

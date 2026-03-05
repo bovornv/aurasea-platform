@@ -1,5 +1,6 @@
 import { InputContract } from '../../contracts/inputs';
 import { AlertContract } from '../../contracts/alerts';
+import { getBusinessType, getThresholds, isThaiSMEContext } from '../../config/threshold-profiles';
 
 /**
  * Capacity Utilization Alert Rule
@@ -27,11 +28,27 @@ export class CapacityUtilizationRule {
     }
 
     // Calculate key metrics
-    const occupancyRates = recentSignals.map(s => s.occupancyRate);
+    const occupancyRates = recentSignals.map(s => s.occupancyRate).filter(r => !isNaN(r) && isFinite(r));
+    
+    if (occupancyRates.length === 0) {
+      return null;
+    }
+    
     const avgOccupancy = occupancyRates.reduce((sum, rate) => sum + rate, 0) / occupancyRates.length;
+    
+    // PART 3: Explicit NaN/Infinity protection
+    if (isNaN(avgOccupancy) || !isFinite(avgOccupancy)) {
+      return null;
+    }
+    
     const peakDays = occupancyRates.filter(rate => rate >= 0.95).length;
     const lowDays = occupancyRates.filter(rate => rate < 0.40).length;
     const variance = this.calculateVariance(occupancyRates, avgOccupancy);
+    
+    // PART 3: Explicit NaN/Infinity protection for variance
+    if (isNaN(variance) || !isFinite(variance)) {
+      return null;
+    }
 
     // Detect utilization issues
     const utilizationType = this.detectUtilizationType(avgOccupancy, peakDays);
@@ -40,8 +57,12 @@ export class CapacityUtilizationRule {
       return null;
     }
 
-    // Determine severity
-    const severity = this.determineSeverity(avgOccupancy, peakDays, utilizationType);
+    // Determine business type and load thresholds
+    const businessType = getBusinessType(input);
+    const useThaiSME = isThaiSMEContext(input);
+    
+    // Determine severity using profile thresholds
+    const severity = this.determineSeverity(avgOccupancy, peakDays, utilizationType, useThaiSME, businessType);
 
     // Determine time horizon
     const timeHorizon = severity === 'critical' ? 'immediate' : 
@@ -110,7 +131,9 @@ export class CapacityUtilizationRule {
   private determineSeverity(
     avgOccupancy: number,
     peakDays: number,
-    utilizationType: string
+    utilizationType: string,
+    useThaiSME?: boolean,
+    businessType?: 'accommodation' | 'fnb'
   ): 'critical' | 'warning' | 'informational' {
     if (utilizationType === 'overutilized') {
       // Critical: Very high average OR many peak days
@@ -125,6 +148,23 @@ export class CapacityUtilizationRule {
     }
 
     if (utilizationType === 'underutilized') {
+      if (useThaiSME && businessType === 'accommodation') {
+        const thresholds = getThresholds('accommodation') as { occupancyCritical?: number; occupancyWarning?: number };
+        const criticalOccupancy = thresholds.occupancyCritical ?? 0.35;
+        const warningOccupancy = thresholds.occupancyWarning ?? 0.45;
+        
+        // Critical: Very low average (more sensitive)
+        if (avgOccupancy < criticalOccupancy) {
+          return 'critical';
+        }
+        // Warning: Low average (more sensitive)
+        if (avgOccupancy < warningOccupancy) {
+          return 'warning';
+        }
+        return 'informational';
+      }
+      
+      // Default thresholds
       // Critical: Very low average
       if (avgOccupancy < 0.40) {
         return 'critical';
@@ -160,9 +200,26 @@ export class CapacityUtilizationRule {
   }
 
   private calculateVariance(occupancyRates: number[], mean: number): number {
+    if (occupancyRates.length === 0) {
+      return 0;
+    }
+    
     const squaredDiffs = occupancyRates.map(rate => Math.pow(rate - mean, 2));
     const variance = squaredDiffs.reduce((sum, diff) => sum + diff, 0) / occupancyRates.length;
-    return Math.sqrt(variance); // Return standard deviation
+    
+    // PART 3: Explicit NaN/Infinity protection
+    if (isNaN(variance) || !isFinite(variance) || variance < 0) {
+      return 0;
+    }
+    
+    const stdDev = Math.sqrt(variance);
+    
+    // PART 3: Explicit NaN/Infinity protection
+    if (isNaN(stdDev) || !isFinite(stdDev)) {
+      return 0;
+    }
+    
+    return stdDev; // Return standard deviation
   }
 
   private generateMessageAndRecommendations(

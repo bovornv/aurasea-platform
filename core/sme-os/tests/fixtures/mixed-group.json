@@ -1,0 +1,96 @@
+{
+  "businessGroup": {
+    "id": "bg-mixed-group-001",
+    "name": "Diversified Hospitality Group",
+    "createdAt": "2023-11-01T00:00:00.000Z",
+    "updatedAt": "2024-02-20T00:00:00.000Z"
+  },
+  "branches": [
+    {
+      "id": "br-mixed-hotel-001",
+      "businessGroupId": "bg-mixed-group-001",
+      "branchName": "Grand Resort - Koh Samui",
+      "businessType": "HOTEL_RESORT",
+      "location": {
+        "city": "Koh Samui",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": true,
+      "createdAt": "2023-11-01T00:00:00.000Z",
+      "updatedAt": "2023-11-01T00:00:00.000Z"
+    },
+    {
+      "id": "br-mixed-hotel-002",
+      "businessGroupId": "bg-mixed-group-001",
+      "branchName": "Boutique Hotel - Krabi",
+      "businessType": "HOTEL_WITH_CAFE",
+      "location": {
+        "city": "Krabi",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": false,
+      "createdAt": "2023-11-15T00:00:00.000Z",
+      "updatedAt": "2023-11-15T00:00:00.000Z"
+    },
+    {
+      "id": "br-mixed-cafe-001",
+      "businessGroupId": "bg-mixed-group-001",
+      "branchName": "Seaside Café - Phuket",
+      "businessType": "CAFE_RESTAURANT",
+      "location": {
+        "city": "Phuket",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": false,
+      "createdAt": "2023-12-01T00:00:00.000Z",
+      "updatedAt": "2023-12-01T00:00:00.000Z"
+    },
+    {
+      "id": "br-mixed-cafe-002",
+      "businessGroupId": "bg-mixed-group-001",
+      "branchName": "Riverside Restaurant - Bangkok",
+      "businessType": "CAFE_RESTAURANT",
+      "location": {
+        "city": "Bangkok",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": false
+      },
+      "isDefault": false,
+      "createdAt": "2024-01-10T00:00:00.000Z",
+      "updatedAt": "2024-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "br-mixed-hotel-003",
+      "businessGroupId": "bg-mixed-group-001",
+      "branchName": "City Hotel - Bangkok",
+      "businessType": "HOTEL_RESORT",
+      "location": {
+        "city": "Bangkok",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": false,
+      "createdAt": "2024-02-01T00:00:00.000Z",
+      "updatedAt": "2024-02-01T00:00:00.000Z"
+    }
+  ],
+  "description": "Business group with mixed business types (hotels and cafés)"
+}

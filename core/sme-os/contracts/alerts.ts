@@ -28,4 +28,7 @@ export interface AlertContract {
     decisionId: string;
     timestamp: Date;
   }>;
+  // Multi-branch support (backward compatible - optional fields)
+  branchId?: string;
+  businessGroupId?: string;
 }

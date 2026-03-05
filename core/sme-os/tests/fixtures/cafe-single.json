@@ -1,0 +1,28 @@
+{
+  "businessGroup": {
+    "id": "bg-cafe-single-001",
+    "name": "Artisan Coffee",
+    "createdAt": "2024-02-01T00:00:00.000Z",
+    "updatedAt": "2024-02-01T00:00:00.000Z"
+  },
+  "branches": [
+    {
+      "id": "br-cafe-single-001",
+      "businessGroupId": "bg-cafe-single-001",
+      "branchName": "Artisan Coffee - Central",
+      "businessType": "CAFE_RESTAURANT",
+      "location": {
+        "city": "Chiang Mai",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": true,
+      "createdAt": "2024-02-01T00:00:00.000Z",
+      "updatedAt": "2024-02-01T00:00:00.000Z"
+    }
+  ],
+  "description": "Single café/restaurant business with one location"
+}

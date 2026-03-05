@@ -27,26 +27,41 @@ describe('CashFlowVolatilityRule', () => {
     };
   });
 
-  const generateVolatileRevenueSignals = (
+  /**
+   * Generate deterministic revenue signals with guaranteed coefficient of variation (CV)
+   * Uses alternating high/low pattern to achieve exact CV
+   * CV = standardDeviation / mean
+   * All signals are within the last 60+ days to ensure they pass date filtering
+   */
+  const generateDeterministicRevenueSignals = (
     meanRevenue: number = 1000,
     coefficientOfVariation: number = 0.3,
     days: number = 70
   ) => {
     const signals = [];
     const today = new Date();
+    
+    // Calculate standard deviation needed for target CV
     const standardDeviation = meanRevenue * coefficientOfVariation;
     
+    // Create alternating pattern: [low, high, low, high, ...]
+    // For mean = M and SD = S, use values [M - S, M + S]
+    // This gives exact CV = S / M
+    const lowValue = meanRevenue - standardDeviation;
+    const highValue = meanRevenue + standardDeviation;
+    
+    // Generate signals going backwards from today
+    // All signals will be within the valid date range for the rule
     for (let i = 0; i < days; i++) {
       const signalDate = new Date(today);
       signalDate.setDate(today.getDate() - i);
       
-      // Generate revenue with specified CV using normal distribution approximation
-      const randomFactor = (Math.random() + Math.random() + Math.random() + Math.random()) / 4; // Approximate normal
-      const revenue = meanRevenue + (randomFactor - 0.5) * standardDeviation * 4;
+      // Alternate between low and high values
+      const revenue = i % 2 === 0 ? lowValue : highValue;
       
       signals.push({
         timestamp: signalDate,
-        dailyRevenue: Math.max(0, revenue)
+        dailyRevenue: Math.max(0, revenue) // Ensure non-negative
       });
     }
 
@@ -60,7 +75,7 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should return null when fewer than 60 days of revenue', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.4, 50);
+      const signals = generateDeterministicRevenueSignals(1000, 0.4, 50);
       const result = rule.evaluate(mockInput, signals);
       expect(result).toBeNull();
     });
@@ -76,14 +91,16 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should return null when coefficient of variation < 0.25', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.2, 70); // Low volatility
+      // Use CV = 0.2 (below threshold) - deterministic
+      const signals = generateDeterministicRevenueSignals(1000, 0.2, 70);
 
       const result = rule.evaluate(mockInput, signals);
       expect(result).toBeNull();
     });
 
     it('should detect informational volatility risk (CV 0.25-0.5)', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.35, 70);
+      // Use CV = 0.35 (within informational range 0.25-0.49) - deterministic
+      const signals = generateDeterministicRevenueSignals(1000, 0.35, 70);
 
       const result = rule.evaluate(mockInput, signals);
       
@@ -96,7 +113,8 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should detect warning volatility risk (CV 0.5-0.75)', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.6, 70);
+      // Use CV = 0.6 (within warning range 0.5-0.74) - deterministic
+      const signals = generateDeterministicRevenueSignals(1000, 0.6, 70);
 
       const result = rule.evaluate(mockInput, signals);
       
@@ -107,7 +125,8 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should detect critical volatility risk (CV >= 0.75)', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.8, 70);
+      // Use CV = 0.8 (within critical range >= 0.75) - deterministic
+      const signals = generateDeterministicRevenueSignals(1000, 0.8, 70);
 
       const result = rule.evaluate(mockInput, signals);
       
@@ -118,8 +137,40 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should increase confidence with more data points', () => {
-      const signals90Days = generateVolatileRevenueSignals(1000, 0.4, 90);
-      const signals120Days = generateVolatileRevenueSignals(1000, 0.4, 120);
+      // Use identical CV (0.4) but different data lengths
+      // Generate multiple signals per day to ensure different counts pass filtering
+      // 90 signals total = 0.6 + floor((90-60)/30)*0.05 = 0.6 + 0.05 = 0.65
+      // 120 signals total = 0.6 + floor((120-60)/30)*0.05 = 0.6 + 0.10 = 0.7
+      const today = new Date();
+      const standardDeviation = 1000 * 0.4;
+      const lowValue = 1000 - standardDeviation;
+      const highValue = 1000 + standardDeviation;
+      
+      // Generate exactly 90 signals, multiple per day to ensure all pass filter
+      const signals90Days = [];
+      for (let i = 0; i < 90; i++) {
+        // Distribute signals across 60 days (some days have 2 signals)
+        const dayIndex = Math.floor(i / 1.5); // Spread across ~60 days
+        const signalDate = new Date(today);
+        signalDate.setDate(today.getDate() - dayIndex);
+        signals90Days.push({
+          timestamp: signalDate,
+          dailyRevenue: i % 2 === 0 ? lowValue : highValue
+        });
+      }
+      
+      // Generate exactly 120 signals, multiple per day to ensure all pass filter
+      const signals120Days = [];
+      for (let i = 0; i < 120; i++) {
+        // Distribute signals across 60 days (2 signals per day)
+        const dayIndex = Math.floor(i / 2);
+        const signalDate = new Date(today);
+        signalDate.setDate(today.getDate() - dayIndex);
+        signals120Days.push({
+          timestamp: signalDate,
+          dailyRevenue: i % 2 === 0 ? lowValue : highValue
+        });
+      }
 
       const result90 = rule.evaluate(mockInput, signals90Days);
       const result120 = rule.evaluate(mockInput, signals120Days);
@@ -130,7 +181,8 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should include volatility CV in conditions', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.4, 70);
+      // Use CV = 0.4 (informational range) - deterministic
+      const signals = generateDeterministicRevenueSignals(1000, 0.4, 70);
       const result = rule.evaluate(mockInput, signals);
       
       expect(result).not.toBeNull();
@@ -138,7 +190,8 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should include data points in conditions', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.4, 70);
+      // Use CV = 0.4 (informational range) - deterministic
+      const signals = generateDeterministicRevenueSignals(1000, 0.4, 70);
       const result = rule.evaluate(mockInput, signals);
       
       expect(result).not.toBeNull();
@@ -146,7 +199,26 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should calculate confidence based on data completeness', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.4, 70);
+      // Use CV = 0.4 (informational range) with 90 signals - deterministic
+      // Generate multiple signals per day to ensure 90 signals pass filter
+      // 90 signals = 0.6 + floor((90-60)/30)*0.05 = 0.6 + 0.05 = 0.65
+      const today = new Date();
+      const standardDeviation = 1000 * 0.4;
+      const lowValue = 1000 - standardDeviation;
+      const highValue = 1000 + standardDeviation;
+      
+      const signals = [];
+      for (let i = 0; i < 90; i++) {
+        // Distribute signals across 60 days (some days have 2 signals)
+        const dayIndex = Math.floor(i / 1.5);
+        const signalDate = new Date(today);
+        signalDate.setDate(today.getDate() - dayIndex);
+        signals.push({
+          timestamp: signalDate,
+          dailyRevenue: i % 2 === 0 ? lowValue : highValue
+        });
+      }
+      
       const result = rule.evaluate(mockInput, signals);
       
       expect(result).not.toBeNull();
@@ -154,7 +226,8 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should include appropriate contributing factors', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.6, 70);
+      // Use CV = 0.6 (warning range) - deterministic
+      const signals = generateDeterministicRevenueSignals(1000, 0.6, 70);
       const result = rule.evaluate(mockInput, signals);
       
       expect(result).not.toBeNull();
@@ -163,7 +236,8 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should generate appropriate recommendations for high volatility', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.7, 70);
+      // Use CV = 0.7 (warning range, triggers cash flow management) - deterministic
+      const signals = generateDeterministicRevenueSignals(1000, 0.7, 70);
       const result = rule.evaluate(mockInput, signals);
       
       expect(result).not.toBeNull();
@@ -171,7 +245,8 @@ describe('CashFlowVolatilityRule', () => {
     });
 
     it('should handle edge case with exactly 60 days of data', () => {
-      const signals = generateVolatileRevenueSignals(1000, 0.4, 60);
+      // Use exactly 60 days with CV >= 0.25 (informational range) - deterministic
+      const signals = generateDeterministicRevenueSignals(1000, 0.4, 60);
       const result = rule.evaluate(mockInput, signals);
       
       expect(result).not.toBeNull();

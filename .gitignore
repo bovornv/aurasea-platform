@@ -53,10 +53,12 @@ temp/
 # Cursor-generated junk
 **/.cursor/
 **/*cursor-junk*
+.turbo/
 
 # API keys and secrets (specific file patterns only)
 *.env
 *.env.*
+.env.local
 # Exceptions: allow example/template files to be committed
 !.env.example
 !.env.sample

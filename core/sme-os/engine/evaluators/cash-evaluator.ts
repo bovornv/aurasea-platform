@@ -1,7 +1,7 @@
 import { InputContract } from '../../contracts/inputs';
 import { CashRunwayRule } from '../rules/cash-runway';
 
-interface CashEvaluation {
+export interface CashEvaluation {
   confidence: number;
   historicalVariance: number;
   dataCompleteness: number;

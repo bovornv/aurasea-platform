@@ -1,0 +1,28 @@
+{
+  "businessGroup": {
+    "id": "bg-hotel-single-001",
+    "name": "Grand Hotel",
+    "createdAt": "2024-01-15T00:00:00.000Z",
+    "updatedAt": "2024-01-15T00:00:00.000Z"
+  },
+  "branches": [
+    {
+      "id": "br-hotel-single-001",
+      "businessGroupId": "bg-hotel-single-001",
+      "branchName": "Grand Hotel - Main",
+      "businessType": "HOTEL_RESORT",
+      "location": {
+        "city": "Bangkok",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": true,
+      "createdAt": "2024-01-15T00:00:00.000Z",
+      "updatedAt": "2024-01-15T00:00:00.000Z"
+    }
+  ],
+  "description": "Single hotel business with one location"
+}

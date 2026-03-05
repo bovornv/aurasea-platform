@@ -1,0 +1,77 @@
+{
+  "organizationId": "org-hotel-restaurant-001",
+  "branches": [
+    {
+      "branchId": "br-hotel-restaurant-001",
+      "branchName": "Luxury Resort - Phuket",
+      "branchType": "hotel",
+      "dailyRevenue": [
+        {"timestamp": "2024-01-01T00:00:00.000Z", "dailyRevenue": 52000},
+        {"timestamp": "2024-01-02T00:00:00.000Z", "dailyRevenue": 48000},
+        {"timestamp": "2024-01-03T00:00:00.000Z", "dailyRevenue": 47000},
+        {"timestamp": "2024-01-04T00:00:00.000Z", "dailyRevenue": 49000},
+        {"timestamp": "2024-01-05T00:00:00.000Z", "dailyRevenue": 54000},
+        {"timestamp": "2024-01-06T00:00:00.000Z", "dailyRevenue": 68000},
+        {"timestamp": "2024-01-07T00:00:00.000Z", "dailyRevenue": 72000},
+        {"timestamp": "2024-01-08T00:00:00.000Z", "dailyRevenue": 51000},
+        {"timestamp": "2024-01-09T00:00:00.000Z", "dailyRevenue": 47500},
+        {"timestamp": "2024-01-10T00:00:00.000Z", "dailyRevenue": 46500},
+        {"timestamp": "2024-01-11T00:00:00.000Z", "dailyRevenue": 48500},
+        {"timestamp": "2024-01-12T00:00:00.000Z", "dailyRevenue": 53500},
+        {"timestamp": "2024-01-13T00:00:00.000Z", "dailyRevenue": 67000},
+        {"timestamp": "2024-01-14T00:00:00.000Z", "dailyRevenue": 71000},
+        {"timestamp": "2024-01-15T00:00:00.000Z", "dailyRevenue": 50500},
+        {"timestamp": "2024-01-16T00:00:00.000Z", "dailyRevenue": 47000},
+        {"timestamp": "2024-01-17T00:00:00.000Z", "dailyRevenue": 46000},
+        {"timestamp": "2024-01-18T00:00:00.000Z", "dailyRevenue": 48000},
+        {"timestamp": "2024-01-19T00:00:00.000Z", "dailyRevenue": 53000},
+        {"timestamp": "2024-01-20T00:00:00.000Z", "dailyRevenue": 66500},
+        {"timestamp": "2024-01-21T00:00:00.000Z", "dailyRevenue": 70500},
+        {"timestamp": "2024-01-22T00:00:00.000Z", "dailyRevenue": 50000},
+        {"timestamp": "2024-01-23T00:00:00.000Z", "dailyRevenue": 46500},
+        {"timestamp": "2024-01-24T00:00:00.000Z", "dailyRevenue": 45500},
+        {"timestamp": "2024-01-25T00:00:00.000Z", "dailyRevenue": 47500},
+        {"timestamp": "2024-01-26T00:00:00.000Z", "dailyRevenue": 52500},
+        {"timestamp": "2024-01-27T00:00:00.000Z", "dailyRevenue": 66000},
+        {"timestamp": "2024-01-28T00:00:00.000Z", "dailyRevenue": 70000},
+        {"timestamp": "2024-01-29T00:00:00.000Z", "dailyRevenue": 49500},
+        {"timestamp": "2024-01-30T00:00:00.000Z", "dailyRevenue": 46000},
+        {"timestamp": "2024-01-31T00:00:00.000Z", "dailyRevenue": 45000}
+      ],
+      "restaurants": [
+        {
+          "restaurantId": "rest-001",
+          "restaurantName": "Fine Dining Restaurant",
+          "menuRevenueDistribution": [
+            {"timestamp": "2024-01-01T00:00:00.000Z", "menuItemId": "item-101", "menuItemName": "Grilled Salmon", "revenue": 4500},
+            {"timestamp": "2024-01-01T00:00:00.000Z", "menuItemId": "item-102", "menuItemName": "Beef Tenderloin", "revenue": 5200},
+            {"timestamp": "2024-01-01T00:00:00.000Z", "menuItemId": "item-103", "menuItemName": "Lobster Thermidor", "revenue": 3800},
+            {"timestamp": "2024-01-01T00:00:00.000Z", "menuItemId": "item-104", "menuItemName": "Caesar Salad", "revenue": 2200},
+            {"timestamp": "2024-01-01T00:00:00.000Z", "menuItemId": "item-105", "menuItemName": "Tiramisu", "revenue": 1800},
+            {"timestamp": "2024-01-06T00:00:00.000Z", "menuItemId": "item-101", "menuItemName": "Grilled Salmon", "revenue": 6800},
+            {"timestamp": "2024-01-06T00:00:00.000Z", "menuItemId": "item-102", "menuItemName": "Beef Tenderloin", "revenue": 7800},
+            {"timestamp": "2024-01-06T00:00:00.000Z", "menuItemId": "item-103", "menuItemName": "Lobster Thermidor", "revenue": 5600},
+            {"timestamp": "2024-01-06T00:00:00.000Z", "menuItemId": "item-104", "menuItemName": "Caesar Salad", "revenue": 3200},
+            {"timestamp": "2024-01-06T00:00:00.000Z", "menuItemId": "item-105", "menuItemName": "Tiramisu", "revenue": 2600},
+            {"timestamp": "2024-01-13T00:00:00.000Z", "menuItemId": "item-101", "menuItemName": "Grilled Salmon", "revenue": 6600},
+            {"timestamp": "2024-01-13T00:00:00.000Z", "menuItemId": "item-102", "menuItemName": "Beef Tenderloin", "revenue": 7600},
+            {"timestamp": "2024-01-13T00:00:00.000Z", "menuItemId": "item-103", "menuItemName": "Lobster Thermidor", "revenue": 5400},
+            {"timestamp": "2024-01-13T00:00:00.000Z", "menuItemId": "item-104", "menuItemName": "Caesar Salad", "revenue": 3100},
+            {"timestamp": "2024-01-13T00:00:00.000Z", "menuItemId": "item-105", "menuItemName": "Tiramisu", "revenue": 2500},
+            {"timestamp": "2024-01-20T00:00:00.000Z", "menuItemId": "item-101", "menuItemName": "Grilled Salmon", "revenue": 6400},
+            {"timestamp": "2024-01-20T00:00:00.000Z", "menuItemId": "item-102", "menuItemName": "Beef Tenderloin", "revenue": 7400},
+            {"timestamp": "2024-01-20T00:00:00.000Z", "menuItemId": "item-103", "menuItemName": "Lobster Thermidor", "revenue": 5200},
+            {"timestamp": "2024-01-20T00:00:00.000Z", "menuItemId": "item-104", "menuItemName": "Caesar Salad", "revenue": 3000},
+            {"timestamp": "2024-01-20T00:00:00.000Z", "menuItemId": "item-105", "menuItemName": "Tiramisu", "revenue": 2400},
+            {"timestamp": "2024-01-27T00:00:00.000Z", "menuItemId": "item-101", "menuItemName": "Grilled Salmon", "revenue": 6200},
+            {"timestamp": "2024-01-27T00:00:00.000Z", "menuItemId": "item-102", "menuItemName": "Beef Tenderloin", "revenue": 7200},
+            {"timestamp": "2024-01-27T00:00:00.000Z", "menuItemId": "item-103", "menuItemName": "Lobster Thermidor", "revenue": 5000},
+            {"timestamp": "2024-01-27T00:00:00.000Z", "menuItemId": "item-104", "menuItemName": "Caesar Salad", "revenue": 2900},
+            {"timestamp": "2024-01-27T00:00:00.000Z", "menuItemId": "item-105", "menuItemName": "Tiramisu", "revenue": 2300}
+          ]
+        }
+      ]
+    }
+  ],
+  "description": "Hotel with one restaurant, showing higher weekend revenue (weekdays ~50k, weekends ~70k) and restaurant menu distribution"
+}

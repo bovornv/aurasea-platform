@@ -1,0 +1,475 @@
+{
+  "organizationId": "org-restaurant-single-good-001",
+  "branches": [
+    {
+      "branchId": "br-restaurant-single-good-001",
+      "branchName": "Healthy Restaurant - Central",
+      "branchType": "restaurant",
+      "dailyRevenue": [
+        {
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "dailyRevenue": 12000
+        },
+        {
+          "timestamp": "2024-01-02T00:00:00.000Z",
+          "dailyRevenue": 11500
+        },
+        {
+          "timestamp": "2024-01-03T00:00:00.000Z",
+          "dailyRevenue": 11800
+        },
+        {
+          "timestamp": "2024-01-04T00:00:00.000Z",
+          "dailyRevenue": 11600
+        },
+        {
+          "timestamp": "2024-01-05T00:00:00.000Z",
+          "dailyRevenue": 11900
+        },
+        {
+          "timestamp": "2024-01-06T00:00:00.000Z",
+          "dailyRevenue": 18000
+        },
+        {
+          "timestamp": "2024-01-07T00:00:00.000Z",
+          "dailyRevenue": 17500
+        },
+        {
+          "timestamp": "2024-01-08T00:00:00.000Z",
+          "dailyRevenue": 12100
+        },
+        {
+          "timestamp": "2024-01-09T00:00:00.000Z",
+          "dailyRevenue": 11400
+        },
+        {
+          "timestamp": "2024-01-10T00:00:00.000Z",
+          "dailyRevenue": 11700
+        },
+        {
+          "timestamp": "2024-01-11T00:00:00.000Z",
+          "dailyRevenue": 11500
+        },
+        {
+          "timestamp": "2024-01-12T00:00:00.000Z",
+          "dailyRevenue": 12000
+        },
+        {
+          "timestamp": "2024-01-13T00:00:00.000Z",
+          "dailyRevenue": 17800
+        },
+        {
+          "timestamp": "2024-01-14T00:00:00.000Z",
+          "dailyRevenue": 17200
+        },
+        {
+          "timestamp": "2024-01-15T00:00:00.000Z",
+          "dailyRevenue": 11900
+        },
+        {
+          "timestamp": "2024-01-16T00:00:00.000Z",
+          "dailyRevenue": 11600
+        },
+        {
+          "timestamp": "2024-01-17T00:00:00.000Z",
+          "dailyRevenue": 11800
+        },
+        {
+          "timestamp": "2024-01-18T00:00:00.000Z",
+          "dailyRevenue": 11700
+        },
+        {
+          "timestamp": "2024-01-19T00:00:00.000Z",
+          "dailyRevenue": 12000
+        },
+        {
+          "timestamp": "2024-01-20T00:00:00.000Z",
+          "dailyRevenue": 17900
+        },
+        {
+          "timestamp": "2024-01-21T00:00:00.000Z",
+          "dailyRevenue": 17400
+        },
+        {
+          "timestamp": "2024-01-22T00:00:00.000Z",
+          "dailyRevenue": 11500
+        },
+        {
+          "timestamp": "2024-01-23T00:00:00.000Z",
+          "dailyRevenue": 11700
+        },
+        {
+          "timestamp": "2024-01-24T00:00:00.000Z",
+          "dailyRevenue": 11600
+        },
+        {
+          "timestamp": "2024-01-25T00:00:00.000Z",
+          "dailyRevenue": 11900
+        },
+        {
+          "timestamp": "2024-01-26T00:00:00.000Z",
+          "dailyRevenue": 18000
+        },
+        {
+          "timestamp": "2024-01-27T00:00:00.000Z",
+          "dailyRevenue": 17600
+        },
+        {
+          "timestamp": "2024-01-28T00:00:00.000Z",
+          "dailyRevenue": 11800
+        },
+        {
+          "timestamp": "2024-01-29T00:00:00.000Z",
+          "dailyRevenue": 11400
+        },
+        {
+          "timestamp": "2024-01-30T00:00:00.000Z",
+          "dailyRevenue": 11700
+        },
+        {
+          "timestamp": "2024-01-31T00:00:00.000Z",
+          "dailyRevenue": 12000
+        }
+      ],
+      "menuRevenueDistribution": [
+        {
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "menuItemId": "item-001",
+          "menuItemName": "Espresso",
+          "revenue": 1800
+        },
+        {
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "menuItemId": "item-002",
+          "menuItemName": "Cappuccino",
+          "revenue": 2000
+        },
+        {
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "menuItemId": "item-003",
+          "menuItemName": "Latte",
+          "revenue": 2200
+        },
+        {
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "menuItemId": "item-004",
+          "menuItemName": "Croissant",
+          "revenue": 1500
+        },
+        {
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "menuItemId": "item-005",
+          "menuItemName": "Sandwich",
+          "revenue": 1800
+        },
+        {
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "menuItemId": "item-006",
+          "menuItemName": "Salad",
+          "revenue": 1200
+        },
+        {
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "menuItemId": "item-007",
+          "menuItemName": "Muffin",
+          "revenue": 1000
+        },
+        {
+          "timestamp": "2024-01-01T00:00:00.000Z",
+          "menuItemId": "item-008",
+          "menuItemName": "Bagel",
+          "revenue": 500
+        },
+        {
+          "timestamp": "2024-01-02T00:00:00.000Z",
+          "menuItemId": "item-001",
+          "menuItemName": "Espresso",
+          "revenue": 1700
+        },
+        {
+          "timestamp": "2024-01-02T00:00:00.000Z",
+          "menuItemId": "item-002",
+          "menuItemName": "Cappuccino",
+          "revenue": 1900
+        },
+        {
+          "timestamp": "2024-01-02T00:00:00.000Z",
+          "menuItemId": "item-003",
+          "menuItemName": "Latte",
+          "revenue": 2100
+        },
+        {
+          "timestamp": "2024-01-02T00:00:00.000Z",
+          "menuItemId": "item-004",
+          "menuItemName": "Croissant",
+          "revenue": 1400
+        },
+        {
+          "timestamp": "2024-01-02T00:00:00.000Z",
+          "menuItemId": "item-005",
+          "menuItemName": "Sandwich",
+          "revenue": 1700
+        },
+        {
+          "timestamp": "2024-01-02T00:00:00.000Z",
+          "menuItemId": "item-006",
+          "menuItemName": "Salad",
+          "revenue": 1100
+        },
+        {
+          "timestamp": "2024-01-02T00:00:00.000Z",
+          "menuItemId": "item-007",
+          "menuItemName": "Muffin",
+          "revenue": 900
+        },
+        {
+          "timestamp": "2024-01-02T00:00:00.000Z",
+          "menuItemId": "item-008",
+          "menuItemName": "Bagel",
+          "revenue": 700
+        },
+        {
+          "timestamp": "2024-01-03T00:00:00.000Z",
+          "menuItemId": "item-001",
+          "menuItemName": "Espresso",
+          "revenue": 1850
+        },
+        {
+          "timestamp": "2024-01-03T00:00:00.000Z",
+          "menuItemId": "item-002",
+          "menuItemName": "Cappuccino",
+          "revenue": 2050
+        },
+        {
+          "timestamp": "2024-01-03T00:00:00.000Z",
+          "menuItemId": "item-003",
+          "menuItemName": "Latte",
+          "revenue": 2250
+        },
+        {
+          "timestamp": "2024-01-03T00:00:00.000Z",
+          "menuItemId": "item-004",
+          "menuItemName": "Croissant",
+          "revenue": 1450
+        },
+        {
+          "timestamp": "2024-01-03T00:00:00.000Z",
+          "menuItemId": "item-005",
+          "menuItemName": "Sandwich",
+          "revenue": 1750
+        },
+        {
+          "timestamp": "2024-01-03T00:00:00.000Z",
+          "menuItemId": "item-006",
+          "menuItemName": "Salad",
+          "revenue": 1150
+        },
+        {
+          "timestamp": "2024-01-03T00:00:00.000Z",
+          "menuItemId": "item-007",
+          "menuItemName": "Muffin",
+          "revenue": 950
+        },
+        {
+          "timestamp": "2024-01-03T00:00:00.000Z",
+          "menuItemId": "item-008",
+          "menuItemName": "Bagel",
+          "revenue": 500
+        },
+        {
+          "timestamp": "2024-01-04T00:00:00.000Z",
+          "menuItemId": "item-001",
+          "menuItemName": "Espresso",
+          "revenue": 1750
+        },
+        {
+          "timestamp": "2024-01-04T00:00:00.000Z",
+          "menuItemId": "item-002",
+          "menuItemName": "Cappuccino",
+          "revenue": 1950
+        },
+        {
+          "timestamp": "2024-01-04T00:00:00.000Z",
+          "menuItemId": "item-003",
+          "menuItemName": "Latte",
+          "revenue": 2150
+        },
+        {
+          "timestamp": "2024-01-04T00:00:00.000Z",
+          "menuItemId": "item-004",
+          "menuItemName": "Croissant",
+          "revenue": 1350
+        },
+        {
+          "timestamp": "2024-01-04T00:00:00.000Z",
+          "menuItemId": "item-005",
+          "menuItemName": "Sandwich",
+          "revenue": 1650
+        },
+        {
+          "timestamp": "2024-01-04T00:00:00.000Z",
+          "menuItemId": "item-006",
+          "menuItemName": "Salad",
+          "revenue": 1050
+        },
+        {
+          "timestamp": "2024-01-04T00:00:00.000Z",
+          "menuItemId": "item-007",
+          "menuItemName": "Muffin",
+          "revenue": 850
+        },
+        {
+          "timestamp": "2024-01-04T00:00:00.000Z",
+          "menuItemId": "item-008",
+          "menuItemName": "Bagel",
+          "revenue": 600
+        },
+        {
+          "timestamp": "2024-01-05T00:00:00.000Z",
+          "menuItemId": "item-001",
+          "menuItemName": "Espresso",
+          "revenue": 1900
+        },
+        {
+          "timestamp": "2024-01-05T00:00:00.000Z",
+          "menuItemId": "item-002",
+          "menuItemName": "Cappuccino",
+          "revenue": 2100
+        },
+        {
+          "timestamp": "2024-01-05T00:00:00.000Z",
+          "menuItemId": "item-003",
+          "menuItemName": "Latte",
+          "revenue": 2300
+        },
+        {
+          "timestamp": "2024-01-05T00:00:00.000Z",
+          "menuItemId": "item-004",
+          "menuItemName": "Croissant",
+          "revenue": 1500
+        },
+        {
+          "timestamp": "2024-01-05T00:00:00.000Z",
+          "menuItemId": "item-005",
+          "menuItemName": "Sandwich",
+          "revenue": 1800
+        },
+        {
+          "timestamp": "2024-01-05T00:00:00.000Z",
+          "menuItemId": "item-006",
+          "menuItemName": "Salad",
+          "revenue": 1200
+        },
+        {
+          "timestamp": "2024-01-05T00:00:00.000Z",
+          "menuItemId": "item-007",
+          "menuItemName": "Muffin",
+          "revenue": 1000
+        },
+        {
+          "timestamp": "2024-01-05T00:00:00.000Z",
+          "menuItemId": "item-008",
+          "menuItemName": "Bagel",
+          "revenue": 700
+        },
+        {
+          "timestamp": "2024-01-06T00:00:00.000Z",
+          "menuItemId": "item-001",
+          "menuItemName": "Espresso",
+          "revenue": 2800
+        },
+        {
+          "timestamp": "2024-01-06T00:00:00.000Z",
+          "menuItemId": "item-002",
+          "menuItemName": "Cappuccino",
+          "revenue": 3100
+        },
+        {
+          "timestamp": "2024-01-06T00:00:00.000Z",
+          "menuItemId": "item-003",
+          "menuItemName": "Latte",
+          "revenue": 3400
+        },
+        {
+          "timestamp": "2024-01-06T00:00:00.000Z",
+          "menuItemId": "item-004",
+          "menuItemName": "Croissant",
+          "revenue": 2200
+        },
+        {
+          "timestamp": "2024-01-06T00:00:00.000Z",
+          "menuItemId": "item-005",
+          "menuItemName": "Sandwich",
+          "revenue": 2600
+        },
+        {
+          "timestamp": "2024-01-06T00:00:00.000Z",
+          "menuItemId": "item-006",
+          "menuItemName": "Salad",
+          "revenue": 1800
+        },
+        {
+          "timestamp": "2024-01-06T00:00:00.000Z",
+          "menuItemId": "item-007",
+          "menuItemName": "Muffin",
+          "revenue": 1500
+        },
+        {
+          "timestamp": "2024-01-06T00:00:00.000Z",
+          "menuItemId": "item-008",
+          "menuItemName": "Bagel",
+          "revenue": 500
+        },
+        {
+          "timestamp": "2024-01-07T00:00:00.000Z",
+          "menuItemId": "item-001",
+          "menuItemName": "Espresso",
+          "revenue": 2700
+        },
+        {
+          "timestamp": "2024-01-07T00:00:00.000Z",
+          "menuItemId": "item-002",
+          "menuItemName": "Cappuccino",
+          "revenue": 3000
+        },
+        {
+          "timestamp": "2024-01-07T00:00:00.000Z",
+          "menuItemId": "item-003",
+          "menuItemName": "Latte",
+          "revenue": 3300
+        },
+        {
+          "timestamp": "2024-01-07T00:00:00.000Z",
+          "menuItemId": "item-004",
+          "menuItemName": "Croissant",
+          "revenue": 2100
+        },
+        {
+          "timestamp": "2024-01-07T00:00:00.000Z",
+          "menuItemId": "item-005",
+          "menuItemName": "Sandwich",
+          "revenue": 2500
+        },
+        {
+          "timestamp": "2024-01-07T00:00:00.000Z",
+          "menuItemId": "item-006",
+          "menuItemName": "Salad",
+          "revenue": 1700
+        },
+        {
+          "timestamp": "2024-01-07T00:00:00.000Z",
+          "menuItemId": "item-007",
+          "menuItemName": "Muffin",
+          "revenue": 1400
+        },
+        {
+          "timestamp": "2024-01-07T00:00:00.000Z",
+          "menuItemId": "item-008",
+          "menuItemName": "Bagel",
+          "revenue": 800
+        }
+      ]
+    }
+  ],
+  "description": "Healthy single restaurant branch"
+}

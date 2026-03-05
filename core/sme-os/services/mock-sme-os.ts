@@ -1,7 +1,8 @@
 // Mock SME OS service - returns mock alerts for skeleton
 // This will be replaced with real logic later
 
-import type { InputContract, OutputContract } from '../contracts';
+import type { InputContract } from '../contracts/inputs';
+import type { OutputContract } from '../contracts/outputs';
 import type { AlertContract } from '../contracts/alerts';
 import { generateMockAlerts } from './mock-data-generator';
 

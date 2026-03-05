@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
+    "dev:restart": "pkill -f 'next dev' 2>/dev/null || true; sleep 2; rm -rf apps/web/.next; npm run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
@@ -21,12 +22,23 @@
     "test:seasonality-risk": "vitest run seasonality-risk",
     "test:cash-flow-volatility": "vitest run cash-flow-volatility",
     "test:liquidity-runway-risk": "vitest run liquidity-runway-risk",
-    "test:break-even-risk": "vitest run break-even-risk"
+    "test:break-even-risk": "vitest run break-even-risk",
+    "seed:real-test": "ts-node --project scripts/tsconfig.json scripts/seed-real-test-data.ts",
+    "seed:fnb-daily": "ts-node --project scripts/tsconfig.json scripts/seed-fnb-daily-metrics.ts",
+    "seed:rbac-first-owner": "ts-node --project scripts/tsconfig.json scripts/seed-rbac-first-owner.ts",
+    "migrate:rbac-audit": "ts-node --project scripts/tsconfig.json scripts/run-rbac-audit-migration.ts"
   },
   "devDependencies": {
     "@types/node": "^25.0.10",
+    "@types/pg": "^8.16.0",
+    "dotenv": "^17.3.1",
+    "pg": "^8.19.0",
     "turbo": "^1.10.0",
     "typescript": "^5.2.0",
     "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.95.3",
+    "ts-node": "^10.9.2"
   }
 }

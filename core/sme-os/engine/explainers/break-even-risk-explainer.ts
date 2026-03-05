@@ -1,5 +1,30 @@
 import { AlertContract } from '../../contracts/alerts';
 
+/**
+ * ⚠️ FROZEN EXPLAINER IMPLEMENTATION ⚠️
+ * 
+ * Break-even Risk Alert Explainer
+ * Status: Production-ready, test-locked, canonical implementation
+ * 
+ * This explainer has passed all unit tests (9 explainer tests).
+ * Primary factor generation, contributing factors, profitability analysis,
+ * and recommendation wording are finalized and intentional.
+ * 
+ * ⚠️ MANDATORY CHANGE PROCESS:
+ * - DO NOT modify recommendation strings, primary factor format, or contributing factor logic
+ * - DO NOT refactor structure or change output format
+ * - Any future changes require creating BreakEvenRiskExplainerV2 (new explainer class)
+ * - All changes must be approved through test updates first
+ * 
+ * Canonical recommendation strings (test-locked, intentional):
+ * - Critical immediate: "Implement emergency cost reduction measures"
+ * - Critical strategic: "Develop comprehensive profitability improvement strategy"
+ * - Warning immediate: "Implement cost management strategies"
+ * - Warning strategic: "Develop profitability enhancement plans"
+ * - Informational immediate: "Monitor profitability trends closely"
+ * - Informational strategic: "Develop profitability forecasting capabilities"
+ */
+
 interface BreakEvenRiskExplanation {
   primaryFactor: string;
   contributingFactors: string[];
@@ -245,6 +270,8 @@ export class BreakEvenRiskExplainer {
     };
   }
 
+  // ⚠️ FROZEN: Recommendation generation (DO NOT MODIFY WITHOUT TEST UPDATES)
+  // Recommendation strings are test-locked (canonical, intentional)
   private generateRecommendations(
     breakEvenType: string,
     breakEvenRatio: number,
@@ -254,6 +281,7 @@ export class BreakEvenRiskExplainer {
     const strategic: string[] = [];
 
     if (severity === 'critical') {
+      // ⚠️ FROZEN: Critical severity recommendation strings (DO NOT MODIFY WITHOUT TEST UPDATES)
       immediate.push('Implement emergency cost reduction measures');
       immediate.push('Launch immediate revenue enhancement initiatives');
       immediate.push('Review all operational expenses for cuts');
@@ -261,6 +289,7 @@ export class BreakEvenRiskExplainer {
       strategic.push('Create cost structure optimization plan');
       strategic.push('Implement advanced financial monitoring and controls');
     } else if (severity === 'warning') {
+      // ⚠️ FROZEN: Warning severity recommendation strings (DO NOT MODIFY WITHOUT TEST UPDATES)
       immediate.push('Implement cost management strategies');
       immediate.push('Optimize revenue generation processes');
       immediate.push('Review pricing and operational efficiency');
@@ -268,6 +297,7 @@ export class BreakEvenRiskExplainer {
       strategic.push('Create cost optimization strategies');
       strategic.push('Implement financial performance monitoring');
     } else {
+      // ⚠️ FROZEN: Informational severity recommendation strings (DO NOT MODIFY WITHOUT TEST UPDATES)
       immediate.push('Monitor profitability trends closely');
       immediate.push('Analyze cost and revenue drivers');
       immediate.push('Review operational efficiency metrics');

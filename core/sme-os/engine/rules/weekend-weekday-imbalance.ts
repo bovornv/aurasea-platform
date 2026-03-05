@@ -1,5 +1,6 @@
 import { InputContract } from '../../contracts/inputs';
 import { AlertContract } from '../../contracts/alerts';
+import { getBusinessType, getThresholds, isThaiSMEContext } from '../../config/threshold-profiles';
 
 /**
  * Weekend-Weekday Imbalance Alert Rule
@@ -48,12 +49,25 @@ export class WeekendWeekdayImbalanceRule {
     // Calculate averages
     const weekdayAvg = this.calculateAverages(weekdayData);
     const weekendAvg = this.calculateAverages(weekendData);
+    
+    // PART 1: Safe division guards
+    if (!weekdayAvg.revenue || weekdayAvg.revenue <= 0 || !weekendAvg.adr || weekendAvg.adr <= 0) {
+      return null;
+    }
 
     // Calculate key metrics
     const weekendPremiumRatio = weekendAvg.revenue / weekdayAvg.revenue;
     const occupancyDifference = Math.abs(weekendAvg.occupancy - weekdayAvg.occupancy);
     const weekdayOccupancyAdvantage = weekdayAvg.occupancy - weekendAvg.occupancy;
-    const adrRatio = weekendAvg.adr / weekdayAvg.adr;
+    const adrRatio = weekdayAvg.adr > 0 ? weekendAvg.adr / weekdayAvg.adr : 0;
+    
+    // PART 3: Explicit NaN/Infinity protection
+    if (isNaN(weekendPremiumRatio) || !isFinite(weekendPremiumRatio) ||
+        isNaN(occupancyDifference) || !isFinite(occupancyDifference) ||
+        isNaN(weekdayOccupancyAdvantage) || !isFinite(weekdayOccupancyAdvantage) ||
+        isNaN(adrRatio) || !isFinite(adrRatio)) {
+      return null;
+    }
 
     // Detect imbalance patterns
     const imbalanceType = this.detectImbalanceType(
@@ -67,12 +81,18 @@ export class WeekendWeekdayImbalanceRule {
       return null;
     }
 
-    // Determine severity
+    // Determine business type and load thresholds
+    const businessType = getBusinessType(input);
+    const useThaiSME = isThaiSMEContext(input);
+    
+    // Determine severity using profile thresholds
     const severity = this.determineSeverity(
       weekendAvg.occupancy,
       weekdayOccupancyAdvantage,
       weekendPremiumRatio,
-      imbalanceType
+      imbalanceType,
+      useThaiSME,
+      businessType
     );
 
     // Determine time horizon
@@ -128,17 +148,28 @@ export class WeekendWeekdayImbalanceRule {
     occupancyRate: number;
     averageDailyRate: number;
   }>) {
+    if (data.length === 0) {
+      return { revenue: 0, occupancy: 0, adr: 0 };
+    }
+    
     const sum = data.reduce((acc, signal) => ({
       revenue: acc.revenue + signal.dailyRevenue,
       occupancy: acc.occupancy + signal.occupancyRate,
       adr: acc.adr + signal.averageDailyRate
     }), { revenue: 0, occupancy: 0, adr: 0 });
 
-    return {
+    const result = {
       revenue: sum.revenue / data.length,
       occupancy: sum.occupancy / data.length,
       adr: sum.adr / data.length
     };
+    
+    // PART 3: Explicit NaN/Infinity protection
+    if (isNaN(result.revenue) || !isFinite(result.revenue)) result.revenue = 0;
+    if (isNaN(result.occupancy) || !isFinite(result.occupancy)) result.occupancy = 0;
+    if (isNaN(result.adr) || !isFinite(result.adr)) result.adr = 0;
+    
+    return result;
   }
 
   private detectImbalanceType(
@@ -169,8 +200,39 @@ export class WeekendWeekdayImbalanceRule {
     weekendOccupancy: number,
     weekdayOccupancyAdvantage: number,
     weekendPremiumRatio: number,
-    imbalanceType: string
+    imbalanceType: string,
+    useThaiSME?: boolean,
+    businessType?: 'accommodation' | 'fnb'
   ): 'critical' | 'warning' | 'informational' {
+    if (useThaiSME && businessType === 'accommodation') {
+      const thresholds = getThresholds('accommodation') as { occupancyCritical?: number; occupancyWarning?: number; weekendDependencyCritical?: number; weekendDependencyWarning?: number };
+      const criticalOccupancy = thresholds.occupancyCritical ?? 0.35;
+      const warningOccupancy = thresholds.occupancyWarning ?? 0.45;
+      const criticalDependency = thresholds.weekendDependencyCritical ?? 0.70;
+      const warningDependency = thresholds.weekendDependencyWarning ?? 0.60;
+      
+      // Critical thresholds (more sensitive)
+      if (
+        (weekendOccupancy < criticalOccupancy && weekendPremiumRatio > 2.5) ||
+        (weekendOccupancy > 0.90 && weekendPremiumRatio < 1.1) ||
+        (weekdayOccupancyAdvantage > 0.30)
+      ) {
+        return 'critical';
+      }
+
+      // Warning thresholds (more sensitive)
+      if (
+        (weekendOccupancy < warningOccupancy && weekendPremiumRatio > 2.0) ||
+        (weekendOccupancy > 0.85 && weekendPremiumRatio < 1.2) ||
+        (weekdayOccupancyAdvantage > 0.20)
+      ) {
+        return 'warning';
+      }
+
+      return 'informational';
+    }
+    
+    // Default thresholds
     // Critical thresholds
     if (
       (weekendOccupancy > 0.90 && weekendPremiumRatio < 1.1) ||
@@ -236,32 +298,56 @@ export class WeekendWeekdayImbalanceRule {
   ) {
     const factors = [];
 
+    // PART 3: Explicit NaN/Infinity protection for inputs
+    if (isNaN(weekendPremiumRatio) || !isFinite(weekendPremiumRatio) ||
+        isNaN(occupancyDifference) || !isFinite(occupancyDifference) ||
+        isNaN(adrRatio) || !isFinite(adrRatio)) {
+      return [{ factor: 'Weekend-weekday demand pattern analysis', weight: 1.0 }];
+    }
+
     if (imbalanceType === 'underpriced_weekends') {
-      factors.push({
-        factor: 'High weekend occupancy with low price premium',
-        weight: Math.min(1.0, (0.85 - (weekendPremiumRatio - 1.0)) * 2)
-      });
+      const weight = Math.min(1.0, (0.85 - (weekendPremiumRatio - 1.0)) * 2);
+      // PART 3: Explicit NaN/Infinity protection
+      if (!isNaN(weight) && isFinite(weight)) {
+        factors.push({
+          factor: 'High weekend occupancy with low price premium',
+          weight
+        });
+      }
     }
 
     if (imbalanceType === 'overpriced_weekends') {
-      factors.push({
-        factor: 'Low weekend occupancy despite high price premium',
-        weight: Math.min(1.0, (weekendPremiumRatio - 1.5) / 1.0)
-      });
+      const weight = 1.0 > 0 ? Math.min(1.0, (weekendPremiumRatio - 1.5) / 1.0) : 1.0;
+      // PART 3: Explicit NaN/Infinity protection
+      if (!isNaN(weight) && isFinite(weight)) {
+        factors.push({
+          factor: 'Low weekend occupancy despite high price premium',
+          weight
+        });
+      }
     }
 
     if (imbalanceType === 'weekday_leakage') {
-      factors.push({
-        factor: 'Weekday demand significantly exceeds weekend demand',
-        weight: Math.min(1.0, occupancyDifference * 2)
-      });
+      const weight = Math.min(1.0, occupancyDifference * 2);
+      // PART 3: Explicit NaN/Infinity protection
+      if (!isNaN(weight) && isFinite(weight)) {
+        factors.push({
+          factor: 'Weekday demand significantly exceeds weekend demand',
+          weight
+        });
+      }
     }
 
-    if (Math.abs(adrRatio - weekendPremiumRatio) > 0.2) {
-      factors.push({
-        factor: 'ADR and revenue premium misalignment',
-        weight: Math.min(1.0, Math.abs(adrRatio - weekendPremiumRatio) * 2)
-      });
+    const adrMisalignment = Math.abs(adrRatio - weekendPremiumRatio);
+    if (adrMisalignment > 0.2) {
+      const weight = Math.min(1.0, adrMisalignment * 2);
+      // PART 3: Explicit NaN/Infinity protection
+      if (!isNaN(weight) && isFinite(weight)) {
+        factors.push({
+          factor: 'ADR and revenue premium misalignment',
+          weight
+        });
+      }
     }
 
     return factors.length > 0 ? factors : [

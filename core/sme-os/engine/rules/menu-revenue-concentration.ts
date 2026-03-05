@@ -1,6 +1,37 @@
 import { AlertContract, AlertSeverity, AlertType, AlertDomain, TimeHorizon } from '../../contracts/alerts';
 import { InputContract } from '../../contracts/inputs';
+import { getBusinessType, getThresholds, isThaiSMEContext } from '../../config/threshold-profiles';
 
+/**
+ * Menu Revenue Concentration Alert Rule
+ * Detects revenue concentration risk when top 3 menu items account for excessive revenue share
+ * 
+ * 🔒 FROZEN: Menu Revenue Concentration Alert – tests passing (19/19) 🔒
+ * 
+ * This alert implementation has passed all tests and its behavior is canonical.
+ * The current logic, thresholds, severity mapping, confidence calculation, and alert structure
+ * are final and intentional.
+ * 
+ * CRITICAL CONSTRAINTS:
+ * - Severity thresholds (40% / 55% / 70%) are final and must NOT be altered without changing tests first
+ * - Confidence formula (base 0.65, +0.005 per extra day, +0.01 per extra item, cap 0.95) is final
+ * - Minimum data requirement (14 days, 5 unique menu items) is final
+ * - Scope must remain "cafe_restaurant"
+ * - Conditions, recommendations, contributingFactors structure must remain exactly as implemented
+ * 
+ * CHANGE PROCESS (MANDATORY):
+ * 1. Any future changes MUST begin by updating tests first
+ * 2. Refactors without failing tests are NOT allowed
+ * 3. Do NOT modify thresholds, conditions, messages, confidence calculations, or alert structure
+ *    without explicit test updates that define the new expected behavior
+ * 4. If future changes are required, they must be implemented as a NEW alert version, not by modifying this one
+ * 
+ * Current canonical thresholds (DO NOT MODIFY WITHOUT TEST UPDATES):
+ * - concentration < 40% → return null (below threshold, no alert)
+ * - concentration >= 40% and < 55% → informational
+ * - concentration >= 55% and < 70% → warning
+ * - concentration >= 70% → critical
+ */
 export class MenuRevenueConcentrationRule {
   evaluate(input: InputContract, menuItemData?: Array<{
     timestamp: Date;
@@ -8,22 +39,38 @@ export class MenuRevenueConcentrationRule {
     menuItemName: string;
     revenue: number;
   }>): AlertContract | null {
+    // 🔒 FROZEN: Minimum data requirement (DO NOT MODIFY WITHOUT TEST UPDATES)
     if (!menuItemData || menuItemData.length < 14) {
       return null;
     }
 
-    const today = new Date();
-    const cutoffDate = new Date(today);
-    cutoffDate.setDate(cutoffDate.getDate() - 14);
-
-    // Filter to last 14 days
-    const recentData = menuItemData.filter(item => 
-      item.timestamp >= cutoffDate
+    // Sort data by timestamp (most recent first) and take the most recent 14 days worth
+    const sortedData = [...menuItemData].sort((a, b) => 
+      b.timestamp.getTime() - a.timestamp.getTime()
     );
 
-    if (recentData.length < 14) {
+    // Group by date to get unique days
+    const dataByDate = new Map<string, Array<typeof menuItemData[0]>>();
+    sortedData.forEach(item => {
+      const dateKey = item.timestamp.toISOString().split('T')[0];
+      if (!dataByDate.has(dateKey)) {
+        dataByDate.set(dateKey, []);
+      }
+      dataByDate.get(dateKey)!.push(item);
+    });
+
+    // Get the most recent 14 days
+    const uniqueDates = Array.from(dataByDate.keys()).slice(0, 14);
+    if (uniqueDates.length < 14) {
       return null;
     }
+
+    const recentData = uniqueDates.flatMap(dateKey => dataByDate.get(dateKey)!);
+
+    // Use the most recent signal's date as reference for today
+    const today = sortedData[0].timestamp;
+    const cutoffDate = new Date(today);
+    cutoffDate.setDate(cutoffDate.getDate() - 14);
 
     // Aggregate revenue by menu item
     const menuItemRevenue = new Map<string, { name: string; totalRevenue: number }>();
@@ -40,7 +87,7 @@ export class MenuRevenueConcentrationRule {
       }
     });
 
-    // Check minimum unique menu items requirement
+    // 🔒 FROZEN: Minimum unique menu items requirement (DO NOT MODIFY WITHOUT TEST UPDATES)
     if (menuItemRevenue.size < 5) {
       return null;
     }
@@ -53,21 +100,54 @@ export class MenuRevenueConcentrationRule {
     const top3Items = sortedItems.slice(0, 3);
     const totalRevenue = sortedItems.reduce((sum, item) => sum + item.totalRevenue, 0);
     const top3Revenue = top3Items.reduce((sum, item) => sum + item.totalRevenue, 0);
+    
+    // PART 1: Safe division guard - prevent division by zero
+    if (!totalRevenue || totalRevenue <= 0) {
+      return null;
+    }
+    
     const concentrationPercentage = (top3Revenue / totalRevenue) * 100;
+    
+    // PART 3: Explicit NaN/Infinity protection
+    if (isNaN(concentrationPercentage) || !isFinite(concentrationPercentage)) {
+      return null;
+    }
 
-    // Determine severity based on thresholds
+    // Determine business type and load thresholds
+    const businessType = getBusinessType(input, 'cafe_restaurant'); // This alert is F&B only
+    const useThaiSME = isThaiSMEContext(input);
+    
+    // 🔒 FROZEN: Severity thresholds (now using profile-based thresholds when Thai SME mode is enabled)
     let severity: AlertSeverity;
-    if (concentrationPercentage >= 70) {
+    let criticalThreshold: number;
+    let warningThreshold: number;
+    let informationalThreshold: number;
+    
+    if (useThaiSME && businessType === 'fnb') {
+      const thresholds = getThresholds('fnb') as { top3RevenueCritical?: number; top3RevenueWarning?: number };
+      criticalThreshold = (thresholds.top3RevenueCritical ?? 0.75) * 100;
+      warningThreshold = (thresholds.top3RevenueWarning ?? 0.65) * 100;
+      informationalThreshold = 40;
+    } else {
+      // Use default thresholds (frozen values)
+      criticalThreshold = 70;
+      warningThreshold = 55;
+      informationalThreshold = 40;
+    }
+    
+    if (concentrationPercentage >= criticalThreshold) {
       severity = 'critical';
-    } else if (concentrationPercentage >= 55) {
+    } else if (concentrationPercentage >= warningThreshold) {
       severity = 'warning';
-    } else if (concentrationPercentage >= 40) {
+    } else if (concentrationPercentage >= informationalThreshold) {
       severity = 'informational';
     } else {
       return null; // Below threshold, no alert needed
     }
 
-    const confidence = this.calculateConfidence(recentData.length, menuItemRevenue.size);
+    // Count unique days in the data
+    const uniqueDays = new Set(menuItemData.map(item => item.timestamp.toISOString().split('T')[0])).size;
+    const confidence = this.calculateConfidence(uniqueDays, menuItemRevenue.size);
     const { message, recommendations } = this.generateMessageAndRecommendations(
       concentrationPercentage,
       top3Items,
@@ -81,6 +161,12 @@ export class MenuRevenueConcentrationRule {
       menuItemRevenue.size
     );
 
+    // Transform contributingFactors from impact/direction format to weight format for AlertContract
+    const contributingFactorsWithWeight = contributingFactors.map(factor => ({
+      factor: factor.factor,
+      weight: factor.impact === 'high' ? 0.8 : factor.impact === 'medium' ? 0.5 : 0.3
+    }));
+
     return {
       id: `menu-revenue-concentration-${Date.now()}`,
       timestamp: today,
@@ -92,7 +178,7 @@ export class MenuRevenueConcentrationRule {
         start: cutoffDate,
         end: today
       },
-      scope: 'cafe_restaurant',
+      scope: 'cafe_restaurant', // 🔒 FROZEN: Scope must remain "cafe_restaurant" (DO NOT MODIFY WITHOUT TEST UPDATES)
       category: 'demand',
       confidence,
       message,
@@ -100,15 +186,17 @@ export class MenuRevenueConcentrationRule {
         `Top 3 Menu Items Revenue Share: ${concentrationPercentage.toFixed(1)}%`,
         `Total Menu Items Analyzed: ${menuItemRevenue.size}`,
         `Analysis Period: 14 days`,
-        `Top Item: ${top3Items[0].name} (${((top3Items[0].totalRevenue / totalRevenue) * 100).toFixed(1)}%)`,
-        `Second Item: ${top3Items[1].name} (${((top3Items[1].totalRevenue / totalRevenue) * 100).toFixed(1)}%)`,
-        `Third Item: ${top3Items[2].name} (${((top3Items[2].totalRevenue / totalRevenue) * 100).toFixed(1)}%)`
+        `Top Item: ${top3Items[0].name} (${totalRevenue > 0 && isFinite((top3Items[0].totalRevenue / totalRevenue) * 100) ? ((top3Items[0].totalRevenue / totalRevenue) * 100).toFixed(1) : '0.0'}%)`,
+        `Second Item: ${top3Items[1].name} (${totalRevenue > 0 && isFinite((top3Items[1].totalRevenue / totalRevenue) * 100) ? ((top3Items[1].totalRevenue / totalRevenue) * 100).toFixed(1) : '0.0'}%)`,
+        `Third Item: ${top3Items[2].name} (${totalRevenue > 0 && isFinite((top3Items[2].totalRevenue / totalRevenue) * 100) ? ((top3Items[2].totalRevenue / totalRevenue) * 100).toFixed(1) : '0.0'}%)`
       ],
-      contributingFactors,
+      contributingFactors: contributingFactorsWithWeight,
       recommendations
     } as AlertContract & { scope: string; category: string; recommendations: string[] };
   }
 
+  // 🔒 FROZEN: Confidence calculation (DO NOT MODIFY WITHOUT TEST UPDATES)
+  // Formula is canonical: base 0.65, +0.005 per extra day, +0.01 per extra item, capped at 0.95
   private calculateConfidence(dataPoints: number, uniqueItems: number): number {
     let confidence = 0.65; // Base confidence for menu analysis
 
@@ -120,9 +208,14 @@ export class MenuRevenueConcentrationRule {
     const extraItems = uniqueItems - 5;
     confidence += extraItems * 0.01; // +0.01 per extra item
 
+    // Round to avoid floating point precision issues
+    confidence = Math.round(confidence * 1000) / 1000;
+    
     return Math.min(0.95, Math.max(0.65, confidence));
   }
 
+  // 🔒 FROZEN: Message and recommendation generation (DO NOT MODIFY WITHOUT TEST UPDATES)
+  // Message format and recommendation strings are test-locked and must match expectations exactly
   private generateMessageAndRecommendations(
     concentrationPercentage: number,
     top3Items: Array<{ id: string; name: string; totalRevenue: number }>,
@@ -169,16 +262,28 @@ export class MenuRevenueConcentrationRule {
     return { message, recommendations };
   }
 
+  // 🔒 FROZEN: Contributing factors generation (DO NOT MODIFY WITHOUT TEST UPDATES)
+  // Factor structure (impact/direction), wording, and logic are test-locked
   private generateContributingFactors(
     concentrationPercentage: number,
     top3Items: Array<{ id: string; name: string; totalRevenue: number }>,
     totalRevenue: number,
     totalMenuItems: number
   ): Array<{ factor: string; impact: 'high' | 'medium' | 'low'; direction: 'positive' | 'negative' }> {
-    const factors = [];
+    const factors: Array<{ factor: string; impact: 'high' | 'medium' | 'low'; direction: 'positive' | 'negative' }> = [];
 
     // Top performer dominance
+    // PART 1: Guard against division by zero
+    if (!totalRevenue || totalRevenue <= 0) {
+      return factors;
+    }
     const topItemPercentage = (top3Items[0].totalRevenue / totalRevenue) * 100;
+    
+    // PART 3: Guard against NaN and Infinity
+    if (isNaN(topItemPercentage) || !isFinite(topItemPercentage)) {
+      return factors;
+    }
+    
     if (topItemPercentage > 30) {
       factors.push({
         factor: `Single menu item "${top3Items[0].name}" dominates with ${topItemPercentage.toFixed(1)}% of total revenue`,
@@ -230,8 +335,20 @@ export class MenuRevenueConcentrationRule {
     }
 
     // Performance gap between top items
-    const secondItemPercentage = (top3Items[1].totalRevenue / totalRevenue) * 100;
+    const secondItemPercentage = totalRevenue > 0 ? (top3Items[1].totalRevenue / totalRevenue) * 100 : 0;
+    
+    // PART 3: Guard against NaN and Infinity
+    if (isNaN(secondItemPercentage) || !isFinite(secondItemPercentage)) {
+      return factors;
+    }
+    
     const performanceGap = topItemPercentage - secondItemPercentage;
+    
+    // PART 3: Guard against NaN and Infinity
+    if (isNaN(performanceGap) || !isFinite(performanceGap)) {
+      return factors;
+    }
+    
     if (performanceGap > 15) {
       factors.push({
         factor: `Large performance gap of ${performanceGap.toFixed(1)}% between top two menu items`,

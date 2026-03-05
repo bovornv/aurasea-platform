@@ -1,5 +1,6 @@
 import { InputContract } from '../../contracts/inputs';
 import { AlertContract } from '../../contracts/alerts';
+import { getBusinessType, getThresholds, isThaiSMEContext } from '../../config/threshold-profiles';
 
 interface CashPosition {
   date: Date;
@@ -8,7 +9,16 @@ interface CashPosition {
 }
 
 export class CashRunwayRule {
-  evaluate(input: InputContract): AlertContract | null {
+  evaluate(input: InputContract, operationalSignals?: Array<{
+    timestamp: Date;
+    dailyRevenue?: number;
+    dailyExpenses?: number;
+  }>): AlertContract | null {
+    // PART 2: Add explicit data length guard (minimum 7 days)
+    if (!operationalSignals || operationalSignals.length < 7) {
+      return null;
+    }
+    
     if (!input.financial?.currentBalance || !input.financial?.cashFlows?.length) {
       return null;
     }
@@ -56,7 +66,27 @@ export class CashRunwayRule {
         ? historicalOutflows.reduce((sum, f) => sum + f.amount, 0) / 30
         : Math.abs(runningBalance) / 90;
       
-      const daysOfCoverage = avgDailyBurn > 0 ? runningBalance / avgDailyBurn : 999;
+      // PART 2: Ensure division guard for avgDailyBurn
+      if (!avgDailyBurn || avgDailyBurn <= 0) {
+        positions.push({
+          date,
+          balance: runningBalance,
+          daysOfCoverage: 999
+        });
+        continue;
+      }
+      
+      const daysOfCoverage = runningBalance / avgDailyBurn;
+      
+      // PART 3: Explicit NaN/Infinity protection
+      if (isNaN(daysOfCoverage) || !isFinite(daysOfCoverage)) {
+        positions.push({
+          date,
+          balance: runningBalance,
+          daysOfCoverage: 999
+        });
+        continue;
+      }
       
       positions.push({
         date,
@@ -66,20 +96,58 @@ export class CashRunwayRule {
     }
     
     // Find critical point
-    const lowestBalance = Math.min(...positions.map(p => p.balance));
-    const lowestCoverage = Math.min(...positions.map(p => p.daysOfCoverage));
+    const balances = positions.map(p => p.balance).filter(b => isFinite(b) && !isNaN(b));
+    const coverages = positions.map(p => p.daysOfCoverage).filter(c => isFinite(c) && !isNaN(c));
+    
+    if (balances.length === 0 || coverages.length === 0) {
+      return null;
+    }
+    
+    const lowestBalance = Math.min(...balances);
+    const lowestCoverage = Math.min(...coverages);
+    
+    // PART 3: Explicit NaN/Infinity protection
+    if (isNaN(lowestBalance) || !isFinite(lowestBalance) || 
+        isNaN(lowestCoverage) || !isFinite(lowestCoverage)) {
+      return null;
+    }
     const criticalPosition = positions.find(p => p.balance === lowestBalance);
     const daysToCritical = criticalPosition 
       ? Math.ceil((criticalPosition.date.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
       : 999;
     
-    // Determine severity
+    // PART 3: Explicit NaN/Infinity protection for daysToCritical
+    if (isNaN(daysToCritical) || !isFinite(daysToCritical)) {
+      return null;
+    }
+    
+    // Determine business type and load thresholds
+    const businessType = getBusinessType(input);
+    const useThaiSME = isThaiSMEContext(input);
+    
+    let criticalDays: number;
+    let warningDays: number;
+    let informationalDays: number;
+    
+    if (useThaiSME && businessType === 'accommodation') {
+      const thresholds = getThresholds('accommodation') as { cashRunwayCriticalDays?: number; cashRunwayWarningDays?: number };
+      criticalDays = thresholds.cashRunwayCriticalDays ?? 20;
+      warningDays = thresholds.cashRunwayWarningDays ?? 45;
+      informationalDays = 60; // Keep informational at default (not in profile)
+    } else {
+      // Use default thresholds
+      criticalDays = 7;
+      warningDays = 30;
+      informationalDays = 60;
+    }
+    
+    // Determine severity using profile thresholds
     let severity: 'critical' | 'warning' | 'informational' = 'informational';
-    if (lowestBalance < 0 || (lowestCoverage < 7 && daysToCritical <= 7)) {
+    if (lowestBalance < 0 || (lowestCoverage < criticalDays && daysToCritical <= criticalDays)) {
       severity = 'critical';
-    } else if (lowestCoverage < 30 && daysToCritical <= 30) {
+    } else if (lowestCoverage < warningDays && daysToCritical <= warningDays) {
       severity = 'warning';
-    } else if (lowestCoverage < 60) {
+    } else if (lowestCoverage < informationalDays) {
       severity = 'informational';
     } else {
       // Healthy position - still return informational alert
@@ -88,9 +156,9 @@ export class CashRunwayRule {
     
     // Determine time horizon
     let timeHorizon: 'immediate' | 'near-term' | 'medium-term' | 'long-term' = 'long-term';
-    if (daysToCritical <= 7) {
+    if (daysToCritical <= criticalDays) {
       timeHorizon = 'immediate';
-    } else if (daysToCritical <= 30) {
+    } else if (daysToCritical <= warningDays) {
       timeHorizon = 'near-term';
     } else if (daysToCritical <= 90) {
       timeHorizon = 'medium-term';
@@ -98,41 +166,72 @@ export class CashRunwayRule {
     
     // Generate message
     let message = '';
+    const timePhrase = daysToCritical === 0 
+      ? 'immediately' 
+      : daysToCritical === 1 
+        ? 'within 1 day' 
+        : `within ${daysToCritical} days`;
+    
     if (lowestBalance < 0) {
-      message = `Projected cash balance will fall below critical threshold within ${daysToCritical} days based on current cash flow patterns`;
+      message = `Projected cash balance will fall below critical threshold ${timePhrase} based on current cash flow patterns`;
     } else if (lowestCoverage < 30) {
-      message = `Cash coverage drops below 30 days within ${daysToCritical} days`;
+      message = `Cash coverage drops below 30 days ${timePhrase}`;
     } else if (lowestCoverage < 60) {
-      message = `Cash coverage drops below 60 days within ${daysToCritical} days`;
+      message = `Cash coverage drops below 60 days ${timePhrase}`;
     } else {
       message = `Cash position remains healthy with coverage above 60 days`;
     }
     
     // Calculate contributing factors
     const contributingFactors = [];
-    const avgWeeklyOutflow = sortedFlows
-      .filter(f => f.direction === 'outflow' && f.date < today)
-      .reduce((sum, f) => sum + f.amount, 0) / 4;
-    const avgWeeklyInflow = sortedFlows
-      .filter(f => f.direction === 'inflow' && f.date < today)
-      .reduce((sum, f) => sum + f.amount, 0) / 4;
+    const historicalOutflows = sortedFlows.filter(f => f.direction === 'outflow' && f.date < today);
+    const historicalInflows = sortedFlows.filter(f => f.direction === 'inflow' && f.date < today);
     
-    if (avgWeeklyOutflow > avgWeeklyInflow) {
-      contributingFactors.push({
-        factor: 'Negative cash flow trend',
-        weight: Math.min(1.0, (avgWeeklyOutflow - avgWeeklyInflow) / avgWeeklyOutflow)
-      });
+    // PART 2: Safe division guard
+    const avgWeeklyOutflow = historicalOutflows.length > 0 
+      ? historicalOutflows.reduce((sum, f) => sum + f.amount, 0) / 4 
+      : 0;
+    const avgWeeklyInflow = historicalInflows.length > 0
+      ? historicalInflows.reduce((sum, f) => sum + f.amount, 0) / 4
+      : 0;
+    
+    // PART 3: Explicit NaN/Infinity protection
+    let safeAvgWeeklyOutflow = avgWeeklyOutflow;
+    let safeAvgWeeklyInflow = avgWeeklyInflow;
+    if (isNaN(avgWeeklyOutflow) || !isFinite(avgWeeklyOutflow)) {
+      safeAvgWeeklyOutflow = 0;
+    }
+    if (isNaN(avgWeeklyInflow) || !isFinite(avgWeeklyInflow)) {
+      safeAvgWeeklyInflow = 0;
+    }
+    
+    if (safeAvgWeeklyOutflow > safeAvgWeeklyInflow && safeAvgWeeklyOutflow > 0) {
+      const weight = Math.min(1.0, (safeAvgWeeklyOutflow - safeAvgWeeklyInflow) / safeAvgWeeklyOutflow);
+      // PART 3: Guard against NaN in weight calculation
+      if (!isNaN(weight) && isFinite(weight)) {
+        contributingFactors.push({
+          factor: 'Negative cash flow trend',
+          weight
+        });
+      }
     }
     
     const upcomingOutflows = sortedFlows
       .filter(f => f.direction === 'outflow' && f.date > today)
       .reduce((sum, f) => sum + f.amount, 0);
     
-    if (upcomingOutflows > currentBalance * 0.3) {
-      contributingFactors.push({
-        factor: 'Large scheduled outflows',
-        weight: Math.min(1.0, upcomingOutflows / currentBalance)
-      });
+    // PART 3: Guard against NaN in upcomingOutflows
+    if (!isNaN(upcomingOutflows) && isFinite(upcomingOutflows) && currentBalance > 0) {
+      if (upcomingOutflows > currentBalance * 0.3) {
+        const weight = Math.min(1.0, upcomingOutflows / currentBalance);
+        // PART 3: Guard against NaN in weight
+        if (!isNaN(weight) && isFinite(weight)) {
+          contributingFactors.push({
+            factor: 'Large scheduled outflows',
+            weight
+          });
+        }
+      }
     }
     
     // Create alert
@@ -153,10 +252,10 @@ export class CashRunwayRule {
         { factor: 'Current cash position analysis', weight: 1.0 }
       ],
       conditions: [
-        `Current balance: ${currentBalance}`,
-        `Projected lowest balance: ${lowestBalance}`,
-        `Days to critical point: ${daysToCritical}`,
-        `Lowest coverage: ${Math.round(lowestCoverage)} days`
+        `Current balance: ${isFinite(currentBalance) ? currentBalance.toFixed(2) : '0.00'}`,
+        `Projected lowest balance: ${isFinite(lowestBalance) ? lowestBalance.toFixed(2) : '0.00'}`,
+        `Days to critical point: ${isFinite(daysToCritical) ? daysToCritical : 999}`,
+        `Lowest coverage: ${isFinite(lowestCoverage) ? Math.round(lowestCoverage) : 0} days`
       ],
       positions
     };

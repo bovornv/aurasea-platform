@@ -1,0 +1,79 @@
+{
+  "businessGroup": {
+    "id": "bg-group-cafes-001",
+    "name": "Coffee Chain Co.",
+    "createdAt": "2024-01-05T00:00:00.000Z",
+    "updatedAt": "2024-02-15T00:00:00.000Z"
+  },
+  "branches": [
+    {
+      "id": "br-cafe-group-001",
+      "businessGroupId": "bg-group-cafes-001",
+      "branchName": "Coffee Chain - Siam Square",
+      "businessType": "CAFE_RESTAURANT",
+      "location": {
+        "city": "Bangkok",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": true,
+      "createdAt": "2024-01-05T00:00:00.000Z",
+      "updatedAt": "2024-01-05T00:00:00.000Z"
+    },
+    {
+      "id": "br-cafe-group-002",
+      "businessGroupId": "bg-group-cafes-001",
+      "branchName": "Coffee Chain - Central World",
+      "businessType": "CAFE_RESTAURANT",
+      "location": {
+        "city": "Bangkok",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": false,
+      "createdAt": "2024-01-20T00:00:00.000Z",
+      "updatedAt": "2024-01-20T00:00:00.000Z"
+    },
+    {
+      "id": "br-cafe-group-003",
+      "businessGroupId": "bg-group-cafes-001",
+      "branchName": "Coffee Chain - Terminal 21",
+      "businessType": "CAFE_RESTAURANT",
+      "location": {
+        "city": "Bangkok",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": false,
+      "createdAt": "2024-02-01T00:00:00.000Z",
+      "updatedAt": "2024-02-01T00:00:00.000Z"
+    },
+    {
+      "id": "br-cafe-group-004",
+      "businessGroupId": "bg-group-cafes-001",
+      "branchName": "Coffee Chain - Chiang Mai Airport",
+      "businessType": "CAFE_RESTAURANT",
+      "location": {
+        "city": "Chiang Mai",
+        "country": "Thailand"
+      },
+      "operatingDays": {
+        "weekdays": true,
+        "weekends": true
+      },
+      "isDefault": false,
+      "createdAt": "2024-02-15T00:00:00.000Z",
+      "updatedAt": "2024-02-15T00:00:00.000Z"
+    }
+  ],
+  "description": "Business group with multiple café/restaurant locations"
+}

@@ -62,4 +62,11 @@ export interface InputContract {
     marketConditions: 'favorable' | 'neutral' | 'challenging';
     previousDecisions: PreviousDecision[];
   };
+  // Optional business context for threshold calibration
+  businessContext?: {
+    region?: 'thailand' | 'international';
+    businessSize?: 'sme' | 'enterprise';
+    marketType?: 'tourism' | 'local' | 'mixed';
+    alertSensitivity?: 'low' | 'medium' | 'high'; // PART 1.4: Alert sensitivity level
+  };
 }

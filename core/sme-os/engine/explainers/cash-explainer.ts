@@ -11,8 +11,12 @@ interface CashExplanation {
   };
 }
 
+interface AlertWithPositions extends AlertContract {
+  positions?: Array<{ date: Date; balance: number; daysOfCoverage: number }>;
+}
+
 export class CashExplainer {
-  explain(alert: AlertContract, evaluation: CashEvaluation): CashExplanation {
+  explain(alert: AlertContract | null, evaluation: CashEvaluation): CashExplanation {
     if (!alert) {
       return {
         primaryFactor: 'Insufficient data to generate alert',
@@ -21,9 +25,18 @@ export class CashExplainer {
       };
     }
 
-    const positions = alert.positions as Array<{ date: Date; balance: number; daysOfCoverage: number }>;
+    const alertWithPositions = alert as AlertWithPositions;
+    const positions = alertWithPositions.positions || [];
     
     // Find the critical points in the cash position
+    if (positions.length === 0) {
+      return {
+        primaryFactor: 'Alert generated but position data unavailable',
+        contributingFactors: [],
+        dataQuality: this.explainDataQuality(evaluation)
+      };
+    }
+
     const lowestCoverage = Math.min(...positions.map(p => p.daysOfCoverage));
     const lowestBalance = Math.min(...positions.map(p => p.balance));
     const criticalDate = positions.find(p => p.daysOfCoverage === lowestCoverage)?.date;

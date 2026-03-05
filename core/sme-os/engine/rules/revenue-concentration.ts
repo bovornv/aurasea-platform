@@ -3,6 +3,7 @@
 
 import { InputContract } from '../../contracts/inputs';
 import { AlertContract } from '../../contracts/alerts';
+import { getBusinessType, getThresholds, isThaiSMEContext } from '../../config/threshold-profiles';
 
 /**
  * Revenue Concentration Risk Alert Rule
@@ -44,15 +45,35 @@ export class RevenueConcentrationRule {
       })
       .reduce((sum, signal) => sum + signal.dailyRevenue, 0);
 
+    // PART 1: Safe division guard
+    if (!totalRevenue || totalRevenue <= 0) {
+      return null;
+    }
+    
     const weekendShare = (weekendRevenue / totalRevenue) * 100;
+    
+    // PART 3: Explicit NaN/Infinity protection
+    if (isNaN(weekendShare) || !isFinite(weekendShare)) {
+      return null;
+    }
 
     // Calculate top-5 day concentration
     const sortedRevenues = recentSignals
       .map(signal => signal.dailyRevenue)
+      .filter(r => isFinite(r) && !isNaN(r))
       .sort((a, b) => b - a);
+    
+    if (sortedRevenues.length === 0) {
+      return null;
+    }
     
     const top5Revenue = sortedRevenues.slice(0, 5).reduce((sum, revenue) => sum + revenue, 0);
     const top5Share = (top5Revenue / totalRevenue) * 100;
+    
+    // PART 3: Explicit NaN/Infinity protection
+    if (isNaN(top5Share) || !isFinite(top5Share)) {
+      return null;
+    }
 
     // Detect concentration risk
     const concentrationRisk = this.detectConcentrationRisk(weekendShare, top5Share);
@@ -61,8 +82,12 @@ export class RevenueConcentrationRule {
       return null;
     }
 
-    // Determine severity
-    const severity = this.determineSeverity(weekendShare, top5Share);
+    // Determine business type and load thresholds
+    const businessType = getBusinessType(input);
+    const useThaiSME = isThaiSMEContext(input);
+    
+    // Determine severity using profile thresholds
+    const severity = this.determineSeverity(weekendShare, top5Share, useThaiSME, businessType);
 
     // Determine time horizon
     const timeHorizon = severity === 'critical' ? 'immediate' : 
@@ -127,8 +152,8 @@ export class RevenueConcentrationRule {
     return 'none';
   }
 
-  private determineSeverity(weekendShare: number, top5Share: number): 'critical' | 'warning' | 'informational' {
-    const weekendSeverity = this.determineWeekendSeverity(weekendShare);
+  private determineSeverity(weekendShare: number, top5Share: number, useThaiSME?: boolean, businessType?: 'accommodation' | 'fnb'): 'critical' | 'warning' | 'informational' {
+    const weekendSeverity = this.determineWeekendSeverity(weekendShare, useThaiSME, businessType);
     const topDaySeverity = this.determineTopDaySeverity(top5Share);
     
     // Only consider severities that are above 'none'
@@ -146,7 +171,19 @@ export class RevenueConcentrationRule {
     return 'informational';
   }
 
-  private determineWeekendSeverity(weekendShare: number): 'critical' | 'warning' | 'informational' | 'none' {
+  private determineWeekendSeverity(weekendShare: number, useThaiSME?: boolean, businessType?: 'accommodation' | 'fnb'): 'critical' | 'warning' | 'informational' | 'none' {
+    if (useThaiSME && businessType === 'accommodation') {
+      const thresholds = getThresholds('accommodation') as { weekendDependencyCritical?: number; weekendDependencyWarning?: number };
+      const criticalThreshold = (thresholds.weekendDependencyCritical ?? 0.70) * 100;
+      const warningThreshold = (thresholds.weekendDependencyWarning ?? 0.60) * 100;
+      
+      if (weekendShare >= criticalThreshold) return 'critical';
+      if (weekendShare >= warningThreshold) return 'warning';
+      if (weekendShare >= 55) return 'informational';
+      return 'none';
+    }
+    
+    // Default thresholds
     if (weekendShare >= 75) return 'critical';
     if (weekendShare >= 65) return 'warning';
     if (weekendShare >= 55) return 'informational';
