@@ -16,7 +16,7 @@ const TABLE_ACCOMMODATION = 'accommodation_daily_metrics';
 /** DB column names for fnb_daily_metrics (frontend "customers" -> total_customers, "revenue" -> total_revenue_thb). */
 const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
   'branch_id', 'metric_date', 'total_revenue_thb', 'total_customers', 'cost', 'cash_balance',
-  'additional_cost_today', 'top3_menu_revenue', 'avg_ticket', 'fnb_staff', 'promo_spend',
+  'additional_cost_today', 'top3_menu_revenue', 'avg_ticket', 'fnb_staff', 'promo_spend', 'monthly_fixed_cost',
 ]);
 /** Columns allowed in accommodation_daily_metrics. */
 const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
@@ -46,7 +46,8 @@ function buildPayloadForTable(
 
 /**
  * Build F&B payload for fnb_daily_metrics. Maps frontend names to DB columns:
- *   revenue -> total_revenue_thb, customers -> total_customers
+ *   revenue -> total_revenue_thb, customers -> total_customers.
+ * Includes Advanced Finance & Capacity: monthly_fixed_cost, fnb_staff.
  */
 function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {
@@ -58,9 +59,10 @@ function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
     additional_cost_today: metric.additionalCostToday ?? 0,
     cost: metric.cost ?? 0,
     avg_ticket: metric.avgTicket ?? null,
+    monthly_fixed_cost: metric.monthlyFixedCost ?? null,
+    fnb_staff: metric.fnbStaff ?? null,
   };
   if (metric.cashBalance != null) payload.cash_balance = metric.cashBalance;
-  if (metric.fnbStaff != null) payload.fnb_staff = metric.fnbStaff;
   if (metric.promoSpend != null) payload.promo_spend = metric.promoSpend;
   return Object.fromEntries(
     Object.entries(payload).filter(([, v]) => v !== undefined)
@@ -139,7 +141,7 @@ export async function saveDailyMetric(
         : buildPayloadForTable(dailyMetricToDb(metric) as Record<string, unknown>, allowedColumns);
 
     if (table === TABLE_FNB) {
-      console.log('Saving FNB metrics:', payload);
+      console.log('Saving FNB metrics payload:', payload);
     } else if (process.env.NODE_ENV === 'development') {
       console.log('[DailyMetricsService] Saving metrics:', payload);
     }

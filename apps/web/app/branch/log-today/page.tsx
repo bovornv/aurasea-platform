@@ -328,9 +328,11 @@ export default function LogTodayPage() {
         dailyMetric.accommodationStaff = safeNumber(financeData.accommodationStaffCount, undefined) ?? (branchSetup as any)?.accommodation_staff_count;
       }
       
-      // F&B fields
+      // F&B fields (including Advanced Finance & Capacity: monthly_fixed_cost, fnb_staff)
       if (isFnb) {
         dailyMetric.customers = safeNumber(todayData.customers, undefined);
+        dailyMetric.monthlyFixedCost = safeNumber(financeData.monthlyFixedCost, undefined) ?? (branchSetup as any)?.monthly_fixed_cost;
+        dailyMetric.fnbStaff = safeNumber(financeData.fnbStaffCount, undefined) ?? (branchSetup as any)?.fnb_staff_count;
         if (todayData.top3MenuRevenue) {
           const top3Revenue = safeNumber(todayData.top3MenuRevenue, undefined);
           if (top3Revenue !== undefined && top3Revenue >= 0 && (calculatedRevenue === 0 || top3Revenue <= calculatedRevenue)) {
