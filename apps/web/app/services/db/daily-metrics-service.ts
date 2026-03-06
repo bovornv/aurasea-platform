@@ -13,10 +13,10 @@ const DAILY_METRICS_READ = 'daily_metrics';
 const TABLE_FNB = 'fnb_daily_metrics';
 const TABLE_ACCOMMODATION = 'accommodation_daily_metrics';
 
-/** Columns allowed in fnb_daily_metrics (avoids PGRST204 schema mismatch). */
+/** DB column names for fnb_daily_metrics (frontend "customers" -> total_customers, "revenue" -> total_revenue_thb). */
 const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
-  'branch_id', 'metric_date', 'revenue', 'cost', 'cash_balance', 'additional_cost_today',
-  'customers', 'avg_ticket', 'top3_menu_revenue', 'fnb_staff', 'promo_spend',
+  'branch_id', 'metric_date', 'total_revenue_thb', 'total_customers', 'cost', 'cash_balance',
+  'additional_cost_today', 'top3_menu_revenue', 'avg_ticket', 'fnb_staff', 'promo_spend',
 ]);
 /** Columns allowed in accommodation_daily_metrics. */
 const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
@@ -41,6 +41,29 @@ function buildPayloadForTable(
   );
   return Object.fromEntries(
     Object.entries(withoutUndefined).filter(([key]) => allowedColumns.has(key))
+  );
+}
+
+/**
+ * Build F&B payload for fnb_daily_metrics. Maps frontend names to DB columns:
+ *   revenue -> total_revenue_thb, customers -> total_customers
+ */
+function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    branch_id: metric.branchId,
+    metric_date: metric.date,
+    total_revenue_thb: metric.revenue ?? 0,
+    total_customers: metric.customers ?? 0,
+    top3_menu_revenue: metric.top3MenuRevenue ?? null,
+    additional_cost_today: metric.additionalCostToday ?? 0,
+    cost: metric.cost ?? 0,
+    avg_ticket: metric.avgTicket ?? null,
+  };
+  if (metric.cashBalance != null) payload.cash_balance = metric.cashBalance;
+  if (metric.fnbStaff != null) payload.fnb_staff = metric.fnbStaff;
+  if (metric.promoSpend != null) payload.promo_spend = metric.promoSpend;
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, v]) => v !== undefined)
   );
 }
 
@@ -108,12 +131,16 @@ export async function saveDailyMetric(
   if (!supabase) return false;
 
   try {
-    const dbFormat = dailyMetricToDb(metric) as Record<string, unknown>;
     const table = getWriteTable(metric);
     const allowedColumns = table === TABLE_FNB ? ALLOWED_COLUMNS_FNB : ALLOWED_COLUMNS_ACCOMMODATION;
-    const payload = buildPayloadForTable(dbFormat, allowedColumns);
+    const payload =
+      table === TABLE_FNB
+        ? buildPayloadForTable(buildFnbPayload(metric), allowedColumns)
+        : buildPayloadForTable(dailyMetricToDb(metric) as Record<string, unknown>, allowedColumns);
 
-    if (process.env.NODE_ENV === 'development') {
+    if (table === TABLE_FNB) {
+      console.log('Saving FNB metrics:', payload);
+    } else if (process.env.NODE_ENV === 'development') {
       console.log('[DailyMetricsService] Saving metrics:', payload);
     }
 
