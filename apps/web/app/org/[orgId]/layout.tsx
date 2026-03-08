@@ -25,6 +25,7 @@ import { Breadcrumb } from '../../components/breadcrumb';
 import SimulationBannerWrapper from '../../components/simulation-banner-wrapper';
 import { LoadingSpinner } from '../../components/loading-spinner';
 import { useOrganization } from '../../contexts/organization-context';
+import { PoweredByAuraSea } from '../../components/operating-layer/powered-by-aurasea';
 
 const BUSINESS_GROUP_KEY = 'hospitality_business_group';
 
@@ -227,6 +228,7 @@ export default function OrgLayout({
         <Navigation />
         {children}
       </div>
+      <PoweredByAuraSea />
     </div>
   );
 }

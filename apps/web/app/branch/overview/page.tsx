@@ -33,6 +33,7 @@ import { calculateRevenueExposure } from '../../utils/revenue-exposure-calculato
 import { runPlatformAudit } from '../../services/platform-audit-service';
 import { useSystemValidation } from '../../hooks/use-system-validation';
 import { useIntelligenceStageBranch } from '../../hooks/use-intelligence-stage';
+import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import { isFullyActive } from '../../utils/intelligence-stage';
 import { IntelligenceInitializationCard } from '../../components/intelligence-initialization-card';
 import { useUserRole } from '../../contexts/user-role-context';
@@ -64,6 +65,10 @@ export default function BranchOverviewPage() {
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
   const { coverageDays, stage } = useIntelligenceStageBranch(branch?.id ?? null, branch?.moduleType);
+  const { anomalyAlertsAsContracts, confidenceScore: anomalyConfidenceScore } = useAnomalySignals(
+    branch?.id ?? null,
+    locale === 'th' ? 'th' : 'en'
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -137,6 +142,17 @@ export default function BranchOverviewPage() {
       return true;
     });
   }, [branch, safeRawAlerts, safeHospitalityAlerts]);
+
+  // Merge anomaly alerts (branch_anomaly_signals) so early signals show after ~7 days
+  const mergedBranchAlerts = useMemo(() => {
+    if (!branch?.id) return [];
+    const byId = new Map<string, AlertContract>();
+    branchAlerts.forEach(a => byId.set(a.id, a));
+    anomalyAlertsAsContracts.forEach(a => {
+      if (!byId.has(a.id)) byId.set(a.id, a);
+    });
+    return Array.from(byId.values());
+  }, [branch?.id, branchAlerts, anomalyAlertsAsContracts]);
 
   // PHASE 3: Calculate performance trends from daily_metrics
   // Compare last 7 days vs previous 7 days (requires minimum 14 days)
@@ -274,15 +290,15 @@ export default function BranchOverviewPage() {
     }
   }, [branch, branchAlerts, coverageDays, dailyMetricsForTrends]); // PART 1.1 & 2: Include dailyMetricsForTrends to trigger recalculation
 
-  // Calculate alert counts
+  // Calculate alert counts (include anomaly alerts for display)
   const alertCounts = useMemo(() => {
     return {
-      critical: branchAlerts.filter(a => a.severity === 'critical').length,
-      warning: branchAlerts.filter(a => a.severity === 'warning').length,
-      informational: branchAlerts.filter(a => a.severity === 'informational').length,
-      total: branchAlerts.length,
+      critical: mergedBranchAlerts.filter(a => a.severity === 'critical').length,
+      warning: mergedBranchAlerts.filter(a => a.severity === 'warning').length,
+      informational: mergedBranchAlerts.filter(a => a.severity === 'informational').length,
+      total: mergedBranchAlerts.length,
     };
-  }, [branchAlerts]);
+  }, [mergedBranchAlerts]);
 
   // STABILITY: Guard revenueImpact everywhere
   const safeRevenueImpact = (alert: AlertContract): number => {
@@ -296,11 +312,11 @@ export default function BranchOverviewPage() {
   
   // Calculate total revenue exposure using new calculator
   const revenueExposure = useMemo(() => {
-    if (!branchMetrics || !branchAlerts.length) {
+    if (!branchMetrics || !mergedBranchAlerts.length) {
       return { totalMonthlyLeakage: 0, leakageByCategory: { revenue: 0, margin: 0, cost: 0, cash: 0 }, exposurePercentOfRevenue: 0 };
     }
-    return calculateRevenueExposure(branchMetrics, branchAlerts as AlertContract[]);
-  }, [branchMetrics, branchAlerts]);
+    return calculateRevenueExposure(branchMetrics, mergedBranchAlerts as AlertContract[]);
+  }, [branchMetrics, mergedBranchAlerts]);
 
   const totalRevenueAtRisk = revenueExposure.totalMonthlyLeakage;
 
@@ -308,11 +324,11 @@ export default function BranchOverviewPage() {
   // Get top revenue leaks sorted by calculated revenue exposure
   // FIX: Deduplicate alerts by code before calculating exposure
   const topRevenueLeaks = useMemo(() => {
-    if (!branchAlerts.length || !branchMetrics) return [];
+    if (!mergedBranchAlerts.length || !branchMetrics) return [];
 
     // FIX: Deduplicate alerts by code first (using Map for unique codes)
     const alertsByCode = new Map<string, AlertContract>();
-    branchAlerts.forEach(alert => {
+    mergedBranchAlerts.forEach(alert => {
       // Use alert.code if available, otherwise use id
       const code = (alert as any).code || alert.id;
       if (!alertsByCode.has(code)) {
@@ -350,7 +366,7 @@ export default function BranchOverviewPage() {
       .map(item => item.alert);
 
     return topAlerts;
-  }, [branchAlerts, branchMetrics]);
+  }, [mergedBranchAlerts, branchMetrics]);
 
   // Get health score trend (30 days)
   const healthScoreTrend = useMemo(() => {
@@ -525,7 +541,7 @@ export default function BranchOverviewPage() {
   // STEP 6 & 7: Debug logging will be added after recommendedActions is defined
 
   const activeAlerts = useMemo(() => {
-    const alertsCopy = [...branchAlerts] as AlertContract[];
+    const alertsCopy = [...mergedBranchAlerts] as AlertContract[];
     
     // PART 6: Filter out resolved alerts first
     const unresolvedAlerts = alertsCopy.filter(alert => {
@@ -605,17 +621,17 @@ export default function BranchOverviewPage() {
         status: 'Ongoing' as const,
       };
     });
-  }, [branchAlerts]);
+  }, [mergedBranchAlerts]);
 
   // PART 7: Generate recommended actions (1-3 prioritized by revenue impact, fallback to critical alerts)
   // Must be derived from top 3 impact alerts, deduplicated by code
   // Must not show blank if alerts exist
   const recommendedActions = useMemo(() => {
-    if (!branchAlerts.length) return [];
+    if (!mergedBranchAlerts.length) return [];
     
     // First deduplicate all alerts by code
     const alertsByCode = new Map<string, AlertContract>();
-    branchAlerts.forEach(alert => {
+    mergedBranchAlerts.forEach(alert => {
       const code = (alert as any).code || alert.id;
       if (!alertsByCode.has(code)) {
         alertsByCode.set(code, alert);
@@ -723,7 +739,7 @@ export default function BranchOverviewPage() {
     });
 
     return actions;
-  }, [topRevenueLeaks, branchAlerts, locale]);
+  }, [topRevenueLeaks, mergedBranchAlerts, locale]);
 
   // Determine health status label
   const healthStatus = useMemo(() => {
@@ -735,6 +751,32 @@ export default function BranchOverviewPage() {
   }, [branchHealthScore, locale]);
 
   const hospitalityLabels = getHospitalityLabels(branch ?? null, locale === 'th' ? 'th' : 'en');
+
+  // Latest daily metric (most recent by date) for Today's Revenue / Customers cards
+  const latestDailyMetric = useMemo(() => {
+    if (!dailyMetricsForTrends?.length) return null;
+    const sorted = [...dailyMetricsForTrends].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    return sorted[0] ?? null;
+  }, [dailyMetricsForTrends]);
+
+  // Early signal one-liner for Mission Control card
+  const earlySignalText = useMemo(() => {
+    if (performanceTrends) {
+      const { revenueTrend } = performanceTrends;
+      if (revenueTrend > 5) return locale === 'th' ? 'รายได้เพิ่มขึ้นเทียบกับแนวโน้มล่าสุด' : 'Revenue up vs recent trend';
+      if (revenueTrend < -5) return locale === 'th' ? 'รายได้ลดลงเทียบกับแนวโน้มล่าสุด' : 'Revenue down vs recent trend';
+      return locale === 'th' ? 'รายได้คงที่เทียบกับแนวโน้มล่าสุด' : 'Revenue stable vs recent trend';
+    }
+    const first = mergedBranchAlerts[0];
+    if (first?.message) {
+      const one = String(first.message).split('.')[0].trim();
+      return one.length > 60 ? one.slice(0, 57) + '...' : one;
+    }
+    if (coverageDays < 7) return locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
+    return '—';
+  }, [performanceTrends, mergedBranchAlerts, coverageDays, locale]);
 
   if (!mounted || branchLoading) {
     return (
@@ -788,20 +830,80 @@ export default function BranchOverviewPage() {
     );
   }
 
-  // Intelligence not yet fully active: show init card only (no health score 0, no alerts, no trends)
-  if (!isFullyActive(stage)) {
-    return (
-      <PageLayout title="" subtitle={branch?.branchName ?? ''}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <IntelligenceInitializationCard coverageDays={coverageDays} locale={locale === 'th' ? 'th' : 'en'} />
-        </div>
-      </PageLayout>
-    );
-  }
-  
+  const fullyActive = isFullyActive(stage);
+  const dataCoverageDays = Math.min(coverageDays, 30);
+
   return (
-    <PageLayout title="" subtitle="">
+    <PageLayout title="" subtitle={branch?.branchName ?? ''}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* Mission Control: business intelligence cards first */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+          gap: '1rem',
+        }}>
+          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
+              {locale === 'th' ? 'คะแนนสุขภาพธุรกิจ' : 'Business Health Score'}
+            </div>
+            <div style={{ fontSize: '24px', fontWeight: 700, color: branchHealthScore != null ? (branchHealthScore.healthScore >= 80 ? '#10b981' : branchHealthScore.healthScore >= 60 ? '#f59e0b' : '#ef4444') : '#9ca3af' }}>
+              {branchHealthScore != null ? `${Math.round(branchHealthScore.healthScore)}` : '—'}
+            </div>
+            <div style={{ fontSize: '12px', color: '#9ca3af' }}>/ 100</div>
+          </div>
+          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
+              {locale === 'th' ? 'รายได้วันนี้' : "Today's Revenue"}
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
+              {latestDailyMetric?.revenue != null ? `฿${formatCurrency(latestDailyMetric.revenue)}` : '—'}
+            </div>
+          </div>
+          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
+              {locale === 'th' ? 'ลูกค้า' : 'Customers'}
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
+              {latestDailyMetric?.customers != null ? latestDailyMetric.customers : '—'}
+            </div>
+          </div>
+          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', minWidth: 0 }}>
+            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
+              {locale === 'th' ? 'สัญญาณเบื้องต้น' : 'Early Signal'}
+            </div>
+            <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.3 }} title={earlySignalText}>
+              {earlySignalText}
+            </div>
+          </div>
+          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
+              {locale === 'th' ? 'ความมั่นใจ' : 'Confidence'}
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
+              {anomalyConfidenceScore != null ? `${anomalyConfidenceScore}%` : branchHealthScore?.dataConfidence != null ? `${Math.round(branchHealthScore.dataConfidence * 100)}%` : '—'}
+            </div>
+          </div>
+        </div>
+
+        {/* System Learning / Data coverage — below intelligence cards */}
+        {!fullyActive ? (
+          <IntelligenceInitializationCard coverageDays={coverageDays} locale={locale === 'th' ? 'th' : 'en'} />
+        ) : (
+          <div style={{
+            padding: '0.75rem 1rem',
+            backgroundColor: '#f9fafb',
+            border: '1px solid #e5e7eb',
+            borderRadius: '8px',
+            fontSize: '14px',
+            color: '#374151',
+          }}>
+            {locale === 'th' ? 'ความครอบคลุมข้อมูล: ' : 'Data coverage: '}
+            <strong>{dataCoverageDays}</strong> / 30 {locale === 'th' ? 'วัน' : 'days'}
+          </div>
+        )}
+
+        {fullyActive && (
+          <>
         <OperatingHeader />
         <DailyPrompt
           lastUpdated={lastUpdated ? new Date(lastUpdated).toISOString() : null}
@@ -868,7 +970,7 @@ export default function BranchOverviewPage() {
                     {healthStatus?.label}
                   </div>
                   <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.5rem' }}>
-                    {locale === 'th' ? `ความมั่นใจ: ${Math.round(branchHealthScore.dataConfidence * 100)}%` : `Confidence: ${Math.round(branchHealthScore.dataConfidence * 100)}%`}
+                    {locale === 'th' ? `ความมั่นใจ: ${anomalyConfidenceScore ?? Math.round(branchHealthScore.dataConfidence * 100)}%` : `Confidence: ${anomalyConfidenceScore ?? Math.round(branchHealthScore.dataConfidence * 100)}%`}
                   </div>
                 </div>
               </div>
@@ -905,6 +1007,18 @@ export default function BranchOverviewPage() {
               </div>
             </div>
           </SectionCard>
+          ) : anomalyConfidenceScore != null ? (
+            <SectionCard title={locale === 'th' ? 'ภาพรวมสุขภาพสาขา' : 'Branch Health Snapshot'}>
+              <div style={{ padding: '1.5rem', backgroundColor: '#f9fafb', borderRadius: '8px' }}>
+                <div style={{ fontSize: '14px', color: '#6b7280' }}>
+                  {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
+                  <strong>{anomalyConfidenceScore}%</strong>
+                </div>
+                <p style={{ fontSize: '13px', color: '#9ca3af', marginTop: '0.5rem', marginBottom: 0 }}>
+                  {locale === 'th' ? 'สัญญาณจากข้อมูลล่าสุด (รอข้อมูลเพิ่มสำหรับคะแนนสุขภาพ)' : 'Early signals from latest data (more data needed for full health score)'}
+                </p>
+              </div>
+            </SectionCard>
           ) : (
             <SectionCard title={locale === 'th' ? 'ภาพรวมสุขภาพสาขา' : 'Branch Health Snapshot'}>
               <HealthScoreFallback />
@@ -920,7 +1034,7 @@ export default function BranchOverviewPage() {
           fallback={<AlertsFallback />}
         >
           <CriticalAlertsSnapshot 
-            alerts={branchAlerts} 
+            alerts={mergedBranchAlerts} 
             viewType="branch" 
             locale={locale}
             alertsInitializing={alertsInitializing}
@@ -1264,7 +1378,7 @@ export default function BranchOverviewPage() {
                   </div>
                 );
               })}
-              {branchAlerts.length > 5 && (
+              {mergedBranchAlerts.length > 5 && (
                 <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
                   <button
                     onClick={() => router.push(paths.branchAlerts || '/branch/alerts')}
@@ -1278,7 +1392,7 @@ export default function BranchOverviewPage() {
                       cursor: 'pointer',
                     }}
                   >
-                    {locale === 'th' ? `ดูการแจ้งเตือนทั้งหมด (${branchAlerts.length})` : `View All Alerts (${branchAlerts.length})`}
+                    {locale === 'th' ? `ดูการแจ้งเตือนทั้งหมด (${mergedBranchAlerts.length})` : `View All Alerts (${mergedBranchAlerts.length})`}
                   </button>
                 </div>
               )}
@@ -1291,7 +1405,7 @@ export default function BranchOverviewPage() {
           {recommendedActions.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
               {/* PART 7: Show "Maintain current trajectory" if alerts exist but no suggested actions, otherwise show "No suggested actions" */}
-              {branchAlerts.length > 0 
+              {mergedBranchAlerts.length > 0 
                 ? (locale === 'th' ? 'รักษาแนวโน้มปัจจุบัน' : 'Maintain current trajectory')
                 : (locale === 'th' ? 'ยังไม่มีแนวทางที่แนะนำในขณะนี้' : 'No suggested actions at this time')}
             </div>
@@ -1394,6 +1508,8 @@ export default function BranchOverviewPage() {
         </SectionCard>
 
         <OperatingFooterTrust />
+          </>
+        )}
       </div>
     </PageLayout>
   );

@@ -256,7 +256,7 @@ export function ViewSwitcherDropdown() {
                 justifyContent: 'space-between',
               }}
             >
-              <span>{businessGroup.name}</span>
+              <span>{businessGroup.name} {locale === 'th' ? '(ภาพรวมองค์กร)' : '(Company overview)'}</span>
               <span style={{ color: '#3b82f6', fontSize: '16px' }}>✓</span>
             </button>
             {branches.map((branch) => (
@@ -285,7 +285,7 @@ export function ViewSwitcherDropdown() {
                   e.currentTarget.style.backgroundColor = 'transparent';
                 }}
               >
-                <span>{branch.branchName}</span>
+                <span>{branch.branchName} {locale === 'th' ? '(สาขา)' : '(Branch)'}</span>
               </button>
             ))}
           </div>
@@ -327,173 +327,143 @@ export function ViewSwitcherDropdown() {
     );
   }
 
-  // In Branch View: 
-  // - Show company name above branch dropdown
-  // - Add "Branch :" label before branch dropdown
-  // - If branch user has only one accessible branch: show as text (no dropdown)
-  // - If owner/manager or branch user has multiple branches: show dropdown
+  // In Branch View: company selector (trigger = company name), options = Company overview + branches
   const isBranchUser = ['manager', 'staff', 'viewer'].includes(permissions.role);
   const hasMultipleAccessibleBranches = branches.length > 1;
   const shouldShowDropdown = !isBranchUser || hasMultipleAccessibleBranches;
 
   if (!shouldShowDropdown && branches.length === 1) {
-    // Branch user with single accessible branch: show only branch name (no org name in top-left)
     return (
-      <div style={{
-        fontSize: '14px',
-        fontWeight: 600,
-        color: '#0a0a0a',
-        letterSpacing: '-0.01em',
-        lineHeight: 1.2,
-        minWidth: '180px',
-      }}>
-        {branches[0]?.branchName ?? displayText}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <span style={{
+          fontSize: '14px',
+          fontWeight: 600,
+          color: '#0a0a0a',
+          letterSpacing: '-0.01em',
+          lineHeight: 1.2,
+          minWidth: '180px',
+        }}>
+          {businessGroup.name}
+        </span>
+        <span style={{ fontSize: '12px', color: '#6b7280' }}>▾</span>
       </div>
     );
   }
 
-  // Show dropdown with accessible branches (org name only for owner/manager)
+  // Company selector: trigger shows company name; options = Company overview + branches (with labels)
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {!isBranchLevelUser && (
-        <div style={{
-          fontSize: '28px',
+    <div ref={dropdownRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        type="button"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.5rem 0.75rem',
+          backgroundColor: '#ffffff',
+          border: '1px solid #e5e7eb',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          fontSize: '14px',
           fontWeight: 600,
           color: '#0a0a0a',
           letterSpacing: '-0.01em',
-          lineHeight: '1.2',
-        }}>
+          lineHeight: 1.2,
+          minWidth: '180px',
+          textAlign: 'left',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.borderColor = '#d1d5db';
+          e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.borderColor = '#e5e7eb';
+          e.currentTarget.style.boxShadow = 'none';
+        }}
+      >
+        <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {businessGroup.name}
-        </div>
-      )}
-      {/* Branch dropdown with label */}
-      <div ref={dropdownRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <span style={{
-          fontSize: '14px',
-          fontWeight: 500,
-          color: '#6b7280',
-        }}>
-          {locale === 'th' ? 'สาขา :' : 'Branch :'}
         </span>
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          type="button"
+        <span style={{ fontSize: '12px', color: '#6b7280', flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
+      </button>
+
+      {isOpen && (
+        <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.5rem 0.75rem',
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            marginTop: '0.25rem',
             backgroundColor: '#ffffff',
             border: '1px solid #e5e7eb',
             borderRadius: '6px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            fontWeight: 500,
-            color: '#0a0a0a',
-            transition: 'all 0.2s',
-            minWidth: '180px',
-            textAlign: 'left',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#d1d5db';
-            e.currentTarget.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = '#e5e7eb';
-            e.currentTarget.style.boxShadow = 'none';
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+            zIndex: 1000,
+            minWidth: '260px',
+            maxHeight: '400px',
+            overflowY: 'auto',
           }}
         >
-          <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {displayText}
-          </span>
-          <span style={{ fontSize: '12px', color: '#6b7280', flexShrink: 0 }}>
-            {isOpen ? '▲' : '▼'}
-          </span>
-        </button>
-
-        {isOpen && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '100%',
-              left: '0',
-              marginTop: '0.25rem',
-              backgroundColor: '#ffffff',
-              border: '1px solid #e5e7eb',
-              borderRadius: '6px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-              zIndex: 1000,
-              minWidth: '240px',
-              maxHeight: '400px',
-              overflowY: 'auto',
-            }}
-          >
-            {canAccessCompany && (
+          {canAccessCompany && (
+            <button
+              type="button"
+              onClick={handleSelectCompany}
+              style={{
+                width: '100%',
+                padding: '0.75rem 1rem',
+                textAlign: 'left',
+                backgroundColor: isCompanyView ? '#f9fafb' : 'transparent',
+                border: 'none',
+                borderBottom: '1px solid #f3f4f6',
+                cursor: 'pointer',
+                fontSize: '14px',
+                color: '#0a0a0a',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span>{businessGroup.name} {locale === 'th' ? '(ภาพรวมองค์กร)' : '(Company overview)'}</span>
+              {isCompanyView && <span style={{ color: '#3b82f6', fontSize: '16px' }}>✓</span>}
+            </button>
+          )}
+          {branches.map((branch) => {
+            const isActive = branchIdFromUrl === branch.id;
+            return (
               <button
+                key={branch.id}
+                onClick={() => handleSelectBranch(branch)}
                 type="button"
-                onClick={handleSelectCompany}
                 style={{
                   width: '100%',
                   padding: '0.75rem 1rem',
                   textAlign: 'left',
-                  backgroundColor: isCompanyView ? '#f9fafb' : 'transparent',
+                  backgroundColor: isActive ? '#f9fafb' : 'transparent',
                   border: 'none',
-                  borderBottom: '1px solid #f3f4f6',
+                  borderBottom: branch.id !== branches[branches.length - 1].id ? '1px solid #f3f4f6' : 'none',
                   cursor: 'pointer',
                   fontSize: '14px',
                   color: '#0a0a0a',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  transition: 'background-color 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) e.currentTarget.style.backgroundColor = '#f9fafb';
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
                 }}
               >
-                <span>{businessGroup.name}</span>
-                {isCompanyView && <span style={{ color: '#3b82f6', fontSize: '16px' }}>✓</span>}
+                <span>{branch.branchName} {locale === 'th' ? '(สาขา)' : '(Branch)'}</span>
+                {isActive && <span style={{ color: '#3b82f6', fontSize: '16px' }}>✓</span>}
               </button>
-            )}
-            {branches.map((branch) => {
-              const isActive = branchIdFromUrl === branch.id;
-              return (
-                <button
-                  key={branch.id}
-                  onClick={() => handleSelectBranch(branch)}
-                  type="button"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem 1rem',
-                    textAlign: 'left',
-                    backgroundColor: isActive ? '#f9fafb' : 'transparent',
-                    border: 'none',
-                    borderBottom: branch.id !== branches[branches.length - 1].id ? '1px solid #f3f4f6' : 'none',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    color: '#0a0a0a',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    transition: 'background-color 0.15s',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.backgroundColor = '#f9fafb';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }
-                  }}
-                >
-                  <span>{branch.branchName}</span>
-                  {isActive && (
-                    <span style={{ color: '#3b82f6', fontSize: '16px' }}>✓</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

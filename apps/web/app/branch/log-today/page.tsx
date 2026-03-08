@@ -52,6 +52,7 @@ export default function LogTodayPage() {
   const [mounted, setMounted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<'idle' | 'recorded' | 'updated'>('idle');
   const [errors, setErrors] = useState<Record<string, string>>({});
   
   // PART 3: Data Entered Today indicator state
@@ -204,6 +205,18 @@ export default function LogTodayPage() {
       }));
     });
   }, [mounted, branch?.id]);
+
+  // Save micro-animation: recorded → after 1.5s → updated → after 3s → idle
+  useEffect(() => {
+    if (saveFeedback !== 'recorded') return;
+    const t = window.setTimeout(() => setSaveFeedback('updated'), 1500);
+    return () => clearTimeout(t);
+  }, [saveFeedback]);
+  useEffect(() => {
+    if (saveFeedback !== 'updated') return;
+    const t = window.setTimeout(() => setSaveFeedback('idle'), 3000);
+    return () => clearTimeout(t);
+  }, [saveFeedback]);
 
   // Revenue is always entered directly (no auto-calculation)
   const calculatedRevenue = useMemo(() => {
@@ -412,7 +425,8 @@ export default function LogTodayPage() {
       });
       
       setSuccess(true);
-      
+      setSaveFeedback('recorded');
+
       // Optimistic: set indicator to green immediately so user sees it right after save
       setDataStatus({
         status: 'green',
@@ -447,6 +461,7 @@ export default function LogTodayPage() {
       
       // Don't auto-redirect - let user see the preview and navigate manually
     } catch (error: any) {
+      setSaveFeedback('idle');
       setErrors({
         submit: error.message || (locale === 'th' ? 'เกิดข้อผิดพลาดในการบันทึก' : 'Failed to save metrics'),
       });
@@ -804,6 +819,38 @@ export default function LogTodayPage() {
                   ? (locale === 'th' ? 'กำลังบันทึก...' : 'Saving...')
                   : (locale === 'th' ? 'บันทึกวันนี้' : 'Save Today')}
                 </button>
+              )}
+              {saveFeedback === 'recorded' && (
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '0.75rem 1rem',
+                  backgroundColor: '#f0fdf4',
+                  border: '1px solid #86efac',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  flexWrap: 'wrap',
+                }}>
+                  <span style={{ color: '#166534', fontWeight: 600 }}>✓ Data recorded</span>
+                  <span style={{ color: '#15803d', fontSize: '13px' }}>
+                    {locale === 'th' ? 'กำลังอัปเดตข้อมูลเชิงลึก...' : 'Updating insights...'}
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }} aria-hidden>
+                    <LoadingSpinner size={16} />
+                  </span>
+                </div>
+              )}
+              {saveFeedback === 'updated' && (
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '0.75rem 1rem',
+                  backgroundColor: '#f0fdf4',
+                  border: '1px solid #86efac',
+                  borderRadius: '8px',
+                }}>
+                  <span style={{ color: '#166534', fontWeight: 600 }}>✓ Insights updated</span>
+                </div>
               )}
               {role && role.canViewOnly && (
                 <div style={{
