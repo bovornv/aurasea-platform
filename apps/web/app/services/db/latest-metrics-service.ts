@@ -21,7 +21,7 @@ export interface FnbLatestMetricRow {
   [key: string]: unknown;
 }
 
-/** Accommodation view row (accommodation_latest_metrics). */
+/** Accommodation view row (accommodation_latest_metrics). Uses column "revenue" (not total_revenue_thb). */
 export interface AccommodationLatestMetricRow {
   branch_id: string;
   metric_date?: string;
@@ -111,10 +111,11 @@ export async function getLatestMetricForDashboard(
         }
         return null;
       }
-      const row = data as AccommodationLatestMetricRow | null;
+      const row = data as AccommodationLatestMetricRow & { total_revenue_thb?: number | null } | null;
       if (!row) return null;
 
-      const revenue = row.revenue != null ? Number(row.revenue) : null;
+      // accommodation_daily_metrics uses "revenue" (not total_revenue_thb); fallback if view aliases
+      const revenue = row.revenue != null ? Number(row.revenue) : (row.total_revenue_thb != null ? Number(row.total_revenue_thb) : null);
       return {
         revenue,
         customers: null,
@@ -146,8 +147,10 @@ export async function getLatestMetricForDashboard(
       };
     }
     if (accRow) {
+      const ar = accRow as AccommodationLatestMetricRow & { total_revenue_thb?: number | null };
+      const accRevenue = ar.revenue != null ? Number(ar.revenue) : (ar.total_revenue_thb != null ? Number(ar.total_revenue_thb) : null);
       return {
-        revenue: accRow.revenue != null ? Number(accRow.revenue) : null,
+        revenue: accRevenue,
         customers: null,
         roomsSold: accRow.rooms_sold != null ? Number(accRow.rooms_sold) : null,
         occupancyRate: accRow.occupancy_rate != null ? Number(accRow.occupancy_rate) : null,

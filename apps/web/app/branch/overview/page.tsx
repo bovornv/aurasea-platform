@@ -853,6 +853,7 @@ export default function BranchOverviewPage() {
           const isFnb = branchType === 'fnb';
           const isAccommodation = branchType === 'accommodation';
           const healthVal = latestDashboardMetric?.healthScore ?? branchHealthScore?.healthScore;
+          // F&B: total_revenue_thb; accommodation: revenue (mapped in latest-metrics-service)
           const revenueVal = latestDashboardMetric?.revenue ?? latestDailyMetric?.revenue;
           const customersVal = isFnb ? (latestDashboardMetric?.customers ?? latestDailyMetric?.customers) : null;
           const roomsSoldVal = isAccommodation ? (latestDashboardMetric?.roomsSold ?? latestDailyMetric?.roomsSold) : null;
