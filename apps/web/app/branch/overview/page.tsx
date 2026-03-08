@@ -41,6 +41,7 @@ import { OperatingSection } from '../../components/operating-layer/operating-sec
 import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
+import { getLatestMetricForDashboard } from '../../services/db/latest-metrics-service';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import type { DailyMetric } from '../../models/daily-metrics';
@@ -60,6 +61,8 @@ export default function BranchOverviewPage() {
   const [mounted, setMounted] = useState(false);
   // Auto-select first branch if none selected (fallback for timing issues)
   const [attemptingAutoSelect, setAttemptingAutoSelect] = useState(false);
+  // Latest metric from fnb_latest_metrics / accommodation_latest_metrics (no date filter)
+  const [latestDashboardMetric, setLatestDashboardMetric] = useState<Awaited<ReturnType<typeof getLatestMetricForDashboard>>>(null);
   
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -426,7 +429,17 @@ export default function BranchOverviewPage() {
     
     fetchDailyMetrics();
   }, [branch?.id]);
-  
+
+  // Operating Status: latest metric from views (no metric_date filter) so cards always show data
+  useEffect(() => {
+    if (!branch?.id) return;
+    let cancelled = false;
+    getLatestMetricForDashboard(branch.id, branch.moduleType ?? undefined).then((row) => {
+      if (!cancelled) setLatestDashboardMetric(row);
+    });
+    return () => { cancelled = true; };
+  }, [branch?.id, branch?.moduleType]);
+
   const performanceTrends = useMemo(() => {
     if (!branch?.id) return null;
     
@@ -834,7 +847,19 @@ export default function BranchOverviewPage() {
   return (
     <PageLayout title="" subtitle={branch?.branchName ?? ''}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {/* Mission Control: business intelligence cards first */}
+        {/* Mission Control: business intelligence cards (from latest-metrics views when possible) */}
+        {(() => {
+          const branchType = branch?.type ?? branch?.moduleType;
+          const isFnb = branchType === 'fnb';
+          const isAccommodation = branchType === 'accommodation';
+          const healthVal = latestDashboardMetric?.healthScore ?? branchHealthScore?.healthScore;
+          const revenueVal = latestDashboardMetric?.revenue ?? latestDailyMetric?.revenue;
+          const customersVal = isFnb ? (latestDashboardMetric?.customers ?? latestDailyMetric?.customers) : null;
+          const roomsSoldVal = isAccommodation ? (latestDashboardMetric?.roomsSold ?? latestDailyMetric?.roomsSold) : null;
+          const occupancyRate = isAccommodation ? (latestDashboardMetric?.occupancyRate ?? null) : null;
+          const confidenceVal = latestDashboardMetric?.confidenceScore ?? (branchHealthScore?.dataConfidence != null ? Math.round(branchHealthScore.dataConfidence * 100) : null) ?? anomalyConfidenceScore;
+          const collecting = locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
+          return (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
@@ -844,8 +869,8 @@ export default function BranchOverviewPage() {
             <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
               {locale === 'th' ? 'คะแนนสุขภาพธุรกิจ' : 'Business Health Score'}
             </div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: branchHealthScore != null ? (branchHealthScore.healthScore >= 80 ? '#10b981' : branchHealthScore.healthScore >= 60 ? '#f59e0b' : '#ef4444') : '#9ca3af' }}>
-              {branchHealthScore != null ? `${Math.round(branchHealthScore.healthScore)}` : '—'}
+            <div style={{ fontSize: '24px', fontWeight: 700, color: healthVal != null ? (healthVal >= 80 ? '#10b981' : healthVal >= 60 ? '#f59e0b' : '#ef4444') : '#9ca3af' }}>
+              {healthVal != null ? `${Math.round(healthVal)}` : collecting}
             </div>
             <div style={{ fontSize: '12px', color: '#9ca3af' }}>/ 100</div>
           </div>
@@ -854,16 +879,25 @@ export default function BranchOverviewPage() {
               {locale === 'th' ? 'รายได้วันนี้' : "Today's Revenue"}
             </div>
             <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-              {latestDailyMetric?.revenue != null ? `฿${formatCurrency(latestDailyMetric.revenue)}` : '—'}
+              {revenueVal != null ? `฿${formatCurrency(revenueVal)}` : collecting}
             </div>
           </div>
           <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
             <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
-              {locale === 'th' ? 'ลูกค้า' : 'Customers'}
+              {isAccommodation
+                ? (locale === 'th' ? 'จำนวนห้องขายได้วันนี้' : 'No. of Rooms Sold Today')
+                : (locale === 'th' ? 'ลูกค้า' : 'Customers')}
             </div>
             <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-              {latestDailyMetric?.customers != null ? latestDailyMetric.customers : '—'}
+              {isAccommodation
+                ? (roomsSoldVal != null ? Math.round(roomsSoldVal) : collecting)
+                : (customersVal != null ? Math.round(customersVal) : collecting)}
             </div>
+            {isAccommodation && occupancyRate != null && (
+              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
+                {locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy'} {Math.round(occupancyRate)}%
+              </div>
+            )}
           </div>
           <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', minWidth: 0 }}>
             <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
@@ -878,10 +912,12 @@ export default function BranchOverviewPage() {
               {locale === 'th' ? 'ความมั่นใจ' : 'Confidence'}
             </div>
             <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-              {anomalyConfidenceScore != null ? `${anomalyConfidenceScore}%` : branchHealthScore?.dataConfidence != null ? `${Math.round(branchHealthScore.dataConfidence * 100)}%` : '—'}
+              {confidenceVal != null ? `${Math.round(confidenceVal)}%` : collecting}
             </div>
           </div>
         </div>
+          );
+        })()}
 
         {/* System Learning / Data coverage — below intelligence cards */}
         {!fullyActive ? (
