@@ -150,11 +150,13 @@ function toDateOnly(value: string | undefined | null): string {
 }
 
 export function dailyMetricFromDb(db: DailyMetricDb): DailyMetric {
+  const dbAny = db as DailyMetricDb & { total_revenue_thb?: number | null };
+  const revenue = db.revenue ?? dbAny.total_revenue_thb;
   return {
     id: db.id,
     branchId: db.branch_id,
     date: (toDateOnly(db.metric_date) || db.metric_date) as string,
-    revenue: Number(db.revenue || 0),
+    revenue: Number(revenue ?? 0),
     cost: db.cost !== null && db.cost !== undefined ? Number(db.cost) : undefined,
     additionalCostToday: db.additional_cost_today != null ? Number(db.additional_cost_today) : undefined,
     cashBalance: db.cash_balance !== null && db.cash_balance !== undefined ? Number(db.cash_balance) : undefined,

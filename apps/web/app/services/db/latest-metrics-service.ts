@@ -114,8 +114,19 @@ export async function getLatestMetricForDashboard(
       const row = data as AccommodationLatestMetricRow & { total_revenue_thb?: number | null } | null;
       if (!row) return null;
 
-      // accommodation_daily_metrics uses "revenue" (not total_revenue_thb); fallback if view aliases
-      const revenue = row.revenue != null ? Number(row.revenue) : (row.total_revenue_thb != null ? Number(row.total_revenue_thb) : null);
+      // accommodation_daily_metrics uses "revenue" (not total_revenue_thb); fallback if view omits it
+      let revenue = row.revenue != null ? Number(row.revenue) : (row.total_revenue_thb != null ? Number(row.total_revenue_thb) : null);
+      if (revenue == null) {
+        const { data: fallbackRow } = await supabase
+          .from('accommodation_daily_metrics')
+          .select('revenue')
+          .eq('branch_id', branchId)
+          .order('metric_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const r = fallbackRow as { revenue?: number | null } | null;
+        revenue = r?.revenue != null ? Number(r.revenue) : null;
+      }
       return {
         revenue,
         customers: null,
@@ -148,7 +159,18 @@ export async function getLatestMetricForDashboard(
     }
     if (accRow) {
       const ar = accRow as AccommodationLatestMetricRow & { total_revenue_thb?: number | null };
-      const accRevenue = ar.revenue != null ? Number(ar.revenue) : (ar.total_revenue_thb != null ? Number(ar.total_revenue_thb) : null);
+      let accRevenue = ar.revenue != null ? Number(ar.revenue) : (ar.total_revenue_thb != null ? Number(ar.total_revenue_thb) : null);
+      if (accRevenue == null) {
+        const { data: fallbackRow } = await supabase
+          .from('accommodation_daily_metrics')
+          .select('revenue')
+          .eq('branch_id', branchId)
+          .order('metric_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const r = fallbackRow as { revenue?: number | null } | null;
+        accRevenue = r?.revenue != null ? Number(r.revenue) : null;
+      }
       return {
         revenue: accRevenue,
         customers: null,
