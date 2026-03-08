@@ -17,8 +17,13 @@ export interface UseIntelligenceStageResult {
 
 /**
  * Branch scope: coverage = distinct days in daily_metrics for this branch.
+ * Accommodation: a day counts as valid data if rooms_sold > 0 (no dependency on rooms_available).
+ * F&B / other: any row counts.
  */
-export function useIntelligenceStageBranch(branchId: string | null): UseIntelligenceStageResult {
+export function useIntelligenceStageBranch(
+  branchId: string | null,
+  moduleType?: 'accommodation' | 'fnb' | null
+): UseIntelligenceStageResult {
   const [coverageDays, setCoverageDays] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -36,7 +41,12 @@ export function useIntelligenceStageBranch(branchId: string | null): UseIntellig
       try {
         const metrics = await getDailyMetrics(branchId, 90);
         if (cancelled) return;
-        const uniqueDays = new Set((metrics || []).map((m) => m.date));
+        const rows = metrics || [];
+        const validRows =
+          moduleType === 'accommodation'
+            ? rows.filter((r) => (r.roomsSold ?? 0) > 0)
+            : rows;
+        const uniqueDays = new Set(validRows.map((m) => m.date));
         setCoverageDays(uniqueDays.size);
       } catch {
         if (!cancelled) setCoverageDays(0);
@@ -48,7 +58,7 @@ export function useIntelligenceStageBranch(branchId: string | null): UseIntellig
     return () => {
       cancelled = true;
     };
-  }, [branchId]);
+  }, [branchId, moduleType]);
 
   const stage = getIntelligenceStage(coverageDays);
   return { coverageDays, stage, isLoading };
@@ -85,7 +95,12 @@ export function useIntelligenceStageOrganization(orgId: string | null): UseIntel
         const coverages = await Promise.all(
           branches.map(async (b) => {
             const metrics = await getDailyMetrics(b.id, 90);
-            const uniqueDays = new Set((metrics || []).map((m) => m.date));
+            const rows = metrics || [];
+            const validRows =
+              (b as { moduleType?: string }).moduleType === 'accommodation'
+                ? rows.filter((r) => (r.roomsSold ?? 0) > 0)
+                : rows;
+            const uniqueDays = new Set(validRows.map((m) => m.date));
             return uniqueDays.size;
           })
         );

@@ -80,12 +80,15 @@ export async function getLastUpdatedDate(
   }
 }
 
+type MetricRowWithRooms = { metric_date?: string; rooms_sold?: number | null };
+
 /**
- * Calculate data coverage (distinct metric_date count) in last 30 days
- * PART 1.3: Query both daily_metrics and fnb_daily_metrics, count distinct dates
+ * Calculate data coverage (distinct metric_date count) in last 30 days.
+ * Accommodation: a day counts only if rooms_sold > 0 (not rooms_available).
  */
 export async function getDataCoverageDays(
-  branchId: string
+  branchId: string,
+  moduleType?: 'accommodation' | 'fnb' | null
 ): Promise<{ coverageDays: number; error?: string }> {
   try {
     if (!isSupabaseAvailable()) {
@@ -97,51 +100,53 @@ export async function getDataCoverageDays(
       return { coverageDays: 0, error: 'Supabase client not available' };
     }
 
-    // Calculate 30 days ago
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const startDate = thirtyDaysAgo.toISOString().split('T')[0];
 
-    // PART 1.3: Query distinct metric_date from both tables
+    if (moduleType === 'accommodation') {
+      const { data, error } = await supabase
+        .from('daily_metrics')
+        .select('metric_date, rooms_sold')
+        .eq('branch_id', branchId)
+        .gte('metric_date', startDate);
+      if (error) return { coverageDays: 0, error: error.message };
+      const rows = (data ?? []) as MetricRowWithRooms[];
+      const validDates = new Set(
+        rows.filter((r) => (r.rooms_sold ?? 0) > 0).map((r) => r.metric_date).filter(Boolean)
+      );
+      return { coverageDays: validDates.size };
+    }
+
     const [dailyMetricsResult, fnbMetricsResult] = await Promise.all([
-      // Query daily_metrics (accommodation)
       supabase
         .from('daily_metrics')
         .select('metric_date')
         .eq('branch_id', branchId)
         .gte('metric_date', startDate),
-      // Query fnb_daily_metrics (F&B) - may not exist if deprecated
       Promise.resolve(
         supabase
           .from('fnb_daily_metrics')
           .select('metric_date')
           .eq('branch_id', branchId)
           .gte('metric_date', startDate)
-      ).catch(() => ({ data: [], error: null })), // Ignore if table doesn't exist
+      ).catch(() => ({ data: [], error: null })),
     ]);
 
-    // Collect all dates from both tables
     const allDates: string[] = [];
     const dailyDataList = (dailyMetricsResult.data ?? []) as MetricRow[];
     const fnbDataList = (fnbMetricsResult.data ?? []) as MetricRow[];
-
-    // Process daily_metrics
     if (!dailyMetricsResult.error) {
-      dailyDataList.forEach(d => {
+      dailyDataList.forEach((d) => {
         if (d.metric_date) allDates.push(d.metric_date);
       });
     }
-
-    // Process fnb_daily_metrics
     if (!fnbMetricsResult.error) {
-      fnbDataList.forEach(d => {
+      fnbDataList.forEach((d) => {
         if (d.metric_date) allDates.push(d.metric_date);
       });
     }
-
-    // Count distinct dates
-    const distinctDates = new Set(allDates);
-    return { coverageDays: distinctDates.size };
+    return { coverageDays: new Set(allDates).size };
   } catch (error: any) {
     console.error('[BranchMetricsInfo] Failed to get data coverage:', error);
     return {

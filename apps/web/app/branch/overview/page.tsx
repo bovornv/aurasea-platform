@@ -63,7 +63,7 @@ export default function BranchOverviewPage() {
   
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
-  const { coverageDays, stage } = useIntelligenceStageBranch(branch?.id ?? null);
+  const { coverageDays, stage } = useIntelligenceStageBranch(branch?.id ?? null, branch?.moduleType);
 
   useEffect(() => {
     setMounted(true);

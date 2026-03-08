@@ -25,24 +25,25 @@ export interface ConfidenceResult {
 }
 
 /**
- * Calculate data coverage for last 30 days
+ * Calculate data coverage for last 30 days.
+ * Accommodation: a day counts as valid data if rooms_sold > 0 (not rooms_available).
  */
 export function calculateConfidence(metrics: DailyMetric[]): ConfidenceResult {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  
-  // Filter metrics within last 30 days
-  const relevantMetrics = metrics.filter(m => {
+
+  // Filter metrics within last 30 days; valid day = rooms_sold > 0
+  const relevantMetrics = metrics.filter((m) => {
     const metricDate = new Date(m.date);
     metricDate.setHours(0, 0, 0, 0);
-    return metricDate >= thirtyDaysAgo && metricDate <= today;
+    if (metricDate < thirtyDaysAgo || metricDate > today) return false;
+    return (m.roomsSold ?? 0) > 0;
   });
-  
-  // Count unique days
-  const uniqueDays = new Set(relevantMetrics.map(m => m.date));
+
+  const uniqueDays = new Set(relevantMetrics.map((m) => m.date));
   const actualDays = uniqueDays.size;
   const expectedDays = 30;
   

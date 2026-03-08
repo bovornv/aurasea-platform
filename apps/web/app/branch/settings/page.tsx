@@ -173,7 +173,7 @@ export default function BranchSettingsPage() {
       try {
         const [lastUpdatedResult, coverageResult] = await Promise.all([
           getLastUpdatedDate(branch.id),
-          getDataCoverageDays(branch.id),
+          getDataCoverageDays(branch.id, (branch as { moduleType?: 'accommodation' | 'fnb' }).moduleType),
         ]);
         if (lastUpdatedResult.lastUpdated) {
           setLastUpdated(lastUpdatedResult.lastUpdated);
