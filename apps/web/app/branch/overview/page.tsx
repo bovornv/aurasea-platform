@@ -849,7 +849,7 @@ export default function BranchOverviewPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {/* Mission Control: business intelligence cards (from latest-metrics views when possible) */}
         {(() => {
-          const branchType = branch?.type ?? branch?.moduleType;
+          const branchType = branch?.moduleType;
           const isFnb = branchType === 'fnb';
           const isAccommodation = branchType === 'accommodation';
           const healthVal = latestDashboardMetric?.healthScore ?? branchHealthScore?.healthScore;
