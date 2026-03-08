@@ -869,7 +869,7 @@ export default function BranchOverviewPage() {
             <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
               {locale === 'th' ? 'คะแนนสุขภาพธุรกิจ' : 'Business Health Score'}
             </div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: healthVal != null ? (healthVal >= 80 ? '#10b981' : healthVal >= 60 ? '#f59e0b' : '#ef4444') : '#9ca3af' }}>
+            <div style={{ fontSize: healthVal != null ? '24px' : '13px', fontWeight: healthVal != null ? 700 : 400, color: healthVal != null ? (healthVal >= 80 ? '#10b981' : healthVal >= 60 ? '#f59e0b' : '#ef4444') : '#374151' }}>
               {healthVal != null ? `${Math.round(healthVal)}` : collecting}
             </div>
             <div style={{ fontSize: '12px', color: '#9ca3af' }}>/ 100</div>

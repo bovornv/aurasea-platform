@@ -71,6 +71,9 @@ export function Breadcrumb() {
 
   if (items.length === 0) return null;
 
+  // Hide breadcrumb when it would only show "Branch Name / Overview" (redundant with header)
+  if (branchId && items.length === 2 && items[1]?.label === 'Overview') return null;
+
   return (
     <nav
       aria-label="Breadcrumb"
