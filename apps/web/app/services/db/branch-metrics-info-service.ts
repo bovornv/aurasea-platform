@@ -80,11 +80,9 @@ export async function getLastUpdatedDate(
   }
 }
 
-type MetricRowWithRooms = { metric_date?: string; rooms_sold?: number | null };
-
 /**
- * Calculate data coverage (distinct metric_date count) in last 30 days.
- * Accommodation: a day counts only if rooms_sold > 0 (not rooms_available).
+ * Coverage = distinct metric_date rows for branch_id only.
+ * Prefer views accommodation_data_coverage / fnb_data_coverage (branch_id, days_with_data); fallback to base table count.
  */
 export async function getDataCoverageDays(
   branchId: string,
@@ -104,49 +102,49 @@ export async function getDataCoverageDays(
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const startDate = thirtyDaysAgo.toISOString().split('T')[0];
 
-    if (moduleType === 'accommodation') {
+    const countDistinctFromTable = async (
+      table: 'accommodation_daily_metrics' | 'fnb_daily_metrics'
+    ): Promise<number> => {
       const { data, error } = await supabase
-        .from('daily_metrics')
-        .select('metric_date, rooms_sold')
-        .eq('branch_id', branchId)
-        .gte('metric_date', startDate);
-      if (error) return { coverageDays: 0, error: error.message };
-      const rows = (data ?? []) as MetricRowWithRooms[];
-      const validDates = new Set(
-        rows.filter((r) => (r.rooms_sold ?? 0) > 0).map((r) => r.metric_date).filter(Boolean)
-      );
-      return { coverageDays: validDates.size };
-    }
-
-    const [dailyMetricsResult, fnbMetricsResult] = await Promise.all([
-      supabase
-        .from('daily_metrics')
+        .from(table)
         .select('metric_date')
         .eq('branch_id', branchId)
-        .gte('metric_date', startDate),
-      Promise.resolve(
-        supabase
-          .from('fnb_daily_metrics')
-          .select('metric_date')
-          .eq('branch_id', branchId)
-          .gte('metric_date', startDate)
-      ).catch(() => ({ data: [], error: null })),
-    ]);
+        .gte('metric_date', startDate);
+      if (error) return 0;
+      const rows = (data ?? []) as MetricRow[];
+      const distinct = new Set(rows.map((r) => r.metric_date).filter(Boolean));
+      return distinct.size;
+    };
 
-    const allDates: string[] = [];
-    const dailyDataList = (dailyMetricsResult.data ?? []) as MetricRow[];
-    const fnbDataList = (fnbMetricsResult.data ?? []) as MetricRow[];
-    if (!dailyMetricsResult.error) {
-      dailyDataList.forEach((d) => {
-        if (d.metric_date) allDates.push(d.metric_date);
-      });
+    if (moduleType === 'accommodation') {
+      const { data, error } = await supabase
+        .from('accommodation_data_coverage')
+        .select('branch_id, days_with_data')
+        .eq('branch_id', branchId)
+        .maybeSingle();
+      if (!error && data && typeof (data as { days_with_data?: number }).days_with_data === 'number') {
+        return { coverageDays: (data as { days_with_data: number }).days_with_data };
+      }
+      return { coverageDays: await countDistinctFromTable('accommodation_daily_metrics') };
     }
-    if (!fnbMetricsResult.error) {
-      fnbDataList.forEach((d) => {
-        if (d.metric_date) allDates.push(d.metric_date);
-      });
+
+    if (moduleType === 'fnb') {
+      const { data, error } = await supabase
+        .from('fnb_data_coverage')
+        .select('branch_id, days_with_data')
+        .eq('branch_id', branchId)
+        .maybeSingle();
+      if (!error && data && typeof (data as { days_with_data?: number }).days_with_data === 'number') {
+        return { coverageDays: (data as { days_with_data: number }).days_with_data };
+      }
+      return { coverageDays: await countDistinctFromTable('fnb_daily_metrics') };
     }
-    return { coverageDays: new Set(allDates).size };
+
+    const [acc, fnb] = await Promise.all([
+      countDistinctFromTable('accommodation_daily_metrics'),
+      countDistinctFromTable('fnb_daily_metrics'),
+    ]);
+    return { coverageDays: Math.max(acc, fnb) };
   } catch (error: any) {
     console.error('[BranchMetricsInfo] Failed to get data coverage:', error);
     return {

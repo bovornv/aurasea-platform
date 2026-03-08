@@ -1,12 +1,12 @@
 /**
  * Central hook for intelligence stage (coverage-days only, vertical-agnostic).
- * Use to gate health score, alerts, and trends and show IntelligenceInitializationCard when not FULLY_ACTIVE.
+ * Coverage = distinct metric_date rows for branch_id (from coverage view or base table).
  */
 'use client';
 
 import { useState, useEffect } from 'react';
 import { getIntelligenceStage, type IntelligenceStage } from '../utils/intelligence-stage';
-import { getDailyMetrics } from '../services/db/daily-metrics-service';
+import { getDataCoverageDays } from '../services/db/branch-metrics-info-service';
 import { businessGroupService } from '../services/business-group-service';
 
 export interface UseIntelligenceStageResult {
@@ -16,9 +16,7 @@ export interface UseIntelligenceStageResult {
 }
 
 /**
- * Branch scope: coverage = distinct days in daily_metrics for this branch.
- * Accommodation: a day counts as valid data if rooms_sold > 0 (no dependency on rooms_available).
- * F&B / other: any row counts.
+ * Branch scope: coverage = distinct metric_date count for this branch (accommodation_data_coverage / fnb_data_coverage or base table).
  */
 export function useIntelligenceStageBranch(
   branchId: string | null,
@@ -39,15 +37,8 @@ export function useIntelligenceStageBranch(
 
     (async () => {
       try {
-        const metrics = await getDailyMetrics(branchId, 90);
-        if (cancelled) return;
-        const rows = metrics || [];
-        const validRows =
-          moduleType === 'accommodation'
-            ? rows.filter((r) => (r.roomsSold ?? 0) > 0)
-            : rows;
-        const uniqueDays = new Set(validRows.map((m) => m.date));
-        setCoverageDays(uniqueDays.size);
+        const { coverageDays: days } = await getDataCoverageDays(branchId, moduleType ?? undefined);
+        if (!cancelled) setCoverageDays(days ?? 0);
       } catch {
         if (!cancelled) setCoverageDays(0);
       } finally {
@@ -65,7 +56,7 @@ export function useIntelligenceStageBranch(
 }
 
 /**
- * Organization scope: coverage = minimum distinct days across all branches (conservative).
+ * Organization scope: coverage = minimum distinct days across all branches (per-branch coverage from view or base table).
  */
 export function useIntelligenceStageOrganization(orgId: string | null): UseIntelligenceStageResult {
   const [coverageDays, setCoverageDays] = useState(0);
@@ -94,14 +85,11 @@ export function useIntelligenceStageOrganization(orgId: string | null): UseIntel
 
         const coverages = await Promise.all(
           branches.map(async (b) => {
-            const metrics = await getDailyMetrics(b.id, 90);
-            const rows = metrics || [];
-            const validRows =
-              (b as { moduleType?: string }).moduleType === 'accommodation'
-                ? rows.filter((r) => (r.roomsSold ?? 0) > 0)
-                : rows;
-            const uniqueDays = new Set(validRows.map((m) => m.date));
-            return uniqueDays.size;
+            const { coverageDays: days } = await getDataCoverageDays(
+              b.id,
+              (b as { moduleType?: 'accommodation' | 'fnb' }).moduleType
+            );
+            return days ?? 0;
           })
         );
         if (cancelled) return;

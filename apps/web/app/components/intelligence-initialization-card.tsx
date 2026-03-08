@@ -51,7 +51,7 @@ export function IntelligenceInitializationCard({ coverageDays, locale = 'en' }: 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
           <span style={{ fontSize: '14px', color: '#374151' }}>
             {locale === 'th' ? 'ความครอบคลุมข้อมูล: ' : 'Data coverage: '}
-            <strong>{coverageDays}</strong> / {target} {locale === 'th' ? 'วัน' : 'days'}
+            <strong>{coverageDays ?? 0}</strong> / {target} {locale === 'th' ? 'วัน' : 'days'}
           </span>
         </div>
         <div
