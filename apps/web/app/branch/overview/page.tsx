@@ -33,7 +33,6 @@ import { calculateRevenueExposure } from '../../utils/revenue-exposure-calculato
 import { runPlatformAudit } from '../../services/platform-audit-service';
 import { useSystemValidation } from '../../hooks/use-system-validation';
 import { useIntelligenceStageBranch } from '../../hooks/use-intelligence-stage';
-import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import { isFullyActive } from '../../utils/intelligence-stage';
 import { IntelligenceInitializationCard } from '../../components/intelligence-initialization-card';
 import { useUserRole } from '../../contexts/user-role-context';
@@ -65,10 +64,9 @@ export default function BranchOverviewPage() {
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
   const { coverageDays, stage } = useIntelligenceStageBranch(branch?.id ?? null, branch?.moduleType);
-  const { anomalyAlertsAsContracts, confidenceScore: anomalyConfidenceScore } = useAnomalySignals(
-    branch?.id ?? null,
-    locale === 'th' ? 'th' : 'en'
-  );
+  // Anomaly signals optional (use branch alerts + health score confidence when not available)
+  const anomalyAlertsAsContracts: AlertContract[] = [];
+  const anomalyConfidenceScore: number | null = null;
 
   useEffect(() => {
     setMounted(true);
@@ -143,7 +141,7 @@ export default function BranchOverviewPage() {
     });
   }, [branch, safeRawAlerts, safeHospitalityAlerts]);
 
-  // Merge anomaly alerts (branch_anomaly_signals) so early signals show after ~7 days
+  // Merge anomaly alerts when available; for now use branch alerts only
   const mergedBranchAlerts = useMemo(() => {
     if (!branch?.id) return [];
     const byId = new Map<string, AlertContract>();
@@ -152,7 +150,7 @@ export default function BranchOverviewPage() {
       if (!byId.has(a.id)) byId.set(a.id, a);
     });
     return Array.from(byId.values());
-  }, [branch?.id, branchAlerts, anomalyAlertsAsContracts]);
+  }, [branch?.id, branchAlerts]);
 
   // PHASE 3: Calculate performance trends from daily_metrics
   // Compare last 7 days vs previous 7 days (requires minimum 14 days)
