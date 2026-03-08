@@ -114,12 +114,23 @@ export function ViewSwitcherDropdown() {
   const displayText = useMemo(() => {
     if (!mounted || !businessGroup) return '';
     if (isCompanyView) return businessGroup.name;
-    if (currentBranch && branches.some((b) => b.id === currentBranch.id)) {
-      return currentBranch.branchName;
-    }
-    if (branches.length > 0) return branches[0].branchName;
-    return businessGroup.name;
+    const branch = currentBranch && branches.some((b) => b.id === currentBranch.id)
+      ? currentBranch
+      : branches.length > 0 ? branches[0] : null;
+    const branchName = branch?.branchName ?? businessGroup.name;
+    return `${businessGroup.name} > ${branchName}`;
   }, [mounted, businessGroup, isCompanyView, currentBranch, branches]);
+
+  const branchTypeLabel = useMemo(() => {
+    if (isCompanyView) return null;
+    const branch = currentBranch && branches.some((b) => b.id === currentBranch.id)
+      ? currentBranch
+      : branches.length > 0 ? branches[0] : null;
+    const type = (branch as { moduleType?: string })?.moduleType ?? (branch as { type?: string })?.type;
+    if (type === 'fnb') return 'F&B';
+    if (type === 'accommodation') return 'Accommodation';
+    return null;
+  }, [isCompanyView, currentBranch, branches]);
 
   const handleSelectCompany = () => {
     if (!canAccessCompany || !orgId) return;
@@ -197,7 +208,7 @@ export function ViewSwitcherDropdown() {
             border: '1px solid #e5e7eb',
             borderRadius: '6px',
             cursor: 'pointer',
-            fontSize: '14px',
+            fontSize: '16px',
             fontWeight: 600,
             color: '#0a0a0a',
             letterSpacing: '-0.01em',
@@ -315,7 +326,7 @@ export function ViewSwitcherDropdown() {
     return (
       <div style={{
         padding: '0.5rem 0.75rem',
-        fontSize: '14px',
+        fontSize: '16px',
         fontWeight: 600,
         color: '#0a0a0a',
         letterSpacing: '-0.01em',
@@ -334,16 +345,29 @@ export function ViewSwitcherDropdown() {
 
   if (!shouldShowDropdown && branches.length === 1) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
         <span style={{
-          fontSize: '14px',
+          fontSize: '16px',
           fontWeight: 600,
           color: '#0a0a0a',
           letterSpacing: '-0.01em',
           lineHeight: 1.2,
           minWidth: '180px',
         }}>
-          {businessGroup.name}
+          {displayText}
+          {branchTypeLabel && (
+            <span style={{
+              fontSize: '11px',
+              background: '#F3F4F6',
+              color: '#374151',
+              padding: '2px 6px',
+              borderRadius: '6px',
+              marginLeft: '6px',
+              fontWeight: 500,
+            }}>
+              {branchTypeLabel}
+            </span>
+          )}
         </span>
         <span style={{ fontSize: '12px', color: '#6b7280' }}>▾</span>
       </div>
@@ -365,7 +389,7 @@ export function ViewSwitcherDropdown() {
           border: '1px solid #e5e7eb',
           borderRadius: '6px',
           cursor: 'pointer',
-          fontSize: '14px',
+          fontSize: '16px',
           fontWeight: 600,
           color: '#0a0a0a',
           letterSpacing: '-0.01em',
@@ -382,8 +406,22 @@ export function ViewSwitcherDropdown() {
           e.currentTarget.style.boxShadow = 'none';
         }}
       >
-        <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {businessGroup.name}
+        <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0 }}>
+          {displayText}
+          {branchTypeLabel && (
+            <span style={{
+              fontSize: '11px',
+              background: '#F3F4F6',
+              color: '#374151',
+              padding: '2px 6px',
+              borderRadius: '6px',
+              marginLeft: '6px',
+              fontWeight: 500,
+              flexShrink: 0,
+            }}>
+              {branchTypeLabel}
+            </span>
+          )}
         </span>
         <span style={{ fontSize: '12px', color: '#6b7280', flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
       </button>
