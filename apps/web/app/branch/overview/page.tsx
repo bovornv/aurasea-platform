@@ -857,7 +857,15 @@ export default function BranchOverviewPage() {
           const revenueVal = latestDashboardMetric?.revenue ?? latestDailyMetric?.revenue;
           const customersVal = isFnb ? (latestDashboardMetric?.customers ?? latestDailyMetric?.customers) : null;
           const roomsSoldVal = isAccommodation ? (latestDashboardMetric?.roomsSold ?? latestDailyMetric?.roomsSold) : null;
-          const occupancyRate = isAccommodation ? (latestDashboardMetric?.occupancyRate ?? null) : null;
+          
+          let occupancyRate = null;
+          if (isAccommodation && roomsSoldVal != null) {
+            const totalRooms = branch?.totalRooms ?? 0;
+            if (totalRooms > 0) {
+              occupancyRate = (roomsSoldVal / totalRooms) * 100;
+            }
+          }
+          
           const confidenceVal = latestDashboardMetric?.confidenceScore ?? (branchHealthScore?.dataConfidence != null ? Math.round(branchHealthScore.dataConfidence * 100) : null) ?? anomalyConfidenceScore;
           const collecting = locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
           return (
@@ -894,7 +902,14 @@ export default function BranchOverviewPage() {
                 ? (roomsSoldVal != null ? Math.round(roomsSoldVal) : collecting)
                 : (customersVal != null ? Math.round(customersVal) : collecting)}
             </div>
-            {isAccommodation && occupancyRate != null && (
+            {isAccommodation && branch?.totalRooms == null && (
+              <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '0.25rem' }}>
+                <a href={`/org/${branch.businessGroupId}/branch/${branch.id}/log`} style={{ color: '#ef4444', textDecoration: 'underline' }}>
+                  {locale === 'th' ? 'โปรดตั้งค่าจำนวนห้องพัก' : 'Please configure hotel capacity'}
+                </a>
+              </div>
+            )}
+            {isAccommodation && occupancyRate != null && branch?.totalRooms != null && (
               <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
                 {locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy'} {Math.round(occupancyRate)}%
               </div>

@@ -54,6 +54,8 @@ export interface Branch {
   sortOrder?: number;
   createdAt: Date;
   businessType?: 'CAFE_RESTAURANT' | 'HOTEL_RESORT' | 'HOTEL_WITH_CAFE';
+  totalRooms?: number;
+  accommodationStaffCount?: number;
 }
 
 /**

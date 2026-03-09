@@ -9,5 +9,7 @@ export const BRANCH_SELECT = `
   organization_id,
   sort_order,
   created_at,
-  module_type
+  module_type,
+  total_rooms,
+  accommodation_staff_count
 `.replace(/\s+/g, ' ').trim();

@@ -28,6 +28,7 @@ import { ErrorState } from '../../components/error-state';
 import { SectionCard } from '../../components/section-card';
 import { formatCurrency } from '../../utils/formatting';
 import { safeNumber } from '../../utils/safe-number';
+import { getSupabaseClient } from '../../lib/supabase/client';
 import { calculateDailyFlow, type BranchSetup } from '../../services/daily-flow-service';
 
 export default function LogTodayPage() {
@@ -170,8 +171,8 @@ export default function LogTodayPage() {
     monthlyFixedCost: '',
     debtPayment: '',
     // Accommodation capacity fields (manager+)
-    totalRoomsAvailable: '',
-    accommodationStaffCount: '',
+    totalRoomsAvailable: branch?.totalRooms != null ? String(branch.totalRooms) : '',
+    accommodationStaffCount: branch?.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
     // F&B capacity fields (manager+)
     fnbStaffCount: '',
   });
@@ -193,6 +194,14 @@ export default function LogTodayPage() {
   // Pre-fill form from today's record (so indicator and fields stay in sync after refresh)
   useEffect(() => {
     if (!mounted || !branch?.id) return;
+    
+    // Update branch capacity fields if available
+    setFinanceData(prev => ({
+      ...prev,
+      totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : prev.totalRoomsAvailable,
+      accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : prev.accommodationStaffCount,
+    }));
+    
     getTodayDailyMetric(branch.id).then((m) => {
       if (!m) return;
       setTodayData(prev => ({
@@ -339,6 +348,28 @@ export default function LogTodayPage() {
         dailyMetric.roomsAvailable = safeNumber(financeData.totalRoomsAvailable, undefined) ?? (branchSetup as any)?.rooms_available;
         dailyMetric.monthlyFixedCost = safeNumber(financeData.monthlyFixedCost, undefined) ?? (branchSetup as any)?.monthly_fixed_cost;
         dailyMetric.accommodationStaff = safeNumber(financeData.accommodationStaffCount, undefined) ?? (branchSetup as any)?.accommodation_staff_count;
+        
+        // Update static capacity fields in branches table if changed
+        const newTotalRooms = safeNumber(financeData.totalRoomsAvailable, undefined);
+        const newStaffCount = safeNumber(financeData.accommodationStaffCount, undefined);
+        
+        if (
+          (newTotalRooms !== undefined && newTotalRooms !== branch.totalRooms) ||
+          (newStaffCount !== undefined && newStaffCount !== branch.accommodationStaffCount)
+        ) {
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            const updatePayload: any = {};
+            if (newTotalRooms !== undefined) updatePayload.total_rooms = newTotalRooms;
+            if (newStaffCount !== undefined) updatePayload.accommodation_staff_count = newStaffCount;
+            
+            // Non-blocking update
+            // @ts-ignore - total_rooms is added via migration but may not be in generated types yet
+            supabase.from('branches').update(updatePayload).eq('id', branch.id).then(({ error }) => {
+              if (error) console.error('[LogToday] Failed to update branch capacity:', error);
+            });
+          }
+        }
       }
       
       // F&B fields (including Advanced Finance & Capacity: monthly_fixed_cost, fnb_staff)

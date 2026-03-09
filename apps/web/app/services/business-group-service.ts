@@ -548,6 +548,8 @@ class BusinessGroupService {
           isDefault: false,
           sortOrder: row.sort_order ?? 0,
           createdAt: row.created_at ? new Date(row.created_at) : new Date(0),
+          totalRooms: (row as any).total_rooms ?? undefined,
+          accommodationStaffCount: (row as any).accommodation_staff_count ?? undefined,
         };
       };
 
@@ -607,6 +609,8 @@ class BusinessGroupService {
           isDefault: false,
           sortOrder: row.sort_order ?? 0,
           createdAt: row.created_at ? new Date(row.created_at) : new Date(0),
+          totalRooms: (row as any).total_rooms ?? undefined,
+          accommodationStaffCount: (row as any).accommodation_staff_count ?? undefined,
         };
       };
 
