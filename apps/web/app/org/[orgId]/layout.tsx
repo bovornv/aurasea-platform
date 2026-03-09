@@ -21,7 +21,6 @@ import { getAccessibleBranches } from '../../services/permissions-service';
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import { BRANCH_SELECT } from '../../lib/db-selects';
 import { Navigation } from '../../components/navigation';
-import { Breadcrumb } from '../../components/breadcrumb';
 import SimulationBannerWrapper from '../../components/simulation-banner-wrapper';
 import { LoadingSpinner } from '../../components/loading-spinner';
 import { useOrganization } from '../../contexts/organization-context';
@@ -224,7 +223,6 @@ export default function OrgLayout({
     <div style={{ width: '100%', minHeight: '100vh', backgroundColor: '#f9fafb' }}>
       <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 2rem 2rem 2rem' }}>
         <SimulationBannerWrapper />
-        <Breadcrumb />
         <Navigation />
         {children}
       </div>
