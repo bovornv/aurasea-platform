@@ -138,11 +138,36 @@ export default function LogTodayPage() {
   useEffect(() => {
     if (!mounted || !branch?.id) return;
 
-    setFinanceData((prev) => ({
-      ...prev,
-      totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : prev.totalRoomsAvailable,
-      accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : prev.accommodationStaffCount,
-    }));
+    const fromBranch = (): void => {
+      setFinanceData((prev) => ({
+        ...prev,
+        totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : prev.totalRoomsAvailable,
+        accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : prev.accommodationStaffCount,
+      }));
+    };
+    fromBranch();
+
+    // Fallback: if accommodation and branch cache has no capacity fields, fetch from DB (e.g. older cache)
+    if (moduleType === 'accommodation' && (branch.totalRooms == null || branch.accommodationStaffCount == null)) {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        supabase
+          .from('branches')
+          .select('total_rooms, accommodation_staff_count')
+          .eq('id', branch.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            const row = data as { total_rooms?: number | null; accommodation_staff_count?: number | null } | null;
+            if (row && (row.total_rooms != null || row.accommodation_staff_count != null)) {
+              setFinanceData((prev) => ({
+                ...prev,
+                totalRoomsAvailable: row.total_rooms != null ? String(row.total_rooms) : prev.totalRoomsAvailable,
+                accommodationStaffCount: row.accommodation_staff_count != null ? String(row.accommodation_staff_count) : prev.accommodationStaffCount,
+              }));
+            }
+          });
+      }
+    }
 
     const today = getTodayDateString();
     const toDateOnly = (d: string | undefined) => (d ? String(d).slice(0, 10) : '');
