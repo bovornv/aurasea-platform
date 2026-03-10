@@ -188,31 +188,6 @@ export default function LogTodayPage() {
       }
     }
 
-    // Fallback: if F&B and branch cache has no fnb_staff/monthly_fixed_cost, fetch from DB
-    if (moduleType === 'fnb' && (branch.fnbStaffCount == null || branch.monthlyFixedCost == null)) {
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        supabase
-          .from('branches')
-          .select('fnb_staff_count, monthly_fixed_cost')
-          .eq('id', branch.id)
-          .maybeSingle()
-          .then(({ data }) => {
-            const row = data as { fnb_staff_count?: number | null; monthly_fixed_cost?: number | null } | null;
-            if (row && (row.fnb_staff_count != null || row.monthly_fixed_cost != null)) {
-              const fsc = row.fnb_staff_count != null ? String(row.fnb_staff_count) : '';
-              const mfc = row.monthly_fixed_cost != null ? String(row.monthly_fixed_cost) : '';
-              setFinanceData((prev) => ({
-                ...prev,
-                fnbStaffCount: fsc || prev.fnbStaffCount,
-                monthlyFixedCost: mfc || prev.monthlyFixedCost,
-              }));
-              setOriginalValues((prev) => prev ? { ...prev, fnbStaffCount: fsc || prev.fnbStaffCount, monthlyFixedCost: mfc || prev.monthlyFixedCost } : null);
-            }
-          });
-      }
-    }
-
     const today = getTodayDateString();
     const toDateOnly = (d: string | undefined) => (d ? String(d).slice(0, 10) : '');
 
@@ -543,24 +518,7 @@ export default function LogTodayPage() {
         dailyMetric.customers = safeNumber(todayData.customers, undefined);
         dailyMetric.monthlyFixedCost = safeNumber(financeData.monthlyFixedCost, undefined) ?? branch?.monthlyFixedCost ?? (branchSetup as any)?.monthly_fixed_cost;
         dailyMetric.fnbStaff = safeNumber(financeData.fnbStaffCount, undefined) ?? branch?.fnbStaffCount ?? (branchSetup as any)?.fnb_staff_count;
-        // Update branch table with F&B finance/capacity when changed
-        const newFnbStaff = safeNumber(financeData.fnbStaffCount, undefined);
-        const newMonthlyFixed = safeNumber(financeData.monthlyFixedCost, undefined);
-        if (
-          (newFnbStaff !== undefined && newFnbStaff !== branch.fnbStaffCount) ||
-          (newMonthlyFixed !== undefined && newMonthlyFixed !== branch.monthlyFixedCost)
-        ) {
-          const supabase = getSupabaseClient();
-          if (supabase) {
-            const updatePayload: any = {};
-            if (newFnbStaff !== undefined) updatePayload.fnb_staff_count = newFnbStaff;
-            if (newMonthlyFixed !== undefined) updatePayload.monthly_fixed_cost = newMonthlyFixed;
-            // @ts-expect-error - fnb_staff_count/monthly_fixed_cost may not be in generated types
-            supabase.from('branches').update(updatePayload).eq('id', branch.id).then(({ error }: { error: any }) => {
-              if (error) console.error('[LogToday] Failed to update branch F&B finance:', error);
-            });
-          }
-        }
+        // Branch table update for fnb_staff_count/monthly_fixed_cost skipped until branches has those columns (run add-branch-fnb-fields.sql)
         if (todayData.top3MenuRevenue) {
           const top3Revenue = safeNumber(todayData.top3MenuRevenue, undefined);
           if (top3Revenue !== undefined && top3Revenue >= 0 && (calculatedRevenue === 0 || top3Revenue <= calculatedRevenue)) {

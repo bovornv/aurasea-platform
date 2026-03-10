@@ -584,7 +584,7 @@ class BusinessGroupService {
 
       const { data: rows, error } = await supabase
         .from('branch_members')
-        .select('branch_id, branches(id, name, organization_id, sort_order, created_at, module_type, total_rooms, accommodation_staff_count, fnb_staff_count, monthly_fixed_cost)')
+        .select('branch_id, branches(id, name, organization_id, sort_order, created_at, module_type, total_rooms, accommodation_staff_count)')
         .eq('user_id', userId);
 
       if (error) throw error;
@@ -613,8 +613,8 @@ class BusinessGroupService {
           createdAt: row.created_at ? new Date(row.created_at) : new Date(0),
           totalRooms: row.total_rooms ?? undefined,
           accommodationStaffCount: row.accommodation_staff_count ?? undefined,
-          fnbStaffCount: row.fnb_staff_count ?? undefined,
-          monthlyFixedCost: row.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : undefined,
+          fnbStaffCount: undefined,
+          monthlyFixedCost: undefined,
         };
       };
 
