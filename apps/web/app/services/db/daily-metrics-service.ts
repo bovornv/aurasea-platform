@@ -171,6 +171,7 @@ export async function saveDailyMetric(
 
 /**
  * Get today's daily metric for a branch (no cache).
+ * Reads from daily_metrics view (unified); maps total_revenue_thb -> revenue for F&B.
  */
 export async function getTodayDailyMetric(branchId: string): Promise<DailyMetric | null> {
   if (branchId == null || branchId === '') return null;
@@ -181,7 +182,7 @@ export async function getTodayDailyMetric(branchId: string): Promise<DailyMetric
     const supabase = getSupabaseClient();
     if (!supabase) return null;
     const { data, error } = await supabase
-      .from('daily_metrics')
+      .from(DAILY_METRICS_READ)
       .select('*')
       .eq('branch_id', branchId)
       .eq('metric_date', today)
@@ -191,6 +192,35 @@ export async function getTodayDailyMetric(branchId: string): Promise<DailyMetric
     return dailyMetricFromDb(data as any);
   } catch (e) {
     console.error('[DailyMetricsService] getTodayDailyMetric error:', e);
+    return null;
+  }
+}
+
+/**
+ * Get the most recent metric_date for a branch (for "Last entry: ..." display).
+ * Returns YYYY-MM-DD or null if no rows.
+ */
+export async function getLastEntryDate(branchId: string): Promise<string | null> {
+  if (branchId == null || branchId === '') return null;
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return null;
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from(DAILY_METRICS_READ)
+      .select('metric_date')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    const row = data as { metric_date?: string } | null;
+    return row?.metric_date ? String(row.metric_date).slice(0, 10) : null;
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DailyMetricsService] getLastEntryDate error:', e);
+    }
     return null;
   }
 }
