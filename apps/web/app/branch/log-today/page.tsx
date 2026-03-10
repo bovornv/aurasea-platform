@@ -76,6 +76,7 @@ export default function LogTodayPage() {
     totalRoomsAvailable: string;
     accommodationStaffCount: string;
     monthlyFixedCost: string;
+    fnbStaffCount: string;
   } | null>(null);
   
   // Determine user role
@@ -156,6 +157,8 @@ export default function LogTodayPage() {
         ...prev,
         totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : prev.totalRoomsAvailable,
         accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : prev.accommodationStaffCount,
+        fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : prev.fnbStaffCount,
+        monthlyFixedCost: branch.monthlyFixedCost != null ? String(branch.monthlyFixedCost) : prev.monthlyFixedCost,
       }));
     };
     fromBranch();
@@ -180,6 +183,31 @@ export default function LogTodayPage() {
                 accommodationStaffCount: asc || prev.accommodationStaffCount,
               }));
               setOriginalValues((prev) => prev ? { ...prev, totalRoomsAvailable: tr || prev.totalRoomsAvailable, accommodationStaffCount: asc || prev.accommodationStaffCount } : null);
+            }
+          });
+      }
+    }
+
+    // Fallback: if F&B and branch cache has no fnb_staff/monthly_fixed_cost, fetch from DB
+    if (moduleType === 'fnb' && (branch.fnbStaffCount == null || branch.monthlyFixedCost == null)) {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        supabase
+          .from('branches')
+          .select('fnb_staff_count, monthly_fixed_cost')
+          .eq('id', branch.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            const row = data as { fnb_staff_count?: number | null; monthly_fixed_cost?: number | null } | null;
+            if (row && (row.fnb_staff_count != null || row.monthly_fixed_cost != null)) {
+              const fsc = row.fnb_staff_count != null ? String(row.fnb_staff_count) : '';
+              const mfc = row.monthly_fixed_cost != null ? String(row.monthly_fixed_cost) : '';
+              setFinanceData((prev) => ({
+                ...prev,
+                fnbStaffCount: fsc || prev.fnbStaffCount,
+                monthlyFixedCost: mfc || prev.monthlyFixedCost,
+              }));
+              setOriginalValues((prev) => prev ? { ...prev, fnbStaffCount: fsc || prev.fnbStaffCount, monthlyFixedCost: mfc || prev.monthlyFixedCost } : null);
             }
           });
       }
@@ -226,7 +254,8 @@ export default function LogTodayPage() {
             additionalCostToday: addCost,
             totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
             accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
-            monthlyFixedCost: '',
+            monthlyFixedCost: branch.monthlyFixedCost != null ? String(branch.monthlyFixedCost) : '',
+            fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
           });
         } else {
           setTodayRecordId(null);
@@ -238,7 +267,8 @@ export default function LogTodayPage() {
             additionalCostToday: '',
             totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
             accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
-            monthlyFixedCost: '',
+            monthlyFixedCost: branch.monthlyFixedCost != null ? String(branch.monthlyFixedCost) : '',
+            fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
           });
           const last2 = await getDailyMetrics(branch.id, 2);
           const yesterday = new Date();
@@ -318,12 +348,13 @@ export default function LogTodayPage() {
       todayData.additionalCostToday !== originalValues.additionalCostToday ||
       financeData.totalRoomsAvailable !== originalValues.totalRoomsAvailable ||
       financeData.accommodationStaffCount !== originalValues.accommodationStaffCount ||
-      financeData.monthlyFixedCost !== originalValues.monthlyFixedCost
+      financeData.monthlyFixedCost !== originalValues.monthlyFixedCost ||
+      financeData.fnbStaffCount !== originalValues.fnbStaffCount
     );
   }, [originalValues, todayData, financeData]);
 
   const todayFields = ['revenue', 'roomsSold', 'customers', 'top3MenuRevenue', 'additionalCostToday'] as const;
-  const financeFields = ['totalRoomsAvailable', 'accommodationStaffCount', 'monthlyFixedCost'] as const;
+  const financeFields = ['totalRoomsAvailable', 'accommodationStaffCount', 'monthlyFixedCost', 'fnbStaffCount'] as const;
   const currentValueFor = (field: keyof NonNullable<typeof originalValues>) =>
     todayFields.includes(field as any) ? (todayData as Record<string, string>)[field] : (financeData as Record<string, string>)[field];
 
@@ -394,6 +425,16 @@ export default function LogTodayPage() {
       if (Object.keys(newErrors).some((k) => k === 'totalRoomsAvailable' || k === 'accommodationStaffCount')) {
         setFinanceExpanded(true);
       }
+    }
+
+    // F&B: first-time config — F&B Staff Count required when not yet set on branch
+    const fnbNeedsConfig = isFnb && branch?.fnbStaffCount == null;
+    if (fnbNeedsConfig) {
+      const fnbStaffVal = safeNumber(financeData.fnbStaffCount, undefined);
+      if (fnbStaffVal == null || fnbStaffVal < 0) {
+        newErrors.fnbStaffCount = locale === 'th' ? 'กรุณากรอกจำนวนพนักงาน F&B (จำเป็นในการตั้งค่าแรก)' : 'F&B Staff Count is required on first setup';
+      }
+      if (newErrors.fnbStaffCount) setFinanceExpanded(true);
     }
 
     // Accommodation: Rooms Sold required
@@ -500,8 +541,26 @@ export default function LogTodayPage() {
       // F&B fields (including Advanced Finance & Capacity: monthly_fixed_cost, fnb_staff)
       if (isFnb) {
         dailyMetric.customers = safeNumber(todayData.customers, undefined);
-        dailyMetric.monthlyFixedCost = safeNumber(financeData.monthlyFixedCost, undefined) ?? (branchSetup as any)?.monthly_fixed_cost;
-        dailyMetric.fnbStaff = safeNumber(financeData.fnbStaffCount, undefined) ?? (branchSetup as any)?.fnb_staff_count;
+        dailyMetric.monthlyFixedCost = safeNumber(financeData.monthlyFixedCost, undefined) ?? branch?.monthlyFixedCost ?? (branchSetup as any)?.monthly_fixed_cost;
+        dailyMetric.fnbStaff = safeNumber(financeData.fnbStaffCount, undefined) ?? branch?.fnbStaffCount ?? (branchSetup as any)?.fnb_staff_count;
+        // Update branch table with F&B finance/capacity when changed
+        const newFnbStaff = safeNumber(financeData.fnbStaffCount, undefined);
+        const newMonthlyFixed = safeNumber(financeData.monthlyFixedCost, undefined);
+        if (
+          (newFnbStaff !== undefined && newFnbStaff !== branch.fnbStaffCount) ||
+          (newMonthlyFixed !== undefined && newMonthlyFixed !== branch.monthlyFixedCost)
+        ) {
+          const supabase = getSupabaseClient();
+          if (supabase) {
+            const updatePayload: any = {};
+            if (newFnbStaff !== undefined) updatePayload.fnb_staff_count = newFnbStaff;
+            if (newMonthlyFixed !== undefined) updatePayload.monthly_fixed_cost = newMonthlyFixed;
+            // @ts-expect-error - fnb_staff_count/monthly_fixed_cost may not be in generated types
+            supabase.from('branches').update(updatePayload).eq('id', branch.id).then(({ error }: { error: any }) => {
+              if (error) console.error('[LogToday] Failed to update branch F&B finance:', error);
+            });
+          }
+        }
         if (todayData.top3MenuRevenue) {
           const top3Revenue = safeNumber(todayData.top3MenuRevenue, undefined);
           if (top3Revenue !== undefined && top3Revenue >= 0 && (calculatedRevenue === 0 || top3Revenue <= calculatedRevenue)) {
@@ -619,6 +678,7 @@ export default function LogTodayPage() {
             totalRoomsAvailable: financeData.totalRoomsAvailable,
             accommodationStaffCount: financeData.accommodationStaffCount,
             monthlyFixedCost: financeData.monthlyFixedCost,
+            fnbStaffCount: financeData.fnbStaffCount,
           });
         }
       });
@@ -1272,14 +1332,22 @@ export default function LogTodayPage() {
                     </>
                   )}
                   
-                  {/* F&B Capacity Fields (Manager+) */}
+                  {/* F&B Capacity Fields (Manager+) — required on first setup */}
                   {isFnb && (
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
                         {locale === 'th' ? 'จำนวนพนักงาน F&B' : 'F&B Staff Count'}
-                        <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
-                          ({locale === 'th' ? 'ไม่บังคับ' : 'optional'})
-                        </span>
+                        {(branch?.fnbStaffCount == null)
+                          ? (
+                              <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>
+                                ({locale === 'th' ? 'จำเป็นในการตั้งค่าแรก' : 'required on first setup'})
+                              </span>
+                            )
+                          : (
+                              <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
+                                ({locale === 'th' ? 'แก้ไขได้เมื่อต้องการ' : 'edit when needed'})
+                              </span>
+                            )}
                       </label>
                       <input
                         type="text"
@@ -1287,16 +1355,20 @@ export default function LogTodayPage() {
                         onChange={(e) => {
                           const parsed = parseInputNumber(e.target.value);
                           setFinanceData({ ...financeData, fnbStaffCount: parsed });
+                          if (errors.fnbStaffCount) setErrors((prev) => ({ ...prev, fnbStaffCount: '' }));
                         }}
                         style={{
                           width: '100%',
                           padding: '0.625rem 0.75rem',
-                          border: '1px solid #d1d5db',
                           borderRadius: '6px',
                           fontSize: '14px',
+                          ...inputStyleFor('fnbStaffCount', errors.fnbStaffCount),
                         }}
                         placeholder="0"
                       />
+                      {errors.fnbStaffCount && (
+                        <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>{errors.fnbStaffCount}</div>
+                      )}
                     </div>
                   )}
                 </div>

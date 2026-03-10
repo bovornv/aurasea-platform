@@ -11,5 +11,7 @@ export const BRANCH_SELECT = `
   created_at,
   module_type,
   total_rooms,
-  accommodation_staff_count
+  accommodation_staff_count,
+  fnb_staff_count,
+  monthly_fixed_cost
 `.replace(/\s+/g, ' ').trim();

@@ -56,6 +56,9 @@ export interface Branch {
   businessType?: 'CAFE_RESTAURANT' | 'HOTEL_RESORT' | 'HOTEL_WITH_CAFE';
   totalRooms?: number;
   accommodationStaffCount?: number;
+  /** F&B branches: staff count and monthly fixed cost (from branches table). */
+  fnbStaffCount?: number;
+  monthlyFixedCost?: number;
 }
 
 /**

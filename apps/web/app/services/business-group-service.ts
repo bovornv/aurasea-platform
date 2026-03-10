@@ -550,6 +550,8 @@ class BusinessGroupService {
           createdAt: row.created_at ? new Date(row.created_at) : new Date(0),
           totalRooms: (row as any).total_rooms ?? undefined,
           accommodationStaffCount: (row as any).accommodation_staff_count ?? undefined,
+          fnbStaffCount: (row as any).fnb_staff_count ?? undefined,
+          monthlyFixedCost: (row as any).monthly_fixed_cost != null ? Number((row as any).monthly_fixed_cost) : undefined,
         };
       };
 
@@ -582,12 +584,12 @@ class BusinessGroupService {
 
       const { data: rows, error } = await supabase
         .from('branch_members')
-        .select('branch_id, branches(id, name, organization_id, sort_order, created_at, module_type, total_rooms, accommodation_staff_count)')
+        .select('branch_id, branches(id, name, organization_id, sort_order, created_at, module_type, total_rooms, accommodation_staff_count, fnb_staff_count, monthly_fixed_cost)')
         .eq('user_id', userId);
 
       if (error) throw error;
 
-      type Row = { branch_id: string; branches: { id: string; name: string; organization_id: string; sort_order?: number; created_at?: string; module_type?: string | null; total_rooms?: number | null; accommodation_staff_count?: number | null } | null };
+      type Row = { branch_id: string; branches: { id: string; name: string; organization_id: string; sort_order?: number; created_at?: string; module_type?: string | null; total_rooms?: number | null; accommodation_staff_count?: number | null; fnb_staff_count?: number | null; monthly_fixed_cost?: number | null } | null };
       const branchRows = (rows ?? []) as Row[];
       const branchesForOrg = branchRows
         .map((r) => r.branches)
@@ -611,6 +613,8 @@ class BusinessGroupService {
           createdAt: row.created_at ? new Date(row.created_at) : new Date(0),
           totalRooms: row.total_rooms ?? undefined,
           accommodationStaffCount: row.accommodation_staff_count ?? undefined,
+          fnbStaffCount: row.fnb_staff_count ?? undefined,
+          monthlyFixedCost: row.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : undefined,
         };
       };
 
