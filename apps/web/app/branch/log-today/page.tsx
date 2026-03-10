@@ -64,6 +64,19 @@ export default function LogTodayPage() {
     lastMetricDate: string | null;
   } | null>(null);
   const [lastEntryDate, setLastEntryDate] = useState<string | null>(null);
+  /** Today's existing record id (when loaded). Used to show we're updating, not creating. */
+  const [todayRecordId, setTodayRecordId] = useState<string | null>(null);
+  /** Snapshot of saved/loaded values; used to detect unsaved changes and highlight edited fields. */
+  const [originalValues, setOriginalValues] = useState<{
+    revenue: string;
+    roomsSold: string;
+    customers: string;
+    top3MenuRevenue: string;
+    additionalCostToday: string;
+    totalRoomsAvailable: string;
+    accommodationStaffCount: string;
+    monthlyFixedCost: string;
+  } | null>(null);
   
   // Determine user role
   const userRole = permissions.role || 'staff';
@@ -159,11 +172,14 @@ export default function LogTodayPage() {
           .then(({ data }) => {
             const row = data as { total_rooms?: number | null; accommodation_staff_count?: number | null } | null;
             if (row && (row.total_rooms != null || row.accommodation_staff_count != null)) {
+              const tr = row.total_rooms != null ? String(row.total_rooms) : '';
+              const asc = row.accommodation_staff_count != null ? String(row.accommodation_staff_count) : '';
               setFinanceData((prev) => ({
                 ...prev,
-                totalRoomsAvailable: row.total_rooms != null ? String(row.total_rooms) : prev.totalRoomsAvailable,
-                accommodationStaffCount: row.accommodation_staff_count != null ? String(row.accommodation_staff_count) : prev.accommodationStaffCount,
+                totalRoomsAvailable: tr || prev.totalRoomsAvailable,
+                accommodationStaffCount: asc || prev.accommodationStaffCount,
               }));
+              setOriginalValues((prev) => prev ? { ...prev, totalRoomsAvailable: tr || prev.totalRoomsAvailable, accommodationStaffCount: asc || prev.accommodationStaffCount } : null);
             }
           });
       }
@@ -183,6 +199,12 @@ export default function LogTodayPage() {
         }
 
         if (todayMetric) {
+          const rev = todayMetric.revenue != null ? String(todayMetric.revenue) : '';
+          const rooms = todayMetric.roomsSold != null ? String(todayMetric.roomsSold) : '';
+          const cust = todayMetric.customers != null ? String(todayMetric.customers) : '';
+          const top3 = todayMetric.top3MenuRevenue != null ? String(todayMetric.top3MenuRevenue) : '';
+          const addCost = todayMetric.additionalCostToday != null ? String(todayMetric.additionalCostToday) : '';
+          setTodayRecordId(todayMetric.id ?? null);
           setDataStatus({
             status: 'green',
             message: locale === 'th' ? 'อัปเดตวันนี้' : 'Updated Today',
@@ -190,13 +212,34 @@ export default function LogTodayPage() {
           });
           setTodayData((prev) => ({
             ...prev,
-            revenue: todayMetric!.revenue ? String(todayMetric!.revenue) : '',
-            roomsSold: todayMetric!.roomsSold != null ? String(todayMetric!.roomsSold) : '',
-            customers: todayMetric!.customers != null ? String(todayMetric!.customers) : '',
-            top3MenuRevenue: todayMetric!.top3MenuRevenue != null ? String(todayMetric!.top3MenuRevenue) : '',
-            additionalCostToday: todayMetric!.additionalCostToday != null ? String(todayMetric!.additionalCostToday) : '',
+            revenue: rev,
+            roomsSold: rooms,
+            customers: cust,
+            top3MenuRevenue: top3,
+            additionalCostToday: addCost,
           }));
+          setOriginalValues({
+            revenue: rev,
+            roomsSold: rooms,
+            customers: cust,
+            top3MenuRevenue: top3,
+            additionalCostToday: addCost,
+            totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
+            accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
+            monthlyFixedCost: '',
+          });
         } else {
+          setTodayRecordId(null);
+          setOriginalValues({
+            revenue: '',
+            roomsSold: '',
+            customers: '',
+            top3MenuRevenue: '',
+            additionalCostToday: '',
+            totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
+            accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
+            monthlyFixedCost: '',
+          });
           const last2 = await getDailyMetrics(branch.id, 2);
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
@@ -251,6 +294,18 @@ export default function LogTodayPage() {
     return () => clearTimeout(t);
   }, [saveFeedback]);
 
+  // Prevent accidental navigation when there are unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
   // Revenue is always entered directly (no auto-calculation)
   const calculatedRevenue = useMemo(() => {
     if (todayData.revenue) {
@@ -263,6 +318,36 @@ export default function LogTodayPage() {
   const parseInputNumber = (value: string): string => {
     return value.replace(/[^\d]/g, '');
   };
+
+  /** True if any tracked field differs from original (saved/loaded) values. */
+  const isDirty = useMemo(() => {
+    if (!originalValues) return false;
+    return (
+      todayData.revenue !== originalValues.revenue ||
+      todayData.roomsSold !== originalValues.roomsSold ||
+      todayData.customers !== originalValues.customers ||
+      todayData.top3MenuRevenue !== originalValues.top3MenuRevenue ||
+      todayData.additionalCostToday !== originalValues.additionalCostToday ||
+      financeData.totalRoomsAvailable !== originalValues.totalRoomsAvailable ||
+      financeData.accommodationStaffCount !== originalValues.accommodationStaffCount ||
+      financeData.monthlyFixedCost !== originalValues.monthlyFixedCost
+    );
+  }, [originalValues, todayData, financeData]);
+
+  const todayFields = ['revenue', 'roomsSold', 'customers', 'top3MenuRevenue', 'additionalCostToday'] as const;
+  const financeFields = ['totalRoomsAvailable', 'accommodationStaffCount', 'monthlyFixedCost'] as const;
+  const currentValueFor = (field: keyof NonNullable<typeof originalValues>) =>
+    todayFields.includes(field as any) ? (todayData as Record<string, string>)[field] : (financeData as Record<string, string>)[field];
+
+  /** Whether this field value differs from original; use for highlight. */
+  const isFieldEdited = (field: keyof NonNullable<typeof originalValues>) =>
+    originalValues != null && currentValueFor(field) !== originalValues[field];
+
+  /** Input style: error red, or edited (blue border + light blue bg), or default. */
+  const inputStyleFor = (field: keyof NonNullable<typeof originalValues>, error?: string) => ({
+    border: `1px solid ${error ? '#ef4444' : isFieldEdited(field) ? '#2563eb' : '#d1d5db'}`,
+    ...(isFieldEdited(field) && !error ? { backgroundColor: '#f8fbff' } : {}),
+  });
   
   // Format number for display - add commas, no decimals
   const formatDisplayNumber = (value: string | number): string => {
@@ -504,10 +589,40 @@ export default function LogTodayPage() {
         message: locale === 'th' ? 'อัปเดตวันนี้' : 'Updated Today',
         lastMetricDate: today,
       });
+      setLastEntryDate(today);
 
-      // Do not refetch here — it can run before the row is visible and flip the dot back to red.
-      // On next page load, fetchDataStatus() will run and show the correct state.
-      
+      // Reload today's data from DB and set originalValues so "unsaved" state resets
+      clearDailyMetricsCacheForBranch(branch.id);
+      const branchType = moduleType === 'accommodation' ? 'accommodation' : moduleType === 'fnb' ? 'fnb' : undefined;
+      getTodayDailyMetric(branch.id, branchType).then((updated) => {
+        if (updated) {
+          const rev = updated.revenue != null ? String(updated.revenue) : '';
+          const rooms = updated.roomsSold != null ? String(updated.roomsSold) : '';
+          const cust = updated.customers != null ? String(updated.customers) : '';
+          const top3 = updated.top3MenuRevenue != null ? String(updated.top3MenuRevenue) : '';
+          const addCost = updated.additionalCostToday != null ? String(updated.additionalCostToday) : '';
+          setTodayRecordId(updated.id ?? null);
+          setTodayData((prev) => ({
+            ...prev,
+            revenue: rev,
+            roomsSold: rooms,
+            customers: cust,
+            top3MenuRevenue: top3,
+            additionalCostToday: addCost,
+          }));
+          setOriginalValues({
+            revenue: rev,
+            roomsSold: rooms,
+            customers: cust,
+            top3MenuRevenue: top3,
+            additionalCostToday: addCost,
+            totalRoomsAvailable: financeData.totalRoomsAvailable,
+            accommodationStaffCount: financeData.accommodationStaffCount,
+            monthlyFixedCost: financeData.monthlyFixedCost,
+          });
+        }
+      });
+
       // GLOBAL FIXES: Trigger cache clearing and recalculation after Save Today
       // Clear stale cache and trigger health/alerts recalculation
       if (typeof window !== 'undefined' && branch?.id) {
@@ -699,10 +814,10 @@ export default function LogTodayPage() {
                     style={{
                       width: '100%',
                       padding: '0.625rem 3rem 0.625rem 0.75rem',
-                      border: errors.revenue ? '1px solid #ef4444' : '1px solid #d1d5db',
                       borderRadius: '6px',
                       fontSize: '14px',
                       textAlign: 'right',
+                      ...inputStyleFor('revenue', errors.revenue),
                     }}
                     placeholder="0"
                   />
@@ -739,9 +854,9 @@ export default function LogTodayPage() {
                     style={{
                       width: '100%',
                       padding: '0.625rem 0.75rem',
-                      border: errors.roomsSold ? '1px solid #ef4444' : '1px solid #d1d5db',
                       borderRadius: '6px',
                       fontSize: '14px',
+                      ...inputStyleFor('roomsSold', errors.roomsSold),
                     }}
                     placeholder="0"
                   />
@@ -770,9 +885,9 @@ export default function LogTodayPage() {
                     style={{
                       width: '100%',
                       padding: '0.625rem 0.75rem',
-                      border: errors.customers ? '1px solid #ef4444' : '1px solid #d1d5db',
                       borderRadius: '6px',
                       fontSize: '14px',
+                      ...inputStyleFor('customers', errors.customers),
                     }}
                     placeholder="0"
                   />
@@ -805,10 +920,10 @@ export default function LogTodayPage() {
                       style={{
                         width: '100%',
                         padding: '0.625rem 3.5rem 0.625rem 0.75rem',
-                        border: errors.top3MenuRevenue ? '1px solid #ef4444' : '1px solid #d1d5db',
                         borderRadius: '6px',
                         fontSize: '14px',
                         textAlign: 'right',
+                        ...inputStyleFor('top3MenuRevenue', errors.top3MenuRevenue),
                       }}
                       placeholder="0"
                     />
@@ -849,10 +964,10 @@ export default function LogTodayPage() {
                     style={{
                       width: '100%',
                       padding: '0.625rem 3rem 0.625rem 0.75rem',
-                      border: errors.additionalCostToday ? '1px solid #ef4444' : '1px solid #d1d5db',
                       borderRadius: '6px',
                       fontSize: '14px',
                       textAlign: 'right',
+                      ...inputStyleFor('additionalCostToday', errors.additionalCostToday),
                     }}
                     placeholder="0"
                   />
@@ -874,27 +989,34 @@ export default function LogTodayPage() {
               
               {/* PART 5: Hide Save button for viewer role */}
               {role && !role.canViewOnly && (
-                <button
-                  type="submit"
-                  data-rbac="log-today-submit"
-                  disabled={saving}
-                  style={{
-                    width: '100%',
-                  padding: '0.875rem',
-                  backgroundColor: saving ? '#9ca3af' : '#0a0a0a',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  cursor: saving ? 'not-allowed' : 'pointer',
-                  marginTop: '1rem',
-                }}
-              >
-                {saving
-                  ? (locale === 'th' ? 'กำลังบันทึก...' : 'Saving...')
-                  : (locale === 'th' ? 'บันทึกวันนี้' : 'Save Today')}
-                </button>
+                <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button
+                    type="submit"
+                    data-rbac="log-today-submit"
+                    disabled={saving}
+                    style={{
+                      width: '100%',
+                      padding: '0.875rem',
+                      backgroundColor: saving ? '#9ca3af' : '#0a0a0a',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      fontWeight: 600,
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {saving
+                      ? (locale === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                      : (locale === 'th' ? 'บันทึกวันนี้' : 'Save Today')}
+                  </button>
+                  {isDirty && (
+                    <span style={{ fontSize: '13px', color: '#b45309', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '14px' }}>🟡</span>
+                      {locale === 'th' ? 'มีการแก้ไขที่ยังไม่ได้บันทึก' : 'Unsaved changes'}
+                    </span>
+                  )}
+                </div>
               )}
               {saveFeedback === 'recorded' && (
                 <div style={{
@@ -1021,10 +1143,10 @@ export default function LogTodayPage() {
                         style={{
                           width: '100%',
                           padding: '0.625rem 3rem 0.625rem 0.75rem',
-                          border: '1px solid #d1d5db',
                           borderRadius: '6px',
                           fontSize: '14px',
                           textAlign: 'right',
+                          ...inputStyleFor('monthlyFixedCost'),
                         }}
                         placeholder="0"
                       />
@@ -1102,9 +1224,9 @@ export default function LogTodayPage() {
                           style={{
                             width: '100%',
                             padding: '0.625rem 0.75rem',
-                            border: errors.totalRoomsAvailable ? '1px solid #ef4444' : '1px solid #d1d5db',
                             borderRadius: '6px',
                             fontSize: '14px',
+                            ...inputStyleFor('totalRoomsAvailable', errors.totalRoomsAvailable),
                           }}
                           placeholder="0"
                         />
@@ -1137,9 +1259,9 @@ export default function LogTodayPage() {
                           style={{
                             width: '100%',
                             padding: '0.625rem 0.75rem',
-                            border: errors.accommodationStaffCount ? '1px solid #ef4444' : '1px solid #d1d5db',
                             borderRadius: '6px',
                             fontSize: '14px',
+                            ...inputStyleFor('accommodationStaffCount', errors.accommodationStaffCount),
                           }}
                           placeholder="0"
                         />
