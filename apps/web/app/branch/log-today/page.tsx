@@ -294,18 +294,6 @@ export default function LogTodayPage() {
     return () => clearTimeout(t);
   }, [saveFeedback]);
 
-  // Prevent accidental navigation when there are unsaved changes
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
-
   // Revenue is always entered directly (no auto-calculation)
   const calculatedRevenue = useMemo(() => {
     if (todayData.revenue) {
@@ -348,6 +336,18 @@ export default function LogTodayPage() {
     border: `1px solid ${error ? '#ef4444' : isFieldEdited(field) ? '#2563eb' : '#d1d5db'}`,
     ...(isFieldEdited(field) && !error ? { backgroundColor: '#f8fbff' } : {}),
   });
+
+  // Prevent accidental navigation when there are unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
   
   // Format number for display - add commas, no decimals
   const formatDisplayNumber = (value: string | number): string => {
