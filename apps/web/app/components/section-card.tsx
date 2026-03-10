@@ -35,6 +35,7 @@ export function SectionCard({ title, children, subtitle, collapsible, expanded =
         </h3>
         {collapsible && (
           <button
+            type="button"
             onClick={onToggle}
             style={{
               padding: '0.25rem 0.5rem',

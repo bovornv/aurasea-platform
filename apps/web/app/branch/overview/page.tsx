@@ -904,9 +904,13 @@ export default function BranchOverviewPage() {
             </div>
             {isAccommodation && branch?.totalRooms == null && (
               <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '0.25rem' }}>
-                <a href={`/org/${branch.businessGroupId}/branch/${branch.id}/log`} style={{ color: '#ef4444', textDecoration: 'underline' }}>
+                <button
+                  type="button"
+                  onClick={() => router.push(`${paths.branchLog ?? `/org/${branch.businessGroupId}/branch/${branch.id}/log`}?expand=finance`)}
+                  style={{ color: '#ef4444', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit' }}
+                >
                   {locale === 'th' ? 'โปรดตั้งค่าจำนวนห้องพัก' : 'Please configure hotel capacity'}
-                </a>
+                </button>
               </div>
             )}
             {isAccommodation && occupancyRate != null && branch?.totalRooms != null && (

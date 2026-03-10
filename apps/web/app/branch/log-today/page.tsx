@@ -10,7 +10,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { PageLayout } from '../../components/page-layout';
 import { useOrgBranchPaths } from '../../hooks/use-org-branch-paths';
 import { useI18n } from '../../hooks/use-i18n';
@@ -33,6 +33,7 @@ import { calculateDailyFlow, type BranchSetup } from '../../services/daily-flow-
 
 export default function LogTodayPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { locale } = useI18n();
   const { branch } = useCurrentBranch();
   const { permissions } = useUserSession();
@@ -177,6 +178,11 @@ export default function LogTodayPage() {
     fnbStaffCount: '',
   });
   const [financeExpanded, setFinanceExpanded] = useState(false);
+
+  // Expand Advanced Finance when navigated from "Please configure hotel capacity" (?expand=finance)
+  useEffect(() => {
+    if (searchParams.get('expand') === 'finance') setFinanceExpanded(true);
+  }, [searchParams]);
   
   // SECTION 3: System Preview (calculated after save)
   const [previewData, setPreviewData] = useState<{
@@ -271,19 +277,35 @@ export default function LogTodayPage() {
       newErrors.revenue = locale === 'th' ? 'กรุณากรอกรายได้' : 'Revenue is required';
     }
     
+    // Accommodation: first-time config — Total Rooms and Accommodation Staff required when not yet set on branch
+    const accommodationNeedsConfig = isAccommodation && (branch?.totalRooms == null || branch?.accommodationStaffCount == null);
+    if (accommodationNeedsConfig) {
+      const totalRoomsVal = safeNumber(financeData.totalRoomsAvailable, undefined);
+      const staffVal = safeNumber(financeData.accommodationStaffCount, undefined);
+      if (totalRoomsVal == null || totalRoomsVal <= 0) {
+        newErrors.totalRoomsAvailable = locale === 'th' ? 'กรุณากรอกจำนวนห้องทั้งหมด (จำเป็นในการตั้งค่าแรก)' : 'Total Rooms Available is required on first setup';
+      }
+      if (staffVal == null || staffVal < 0) {
+        newErrors.accommodationStaffCount = locale === 'th' ? 'กรุณากรอกจำนวนพนักงานที่พัก (จำเป็นในการตั้งค่าแรก)' : 'Accommodation Staff Count is required on first setup';
+      }
+      if (Object.keys(newErrors).some((k) => k === 'totalRoomsAvailable' || k === 'accommodationStaffCount')) {
+        setFinanceExpanded(true);
+      }
+    }
+
     // Accommodation: Rooms Sold required
     if (isAccommodation && !todayData.roomsSold) {
       newErrors.roomsSold = locale === 'th' ? 'กรุณากรอกจำนวนห้องที่ขาย' : 'Rooms sold is required';
     }
     
-    // Validate rooms sold doesn't exceed capacity
+    // Validate rooms sold doesn't exceed capacity (use branch.totalRooms from config)
     if (isAccommodation && todayData.roomsSold) {
       const roomsSoldNum = safeNumber(todayData.roomsSold, 0);
-      const roomsAvailable = branchSetup ? (branchSetup as any).rooms_available : undefined;
-      if (roomsAvailable && roomsSoldNum > roomsAvailable) {
+      const capacity = branch?.totalRooms ?? (branchSetup as any)?.rooms_available ?? safeNumber(financeData.totalRoomsAvailable, undefined);
+      if (capacity != null && capacity > 0 && roomsSoldNum > capacity) {
         newErrors.roomsSold = locale === 'th' 
-          ? `จำนวนห้องที่ขายต้องไม่เกิน ${roomsAvailable} ห้อง` 
-          : `Rooms sold cannot exceed ${roomsAvailable} rooms`;
+          ? `จำนวนห้องที่ขายต้องไม่เกิน ${capacity} ห้อง` 
+          : `Rooms sold cannot exceed ${capacity} rooms`;
       }
       if (roomsSoldNum < 0) {
         newErrors.roomsSold = locale === 'th' ? 'จำนวนห้องที่ขายต้องมากกว่าหรือเท่ากับ 0' : 'Rooms sold must be >= 0';
@@ -424,11 +446,11 @@ export default function LogTodayPage() {
         }
       }
       
-      // Get branch setup for calculations
+      // Get branch setup for calculations (occupancy uses branch.totalRooms, not daily rooms_available)
       const setup: BranchSetup = {
         monthlyFixedCost: branchSetup ? (branchSetup as any).monthly_fixed_cost : undefined,
         variableCostRatio: branchSetup ? (branchSetup as any).variable_cost_ratio : undefined,
-        roomsAvailable: branchSetup ? (branchSetup as any).rooms_available : undefined,
+        roomsAvailable: branch?.totalRooms ?? (branchSetup as any)?.rooms_available ?? safeNumber(financeData.totalRoomsAvailable, undefined),
         seatingCapacity: branchSetup ? (branchSetup as any).seating_capacity : undefined,
       };
       
@@ -1030,15 +1052,21 @@ export default function LogTodayPage() {
                     </div>
                   )}
                   
-                  {/* Accommodation Capacity Fields (Manager+) */}
+                  {/* Accommodation Capacity Fields (Manager+) — required on first setup */}
                   {isAccommodation && (
                     <>
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
                           {locale === 'th' ? 'จำนวนห้องทั้งหมด' : 'Total Rooms Available'}
-                          <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
-                            ({locale === 'th' ? 'ไม่บังคับ' : 'optional'})
-                          </span>
+                          {(branch?.totalRooms == null && branch?.accommodationStaffCount == null) ? (
+                            <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>
+                              ({locale === 'th' ? 'จำเป็นในการตั้งค่าแรก' : 'required on first setup'})
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
+                              ({locale === 'th' ? 'แก้ไขได้เมื่อต้องการ' : 'edit when needed'})
+                            </span>
+                          )}
                         </label>
                         <input
                           type="text"
@@ -1046,24 +1074,34 @@ export default function LogTodayPage() {
                           onChange={(e) => {
                             const parsed = parseInputNumber(e.target.value);
                             setFinanceData({ ...financeData, totalRoomsAvailable: parsed });
+                            if (errors.totalRoomsAvailable) setErrors((prev) => ({ ...prev, totalRoomsAvailable: '' }));
                           }}
                           style={{
                             width: '100%',
                             padding: '0.625rem 0.75rem',
-                            border: '1px solid #d1d5db',
+                            border: errors.totalRoomsAvailable ? '1px solid #ef4444' : '1px solid #d1d5db',
                             borderRadius: '6px',
                             fontSize: '14px',
                           }}
                           placeholder="0"
                         />
+                        {errors.totalRoomsAvailable && (
+                          <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>{errors.totalRoomsAvailable}</div>
+                        )}
                       </div>
                       
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
                           {locale === 'th' ? 'จำนวนพนักงานที่พัก' : 'Accommodation Staff Count'}
-                          <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
-                            ({locale === 'th' ? 'ไม่บังคับ' : 'optional'})
-                          </span>
+                          {(branch?.totalRooms == null && branch?.accommodationStaffCount == null) ? (
+                            <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>
+                              ({locale === 'th' ? 'จำเป็นในการตั้งค่าแรก' : 'required on first setup'})
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
+                              ({locale === 'th' ? 'แก้ไขได้เมื่อต้องการ' : 'edit when needed'})
+                            </span>
+                          )}
                         </label>
                         <input
                           type="text"
@@ -1071,16 +1109,20 @@ export default function LogTodayPage() {
                           onChange={(e) => {
                             const parsed = parseInputNumber(e.target.value);
                             setFinanceData({ ...financeData, accommodationStaffCount: parsed });
+                            if (errors.accommodationStaffCount) setErrors((prev) => ({ ...prev, accommodationStaffCount: '' }));
                           }}
                           style={{
                             width: '100%',
                             padding: '0.625rem 0.75rem',
-                            border: '1px solid #d1d5db',
+                            border: errors.accommodationStaffCount ? '1px solid #ef4444' : '1px solid #d1d5db',
                             borderRadius: '6px',
                             fontSize: '14px',
                           }}
                           placeholder="0"
                         />
+                        {errors.accommodationStaffCount && (
+                          <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>{errors.accommodationStaffCount}</div>
+                        )}
                       </div>
                     </>
                   )}
