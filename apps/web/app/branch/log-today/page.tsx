@@ -150,7 +150,8 @@ export default function LogTodayPage() {
     (async () => {
       try {
         clearDailyMetricsCacheForBranch(branch.id);
-        let todayMetric = await getTodayDailyMetric(branch.id);
+        const branchType = moduleType === 'accommodation' ? 'accommodation' : moduleType === 'fnb' ? 'fnb' : undefined;
+        let todayMetric = await getTodayDailyMetric(branch.id, branchType);
         if (!todayMetric) {
           const recent = await getDailyMetrics(branch.id, 7);
           todayMetric = recent.find((m) => toDateOnly(m.date) === today) ?? null;
@@ -200,7 +201,7 @@ export default function LogTodayPage() {
           }
         }
 
-        const lastDate = await getLastEntryDate(branch.id);
+        const lastDate = await getLastEntryDate(branch.id, branchType);
         setLastEntryDate(lastDate);
       } catch (e) {
         console.error('[LogToday] Failed to load today/last entry:', e);
@@ -211,7 +212,7 @@ export default function LogTodayPage() {
         });
       }
     })();
-  }, [mounted, branch?.id, locale]);
+  }, [mounted, branch?.id, locale, moduleType]);
 
   // Save micro-animation: recorded → after 1.5s → updated → after 3s → idle
   useEffect(() => {

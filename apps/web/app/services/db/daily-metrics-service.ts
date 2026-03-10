@@ -169,20 +169,28 @@ export async function saveDailyMetric(
   }
 }
 
+/** Branch module type for read routing (must match write table). */
+export type DailyMetricsBranchType = 'accommodation' | 'fnb';
+
 /**
  * Get today's daily metric for a branch (no cache).
- * Reads from daily_metrics view (unified); maps total_revenue_thb -> revenue for F&B.
+ * Reads from the same table we write to: accommodation_daily_metrics or fnb_daily_metrics.
+ * Pass moduleType so we read from the correct table; otherwise tries both.
  */
-export async function getTodayDailyMetric(branchId: string): Promise<DailyMetric | null> {
+export async function getTodayDailyMetric(
+  branchId: string,
+  moduleType?: DailyMetricsBranchType | null
+): Promise<DailyMetric | null> {
   if (branchId == null || branchId === '') return null;
   rejectMockBranchId(branchId);
   if (!isSupabaseAvailable()) return null;
-  try {
-    const today = getTodayDateString();
-    const supabase = getSupabaseClient();
-    if (!supabase) return null;
+  const today = getTodayDateString();
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const tryTable = async (table: string): Promise<DailyMetric | null> => {
     const { data, error } = await supabase
-      .from(DAILY_METRICS_READ)
+      .from(table)
       .select('*')
       .eq('branch_id', branchId)
       .eq('metric_date', today)
@@ -190,6 +198,14 @@ export async function getTodayDailyMetric(branchId: string): Promise<DailyMetric
       .maybeSingle();
     if (error || !data) return null;
     return dailyMetricFromDb(data as any);
+  };
+
+  try {
+    if (moduleType === 'accommodation') return await tryTable(TABLE_ACCOMMODATION);
+    if (moduleType === 'fnb') return await tryTable(TABLE_FNB);
+    const fromAcc = await tryTable(TABLE_ACCOMMODATION);
+    if (fromAcc) return fromAcc;
+    return await tryTable(TABLE_FNB);
   } catch (e) {
     console.error('[DailyMetricsService] getTodayDailyMetric error:', e);
     return null;
@@ -198,17 +214,21 @@ export async function getTodayDailyMetric(branchId: string): Promise<DailyMetric
 
 /**
  * Get the most recent metric_date for a branch (for "Last entry: ..." display).
- * Returns YYYY-MM-DD or null if no rows.
+ * Reads from the same table we write to. Returns YYYY-MM-DD or null if no rows.
  */
-export async function getLastEntryDate(branchId: string): Promise<string | null> {
+export async function getLastEntryDate(
+  branchId: string,
+  moduleType?: DailyMetricsBranchType | null
+): Promise<string | null> {
   if (branchId == null || branchId === '') return null;
   rejectMockBranchId(branchId);
   if (!isSupabaseAvailable()) return null;
-  try {
-    const supabase = getSupabaseClient();
-    if (!supabase) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const tryTable = async (table: string): Promise<string | null> => {
     const { data, error } = await supabase
-      .from(DAILY_METRICS_READ)
+      .from(table)
       .select('metric_date')
       .eq('branch_id', branchId)
       .order('metric_date', { ascending: false })
@@ -217,6 +237,14 @@ export async function getLastEntryDate(branchId: string): Promise<string | null>
     if (error || !data) return null;
     const row = data as { metric_date?: string } | null;
     return row?.metric_date ? String(row.metric_date).slice(0, 10) : null;
+  };
+
+  try {
+    if (moduleType === 'accommodation') return await tryTable(TABLE_ACCOMMODATION);
+    if (moduleType === 'fnb') return await tryTable(TABLE_FNB);
+    const fromAcc = await tryTable(TABLE_ACCOMMODATION);
+    if (fromAcc) return fromAcc;
+    return await tryTable(TABLE_FNB);
   } catch (e) {
     if (process.env.NODE_ENV === 'development') {
       console.warn('[DailyMetricsService] getLastEntryDate error:', e);

@@ -150,27 +150,28 @@ function toDateOnly(value: string | undefined | null): string {
 }
 
 export function dailyMetricFromDb(db: DailyMetricDb): DailyMetric {
-  const dbAny = db as DailyMetricDb & { total_revenue_thb?: number | null };
+  const dbAny = db as DailyMetricDb & { total_revenue_thb?: number | null; total_customers?: number | null };
   const revenue = db.revenue ?? dbAny.total_revenue_thb;
+  const customers = db.customers ?? dbAny.total_customers;
   return {
-    id: db.id,
+    id: (db as any).id ?? `daily_${db.branch_id}_${toDateOnly(db.metric_date)}`,
     branchId: db.branch_id,
     date: (toDateOnly(db.metric_date) || db.metric_date) as string,
     revenue: Number(revenue ?? 0),
     cost: db.cost !== null && db.cost !== undefined ? Number(db.cost) : undefined,
     additionalCostToday: db.additional_cost_today != null ? Number(db.additional_cost_today) : undefined,
     cashBalance: db.cash_balance !== null && db.cash_balance !== undefined ? Number(db.cash_balance) : undefined,
-    roomsSold: db.rooms_sold ? Number(db.rooms_sold) : undefined,
-    roomsAvailable: db.rooms_available ? Number(db.rooms_available) : undefined,
-    adr: db.adr ? Number(db.adr) : undefined,
-    accommodationStaff: db.accommodation_staff ? Number(db.accommodation_staff) : undefined,
+    roomsSold: db.rooms_sold != null ? Number(db.rooms_sold) : undefined,
+    roomsAvailable: db.rooms_available != null ? Number(db.rooms_available) : undefined,
+    adr: db.adr != null ? Number(db.adr) : undefined,
+    accommodationStaff: db.accommodation_staff != null ? Number(db.accommodation_staff) : undefined,
     monthlyFixedCost: db.monthly_fixed_cost != null ? Number(db.monthly_fixed_cost) : undefined,
-    customers: db.customers ? Number(db.customers) : undefined,
+    customers: customers != null ? Number(customers) : undefined,
     avgTicket: db.avg_ticket ? Number(db.avg_ticket) : undefined,
     top3MenuRevenue: db.top3_menu_revenue !== null && db.top3_menu_revenue !== undefined ? Number(db.top3_menu_revenue) : undefined,
-    fnbStaff: db.fnb_staff ? Number(db.fnb_staff) : undefined,
-    promoSpend: db.promo_spend ? Number(db.promo_spend) : undefined,
-    createdAt: db.created_at,
+    fnbStaff: db.fnb_staff != null ? Number(db.fnb_staff) : undefined,
+    promoSpend: db.promo_spend != null ? Number(db.promo_spend) : undefined,
+    createdAt: (db as any).created_at ?? new Date().toISOString(),
   };
 }
 
