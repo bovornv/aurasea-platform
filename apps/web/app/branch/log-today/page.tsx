@@ -152,6 +152,20 @@ export default function LogTodayPage() {
   useEffect(() => {
     if (!mounted || !branch?.id) return;
 
+    // Set originalValues early so Unsaved Changes indicator works even before async completes (or if it fails)
+    const emptySnapshot = {
+      revenue: '',
+      roomsSold: '',
+      customers: '',
+      top3MenuRevenue: '',
+      additionalCostToday: '',
+      totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
+      accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
+      monthlyFixedCost: '',
+      fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
+    };
+    setOriginalValues((prev) => prev ?? emptySnapshot);
+
     const fromBranch = (): void => {
       setFinanceData((prev) => ({
         ...prev,
@@ -283,6 +297,7 @@ export default function LogTodayPage() {
           message: locale === 'th' ? 'ไม่สามารถตรวจสอบสถานะ' : 'Unable to check status',
           lastMetricDate: null,
         });
+        setOriginalValues((prev) => prev ?? emptySnapshot);
       }
     })();
   }, [mounted, branch?.id, locale, moduleType]);
@@ -355,11 +370,12 @@ export default function LogTodayPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
   
-  // Format number for display - add commas, no decimals
+  // Format number for display - add commas, no decimals; show "0" when value is 0 so saved data is visible
   const formatDisplayNumber = (value: string | number): string => {
-    if (!value) return '';
+    if (value === '' || value === undefined) return '';
     const num = typeof value === 'string' ? parseFloat(value.replace(/[^\d]/g, '')) : value;
-    if (isNaN(num) || num === 0) return '';
+    if (isNaN(num)) return '';
+    if (num === 0) return '0';
     return Math.round(num).toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
