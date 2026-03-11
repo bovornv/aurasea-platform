@@ -5,7 +5,7 @@
  */
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageLayout } from '../../components/page-layout';
 import { useOrgBranchPaths } from '../../hooks/use-org-branch-paths';
@@ -41,7 +41,7 @@ import { OperatingSection } from '../../components/operating-layer/operating-sec
 import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
-import { getLatestMetricForDashboard } from '../../services/db/latest-metrics-service';
+import { getOperatingStatusData, type OperatingStatusRow } from '../../services/db/latest-metrics-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
@@ -63,8 +63,8 @@ export default function BranchOverviewPage() {
   const [mounted, setMounted] = useState(false);
   // Auto-select first branch if none selected (fallback for timing issues)
   const [attemptingAutoSelect, setAttemptingAutoSelect] = useState(false);
-  // Latest metric from branch_latest_kpi (or legacy views)
-  const [latestDashboardMetric, setLatestDashboardMetric] = useState<Awaited<ReturnType<typeof getLatestMetricForDashboard>>>(null);
+  // Operating Status: single source = fnb_latest_metrics or accommodation_latest_metrics (no anomaly/KPI/daily fallbacks)
+  const [operatingStatusData, setOperatingStatusData] = useState<OperatingStatusRow | null>(null);
   // KPI layer: recommendations from branch_recommendations
   const [kpiRecommendations, setKpiRecommendations] = useState<{ recommendation: string; category?: string }[]>([]);
 
@@ -436,15 +436,31 @@ export default function BranchOverviewPage() {
     fetchDailyMetrics();
   }, [branch?.id]);
 
-  // Operating Status: latest metric from views (no metric_date filter) so cards always show data
+  // Operating Status: single source via loadOperatingStatus (fnb_latest_metrics / accommodation_latest_metrics)
+  const refreshOperatingStatus = useCallback(() => {
+    if (!branch?.id) return;
+    getOperatingStatusData(branch.id, branch.moduleType ?? undefined).then((data) => {
+      setOperatingStatusData(data);
+    });
+  }, [branch?.id, branch?.moduleType]);
+
   useEffect(() => {
     if (!branch?.id) return;
-    let cancelled = false;
-    getLatestMetricForDashboard(branch.id, branch.moduleType ?? undefined).then((row) => {
-      if (!cancelled) setLatestDashboardMetric(row);
-    });
-    return () => { cancelled = true; };
-  }, [branch?.id, branch?.moduleType]);
+    refreshOperatingStatus();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshOperatingStatus();
+    };
+    const onMetricsSaved = (e: Event) => {
+      const detail = (e as CustomEvent<{ branchId: string }>).detail;
+      if (detail?.branchId === branch?.id) refreshOperatingStatus();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('aurasea:metrics-saved', onMetricsSaved);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('aurasea:metrics-saved', onMetricsSaved);
+    };
+  }, [branch?.id, branch?.moduleType, refreshOperatingStatus]);
 
   useEffect(() => {
     if (!branch?.id) return;
@@ -871,21 +887,22 @@ export default function BranchOverviewPage() {
           const branchType = branch?.moduleType;
           const isFnb = branchType === 'fnb';
           const isAccommodation = branchType === 'accommodation';
-          const healthVal = latestDashboardMetric?.healthScore ?? branchHealthScore?.healthScore;
-          // F&B and accommodation: total_revenue_thb (latest-metrics-service returns as revenue)
-          const revenueVal = latestDashboardMetric?.revenue ?? latestDailyMetric?.revenue;
-          const customersVal = isFnb ? (latestDashboardMetric?.customers ?? latestDailyMetric?.customers) : null;
-          const roomsSoldVal = isAccommodation ? (latestDashboardMetric?.roomsSold ?? latestDailyMetric?.roomsSold) : null;
-          
-          let occupancyRate = null;
-          if (isAccommodation && roomsSoldVal != null) {
-            const totalRooms = branch?.totalRooms ?? 0;
-            if (totalRooms > 0) {
-              occupancyRate = (roomsSoldVal / totalRooms) * 100;
+          // Operating Status cards: single source only (operatingStatusData from fnb_latest_metrics or accommodation_latest_metrics)
+          const healthVal = operatingStatusData?.health_score ?? null;
+          const revenueVal = operatingStatusData?.total_revenue_thb ?? null;
+          const customersVal = operatingStatusData?.total_customers ?? null;
+          const roomsSoldVal = isAccommodation ? (operatingStatusData?.rooms_sold ?? null) : null;
+
+          let occupancyRate: number | null = null;
+          if (isAccommodation) {
+            if (operatingStatusData?.occupancy_rate != null) {
+              occupancyRate = Number(operatingStatusData.occupancy_rate);
+            } else if (roomsSoldVal != null && (branch?.totalRooms ?? 0) > 0) {
+              occupancyRate = (roomsSoldVal / (branch?.totalRooms ?? 0)) * 100;
             }
           }
-          
-          const confidenceVal = latestDashboardMetric?.confidenceScore ?? (branchHealthScore?.dataConfidence != null ? Math.round(branchHealthScore.dataConfidence * 100) : null) ?? anomalyConfidenceScore;
+
+          const confidenceVal = operatingStatusData?.confidence_score ?? null;
           const collecting = locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
           return (
         <div style={{
@@ -951,7 +968,9 @@ export default function BranchOverviewPage() {
               {locale === 'th' ? 'ความมั่นใจ' : 'Confidence'}
             </div>
             <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-              {confidenceVal != null ? `${Math.round(confidenceVal)}%` : collecting}
+              {confidenceVal != null
+                ? `${Math.round(Number(confidenceVal) <= 1 ? Number(confidenceVal) * 100 : Number(confidenceVal))}%`
+                : collecting}
             </div>
           </div>
         </div>

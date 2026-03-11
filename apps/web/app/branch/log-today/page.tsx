@@ -657,12 +657,17 @@ export default function LogTodayPage() {
         }
       });
 
+      // Notify Operating Status to refetch fnb_latest_metrics / latest dashboard
+      if (typeof window !== 'undefined' && branch?.id) {
+        window.dispatchEvent(new CustomEvent('aurasea:metrics-saved', { detail: { branchId: branch.id } }));
+      }
+
       // GLOBAL FIXES: Trigger cache clearing and recalculation after Save Today
       // Clear stale cache and trigger health/alerts recalculation
       if (typeof window !== 'undefined' && branch?.id) {
         // Clear branch-specific cache
         invalidateBranchState(branch.id);
-        
+
         // Clear operational signals cache
         operationalSignalsService.clearCache();
         
