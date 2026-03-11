@@ -1,7 +1,8 @@
 /**
  * Branch Anomaly Signals Service
  *
- * Queries backend view branch_anomaly_signals for automatic anomaly detection.
+ * Read-only: queries backend view branch_anomaly_signals (UNION of fnb_anomaly_signals
+ * and accommodation_anomaly_signals). Do not INSERT/UPSERT into branch_anomaly_signals.
  * Enables early intelligent alerts after ~7 days (no need to wait for 30).
  */
 
