@@ -1,12 +1,13 @@
 /**
  * Latest Metrics Service
  *
- * Reads from fnb_latest_metrics and accommodation_latest_metrics views,
- * which return the single latest metric row per branch (no metric_date filter).
- * Use for Operating Status dashboard so metrics appear even when date/timezone differs.
+ * Prefer KPI layer: branch_latest_kpi (one row per branch).
+ * Fallback: fnb_latest_metrics and accommodation_latest_metrics for backward compatibility.
+ * Use for Operating Status dashboard.
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import { getLatestKpiForDashboard } from './kpi-analytics-service';
 
 export type BranchModuleType = 'accommodation' | 'fnb';
 
@@ -21,11 +22,11 @@ export interface FnbLatestMetricRow {
   [key: string]: unknown;
 }
 
-/** Accommodation view row (accommodation_latest_metrics). Uses column "revenue" (not total_revenue_thb). */
+/** Accommodation view row (accommodation_latest_metrics). Uses total_revenue_thb for revenue. */
 export interface AccommodationLatestMetricRow {
   branch_id: string;
   metric_date?: string;
-  revenue?: number | null;
+  total_revenue_thb?: number | null;
   rooms_sold?: number | null;
   rooms_available?: number | null;
   occupancy_rate?: number | null;
@@ -55,9 +56,8 @@ function rejectMockBranchId(branchId: string): void {
 }
 
 /**
- * Get the latest metric for a branch from the appropriate view.
- * No metric_date filter — views guarantee one row per branch (newest).
- * Returns null if no row; dashboard should show "Collecting data..." in that case.
+ * Get the latest metric for a branch from the KPI layer or legacy views.
+ * Prefer branch_latest_kpi; fallback to fnb_latest_metrics / accommodation_latest_metrics.
  */
 export async function getLatestMetricForDashboard(
   branchId: string,
@@ -66,6 +66,23 @@ export async function getLatestMetricForDashboard(
   if (branchId == null || branchId === '') return null;
   rejectMockBranchId(branchId);
   if (!isSupabaseAvailable()) return null;
+
+  try {
+    const kpi = await getLatestKpiForDashboard(branchId);
+    if (kpi != null) {
+      return {
+        revenue: kpi.revenue,
+        customers: kpi.customers,
+        roomsSold: kpi.roomsSold,
+        occupancyRate: kpi.occupancyRate,
+        healthScore: kpi.healthScore,
+        confidenceScore: kpi.confidenceScore,
+        metricDate: kpi.metricDate,
+      };
+    }
+  } catch (_) {
+    // Fall through to legacy views
+  }
 
   const supabase = getSupabaseClient();
   if (!supabase) return null;
@@ -111,21 +128,20 @@ export async function getLatestMetricForDashboard(
         }
         return null;
       }
-      const row = data as AccommodationLatestMetricRow & { total_revenue_thb?: number | null } | null;
+      const row = data as AccommodationLatestMetricRow | null;
       if (!row) return null;
 
-      // accommodation_daily_metrics uses "revenue" (not total_revenue_thb); fallback if view omits it
-      let revenue = row.revenue != null ? Number(row.revenue) : (row.total_revenue_thb != null ? Number(row.total_revenue_thb) : null);
+      let revenue: number | null = row.total_revenue_thb != null ? Number(row.total_revenue_thb) : null;
       if (revenue == null) {
         const { data: fallbackRow } = await supabase
           .from('accommodation_daily_metrics')
-          .select('revenue')
+          .select('total_revenue_thb')
           .eq('branch_id', branchId)
           .order('metric_date', { ascending: false })
           .limit(1)
           .maybeSingle();
-        const r = fallbackRow as { revenue?: number | null } | null;
-        revenue = r?.revenue != null ? Number(r.revenue) : null;
+        const r = fallbackRow as { total_revenue_thb?: number | null } | null;
+        revenue = r?.total_revenue_thb != null ? Number(r.total_revenue_thb) : null;
       }
       return {
         revenue,
@@ -158,18 +174,18 @@ export async function getLatestMetricForDashboard(
       };
     }
     if (accRow) {
-      const ar = accRow as AccommodationLatestMetricRow & { total_revenue_thb?: number | null };
-      let accRevenue = ar.revenue != null ? Number(ar.revenue) : (ar.total_revenue_thb != null ? Number(ar.total_revenue_thb) : null);
+      const ar = accRow as AccommodationLatestMetricRow;
+      let accRevenue: number | null = ar.total_revenue_thb != null ? Number(ar.total_revenue_thb) : null;
       if (accRevenue == null) {
         const { data: fallbackRow } = await supabase
           .from('accommodation_daily_metrics')
-          .select('revenue')
+          .select('total_revenue_thb')
           .eq('branch_id', branchId)
           .order('metric_date', { ascending: false })
           .limit(1)
           .maybeSingle();
-        const r = fallbackRow as { revenue?: number | null } | null;
-        accRevenue = r?.revenue != null ? Number(r.revenue) : null;
+        const r = fallbackRow as { total_revenue_thb?: number | null } | null;
+        accRevenue = r?.total_revenue_thb != null ? Number(r.total_revenue_thb) : null;
       }
       return {
         revenue: accRevenue,

@@ -1,13 +1,13 @@
 /**
  * Revenue Last 30 Days Chart Component
- * 
- * Displays revenue trend over the last 30 days
+ *
+ * Uses branch_kpi_metrics (no frontend average calculation).
  */
 'use client';
 
 import { useMemo, useEffect, useState } from 'react';
 import { SectionCard } from '../section-card';
-import { getDailyMetrics } from '../../services/db/daily-metrics-service';
+import { getBranchKpiMetrics } from '../../services/db/kpi-analytics-service';
 
 interface RevenueLast30DaysChartProps {
   branchId: string;
@@ -15,48 +15,38 @@ interface RevenueLast30DaysChartProps {
 }
 
 export function RevenueLast30DaysChart({ branchId, locale }: RevenueLast30DaysChartProps) {
-  const [dailyMetrics, setDailyMetrics] = useState<any[]>([]);
+  const [kpiMetrics, setKpiMetrics] = useState<Awaited<ReturnType<typeof getBranchKpiMetrics>>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Unified daily_metrics: Fetch directly from table
-    // SELECT metric_date, revenue, cost, cash_balance ORDER BY metric_date ASC
-    getDailyMetrics(branchId, 30).then(metrics => {
-      setDailyMetrics(metrics || []);
-      setLoading(false);
-    }).catch(err => {
-      console.error('[RevenueChart] Failed to load daily metrics:', err);
-      setDailyMetrics([]);
-      setLoading(false);
-    });
+    getBranchKpiMetrics(branchId, 30)
+      .then((rows) => {
+        setKpiMetrics(rows ?? []);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('[RevenueChart] Failed to load KPI metrics:', err);
+        setKpiMetrics([]);
+        setLoading(false);
+      });
   }, [branchId]);
 
   const revenueData = useMemo(() => {
-    // PART 4: Data Guard - Return null if no data (show empty state)
-    if (!dailyMetrics || dailyMetrics.length === 0) {
-      return null;
-    }
+    if (!kpiMetrics || kpiMetrics.length === 0) return null;
 
-    // PART 4: Use unified fields: revenue from daily_metrics
-    // Filter out null/NaN/undefined values and ensure valid numbers
-    const validMetrics = dailyMetrics
-      .filter(m => {
-        const revenue = m.revenue;
-        return revenue !== null && revenue !== undefined && !isNaN(revenue) && isFinite(revenue);
+    const validMetrics = kpiMetrics
+      .filter((m) => {
+        const v = m.revenue != null ? Number(m.revenue) : null;
+        return v != null && !isNaN(v) && isFinite(v);
       })
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .map(m => ({
-        date: new Date(m.date),
-        revenue: Number(m.revenue) || 0, // Ensure valid number
+      .map((m) => ({
+        date: new Date(m.metric_date),
+        revenue: Number(m.revenue) || 0,
       }));
-    
-    // Need at least 2 points for a trend
-    if (validMetrics.length < 2) {
-      return null;
-    }
-    
+
+    if (validMetrics.length < 2) return null;
     return validMetrics;
-  }, [dailyMetrics]);
+  }, [kpiMetrics]);
 
   // Data Guard: Show empty state if no data
   if (loading) {

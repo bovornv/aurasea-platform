@@ -30,6 +30,26 @@ import { businessGroupService } from '../../services/business-group-service';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import { runAppAlertValidation, runFullAlertValidation } from '../../lib/run-alert-validation-app';
+import { getBranchAlertsFromKpi, type BranchAlertRow } from '../../services/db/kpi-analytics-service';
+
+/** Map branch_alerts rows to display list. Prefer alert_message + confidence_score; fallback to legacy columns. */
+function flattenKpiAlerts(rows: BranchAlertRow[]): { id: string; message: string; type?: string; confidenceScore?: number | null }[] {
+  const out: { id: string; message: string; type?: string; confidenceScore?: number | null }[] = [];
+  rows.forEach((r, i) => {
+    const baseId = `kpi-${r.branch_id}-${r.metric_date ?? i}`;
+    const confidenceScore = r.confidence_score != null ? Number(r.confidence_score) : null;
+    if (r.alert_message != null && String(r.alert_message).trim()) {
+      out.push({ id: `${baseId}-msg`, message: String(r.alert_message).trim(), confidenceScore });
+      return;
+    }
+    if (r.revenue_alert != null && String(r.revenue_alert).trim()) out.push({ id: `${baseId}-revenue`, message: String(r.revenue_alert), type: 'revenue', confidenceScore });
+    if (r.customer_alert != null && String(r.customer_alert).trim()) out.push({ id: `${baseId}-customer`, message: String(r.customer_alert), type: 'customer', confidenceScore });
+    if (r.occupancy_alert != null && String(r.occupancy_alert).trim()) out.push({ id: `${baseId}-occupancy`, message: String(r.occupancy_alert), type: 'occupancy', confidenceScore });
+    if (r.cost_alert != null && String(r.cost_alert).trim()) out.push({ id: `${baseId}-cost`, message: String(r.cost_alert), type: 'cost', confidenceScore });
+    if (r.cash_alert != null && String(r.cash_alert).trim()) out.push({ id: `${baseId}-cash`, message: String(r.cash_alert), type: 'cash', confidenceScore });
+  });
+  return out;
+}
 
 export default function BranchAlertsPage() {
   const { locale } = useI18n();
@@ -79,24 +99,21 @@ export default function BranchAlertsPage() {
   // STEP 3: Use resolved branch data (single source of truth)
   const branchMetrics = useResolvedBranchData(branch?.id);
   
-  // PART 3: Fetch daily metrics for rolling 30-day calculation
-  const [dailyMetricsLast30Days, setDailyMetricsLast30Days] = useState<any[]>([]);
-  
+  // KPI layer: alerts from branch_alerts (preferred when available)
+  const [kpiAlertsRows, setKpiAlertsRows] = useState<BranchAlertRow[]>([]);
   useEffect(() => {
     if (!branch?.id) return;
-    
-    const fetchDailyMetrics = async () => {
-      try {
-        const { getDailyMetrics } = require('../../services/db/daily-metrics-service');
-        const metrics = await getDailyMetrics(branch.id, 30);
-        setDailyMetricsLast30Days(metrics || []);
-      } catch (e) {
-        console.error('[AlertsPage] Failed to fetch daily metrics:', e);
-        setDailyMetricsLast30Days([]);
-      }
-    };
-    
-    fetchDailyMetrics();
+    getBranchAlertsFromKpi(branch.id).then(setKpiAlertsRows).catch(() => setKpiAlertsRows([]));
+  }, [branch?.id]);
+
+  const kpiAlertsDisplay = useMemo(() => flattenKpiAlerts(kpiAlertsRows), [kpiAlertsRows]);
+
+  // Fallback: daily metrics for financial impact when using engine alerts
+  const [dailyMetricsLast30Days, setDailyMetricsLast30Days] = useState<any[]>([]);
+  useEffect(() => {
+    if (!branch?.id) return;
+    const { getDailyMetrics } = require('../../services/db/daily-metrics-service');
+    getDailyMetrics(branch.id, 30).then((m: any) => setDailyMetricsLast30Days(m || [])).catch(() => setDailyMetricsLast30Days([]));
   }, [branch?.id]);
 
   // PART 3: Calculate financial impact metrics using rolling 30 days from daily_metrics
@@ -451,9 +468,46 @@ export default function BranchAlertsPage() {
   return (
     <PageLayout title="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {/* SECTION 1: Revenue Risk Summary */}
+        {/* Alerts from intelligence engine (branch_alerts) — primary source */}
+        <SectionCard title={locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}>
+          {kpiAlertsDisplay.length === 0 ? (
+            <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
+              {locale === 'th' ? 'ไม่มีการแจ้งเตือนจากระบบวิเคราะห์ในขณะนี้' : 'No alerts from the intelligence engine at this time.'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {kpiAlertsDisplay.map((a) => (
+                <div
+                  key={a.id}
+                  style={{
+                    padding: '1rem',
+                    backgroundColor: '#fefce8',
+                    border: '1px solid #eab308',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    color: '#0a0a0a',
+                  }}
+                >
+                  <div style={{ marginBottom: a.confidenceScore != null ? '0.5rem' : 0 }}>{a.message}</div>
+                  {a.confidenceScore != null && (
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                      {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
+                      <strong>{Math.round(a.confidenceScore)}%</strong>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
+        {/* SECTION 1: Revenue Risk Summary (engine alerts; when no KPI alerts or in addition) */}
         <SectionCard title={locale === 'th' ? 'ผลกระทบทางการเงิน (30 วันล่าสุด)' : 'Financial Impact (Last 30 Days)'}>
-          {branchAlerts.length === 0 ? (
+          {kpiAlertsDisplay.length > 0 && branchAlerts.length === 0 ? (
+            <div style={{ padding: '1.5rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
+              {locale === 'th' ? 'ใช้การแจ้งเตือนจากระบบวิเคราะห์ด้านบน' : 'Using alerts from analytics layer above.'}
+            </div>
+          ) : branchAlerts.length === 0 ? (
             <div style={{ padding: '3rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
               {locale === 'th' ? 'ไม่พบความเสี่ยงทางการเงิน' : 'No financial risks detected.'}
             </div>

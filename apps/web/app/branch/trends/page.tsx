@@ -21,8 +21,6 @@ import { operationalSignalsService } from '../../services/operational-signals-se
 import { HealthScoreTrendChart } from '../../components/charts/health-score-trend-chart';
 import { RevenueLast30DaysChart } from '../../components/charts/revenue-last-30-days-chart';
 import { SectionCard } from '../../components/section-card';
-import type { DailyMetric } from '../../models/daily-metrics';
-
 export default function BranchTrendsPage() {
   // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONALS, NO EARLY RETURNS
   const { locale } = useI18n();
@@ -42,29 +40,17 @@ export default function BranchTrendsPage() {
   // STEP 3: Use resolved branch data (single source of truth)
   const branchMetrics = useResolvedBranchData(branch?.id);
 
-  // Fetch daily metrics directly for trends (if dailyHistory is not available)
-  const [dailyMetricsForTrends, setDailyMetricsForTrends] = useState<DailyMetric[] | null>(null);
-  
+  // Prefer KPI layer for trends (branch_kpi_metrics); fallback to daily metrics for hasSufficientHistory
+  const [kpiMetricsCount, setKpiMetricsCount] = useState<number>(0);
+
   useEffect(() => {
     if (!branch?.id) return;
-    
-    // Only fetch if dailyHistory is not available
-    if (branchMetrics?.dailyHistory && branchMetrics.dailyHistory.dates.length >= 10) {
-      return; // Already have sufficient data
-    }
-    
-    const fetchDailyMetrics = async () => {
-      try {
-        const { getDailyMetrics } = require('../../services/db/daily-metrics-service');
-        const metrics = await getDailyMetrics(branch.id, 40);
-        setDailyMetricsForTrends(metrics);
-      } catch (e) {
-        console.error('[BranchTrends] Failed to fetch daily metrics:', e);
-        setDailyMetricsForTrends([]);
-      }
-    };
-    
-    fetchDailyMetrics();
+    if (branchMetrics?.dailyHistory && branchMetrics.dailyHistory.dates.length >= 10) return;
+
+    const { getBranchKpiMetrics } = require('../../services/db/kpi-analytics-service');
+    getBranchKpiMetrics(branch.id, 40)
+      .then((rows) => setKpiMetricsCount(rows?.length ?? 0))
+      .catch(() => setKpiMetricsCount(0));
   }, [branch?.id, branchMetrics?.dailyHistory]);
 
   // Get health score trend for current branch (30 days)
@@ -87,33 +73,13 @@ export default function BranchTrendsPage() {
     return groupHealthScore.branchScores.find(bs => bs.branchId === branch.id);
   }, [branch, groupHealthScore?.branchScores]);
 
-  // Check if there's sufficient history (>= 10 days)
-  // PHASE 3: Use dailyHistory OR fetched dailyMetrics OR health score snapshots
   const hasSufficientHistory = useMemo(() => {
-    // Check if we have dailyHistory (40 days in simulation mode) - this is sufficient
-    if (branchMetrics?.dailyHistory && branchMetrics.dailyHistory.dates.length >= 10) {
-      return true;
-    }
-    
-    // Check if we have fetched daily metrics (for real data)
-    if (dailyMetricsForTrends && dailyMetricsForTrends.length >= 10) {
-      return true;
-    }
-    
-    // Check health score trend snapshots (with override if snapshots exist)
-    if (branchHealthScoreTrend) {
-      // Override: If snapshots exist, data is sufficient (daily metrics provide 40+ days)
-      if (branchHealthScoreTrend.snapshots.length > 0) {
-        return true;
-      }
-      // Otherwise check the hasInsufficientData flag
-      if (!branchHealthScoreTrend.hasInsufficientData && branchHealthScoreTrend.snapshots.length >= 10) {
-        return true;
-      }
-    }
-    
+    if (branchMetrics?.dailyHistory && branchMetrics.dailyHistory.dates.length >= 10) return true;
+    if (kpiMetricsCount >= 10) return true;
+    if (branchHealthScoreTrend?.snapshots.length) return true;
+    if (branchHealthScoreTrend && !branchHealthScoreTrend.hasInsufficientData && branchHealthScoreTrend.snapshots.length >= 10) return true;
     return false;
-  }, [branchHealthScoreTrend, branchMetrics, dailyMetricsForTrends]);
+  }, [branchHealthScoreTrend, branchMetrics, kpiMetricsCount]);
 
   if (!mounted) {
     return (
@@ -155,11 +121,11 @@ export default function BranchTrendsPage() {
               ? 'เทรนด์จะปรากฏหลังจากติดตามผล 10+ วัน'
               : 'Trends will appear after 10+ days of monitoring.'}
           </div>
-          {(branchMetrics?.dailyHistory?.dates.length || dailyMetricsForTrends?.length) ? (
+          {(branchMetrics?.dailyHistory?.dates.length || kpiMetricsCount) ? (
             <div style={{ fontSize: '14px', color: '#9ca3af', marginTop: '0.5rem' }}>
-              {locale === 'th' 
-                ? `(มีข้อมูล ${branchMetrics?.dailyHistory?.dates.length || dailyMetricsForTrends?.length || 0} วัน แต่ยังไม่มีข้อมูลสุขภาพ)` 
-                : `(Have ${branchMetrics?.dailyHistory?.dates.length || dailyMetricsForTrends?.length || 0} days of data but no health score history)`}
+              {locale === 'th'
+                ? `(มีข้อมูล ${branchMetrics?.dailyHistory?.dates.length || kpiMetricsCount || 0} วัน แต่ยังไม่มีข้อมูลสุขภาพ)`
+                : `(Have ${branchMetrics?.dailyHistory?.dates.length || kpiMetricsCount || 0} days of data but no health score history)`}
             </div>
           ) : null}
         </div>
@@ -177,8 +143,7 @@ export default function BranchTrendsPage() {
 
           {/* PHASE 3: Cost Trend */}
           {/* Check both dailyHistory and fetched dailyMetrics */}
-          {((branchMetrics?.dailyHistory?.costs && branchMetrics.dailyHistory.costs.length > 0) ||
-            (dailyMetricsForTrends && dailyMetricsForTrends.some(m => m.cost !== undefined && m.cost > 0))) && (
+          {(branchMetrics?.dailyHistory?.costs && branchMetrics.dailyHistory.costs.length > 0) && (
             <SectionCard title={locale === 'th' ? 'เทรนด์ต้นทุน' : 'Cost Trend'}>
               <div style={{ padding: '1rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
                 {locale === 'th' ? 'กราฟต้นทุนจะปรากฏที่นี่' : 'Cost trend chart will appear here'}
@@ -188,8 +153,7 @@ export default function BranchTrendsPage() {
 
           {/* PHASE 3: Margin Trend */}
           {/* Check both dailyHistory and fetched dailyMetrics */}
-          {((branchMetrics?.dailyHistory?.revenue && branchMetrics.dailyHistory.costs) ||
-            (dailyMetricsForTrends && dailyMetricsForTrends.some(m => (m.revenue || 0) > 0 || (m.cost || 0) > 0))) && (
+          {(branchMetrics?.dailyHistory?.revenue && branchMetrics.dailyHistory.costs) && (
             <SectionCard title={locale === 'th' ? 'เทรนด์กำไร' : 'Margin Trend'}>
               <div style={{ padding: '1rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
                 {locale === 'th' ? 'กราฟกำไรจะปรากฏที่นี่' : 'Margin trend chart will appear here'}
@@ -199,8 +163,7 @@ export default function BranchTrendsPage() {
 
           {/* PHASE 3: Occupancy Trend (if accommodation) */}
           {/* Check both dailyHistory and fetched dailyMetrics */}
-          {((branchMetrics?.dailyHistory?.occupancy && branchMetrics.dailyHistory.occupancy.length > 0) ||
-            (dailyMetricsForTrends && dailyMetricsForTrends.some(m => m.roomsAvailable && m.roomsAvailable > 0))) && (
+          {(branchMetrics?.dailyHistory?.occupancy && branchMetrics.dailyHistory.occupancy.length > 0) && (
             <SectionCard title={locale === 'th' ? 'เทรนด์อัตราการเข้าพัก' : 'Occupancy Trend'}>
               <div style={{ padding: '1rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
                 {locale === 'th' ? 'กราฟอัตราการเข้าพักจะปรากฏที่นี่' : 'Occupancy trend chart will appear here'}

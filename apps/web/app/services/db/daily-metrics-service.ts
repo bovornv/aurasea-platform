@@ -18,9 +18,9 @@ const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
   'branch_id', 'metric_date', 'total_revenue_thb', 'total_customers', 'cost', 'cash_balance',
   'additional_cost_today', 'top3_menu_revenue', 'avg_ticket', 'fnb_staff', 'promo_spend', 'monthly_fixed_cost',
 ]);
-/** Columns allowed in accommodation_daily_metrics. */
+/** Columns allowed in accommodation_daily_metrics. Revenue column is total_revenue_thb. */
 const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
-  'branch_id', 'metric_date', 'revenue', 'cost', 'cash_balance', 'additional_cost_today',
+  'branch_id', 'metric_date', 'total_revenue_thb', 'cost', 'cash_balance', 'additional_cost_today',
   'rooms_sold', 'rooms_available', 'adr', 'accommodation_staff', 'monthly_fixed_cost',
 ]);
 
@@ -67,6 +67,19 @@ function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(payload).filter(([, v]) => v !== undefined)
   );
+}
+
+/**
+ * Build accommodation payload for accommodation_daily_metrics.
+ * Uses total_revenue_thb (not revenue) for the revenue column.
+ */
+function buildAccommodationPayload(metric: DailyMetricInput): Record<string, unknown> {
+  const base = dailyMetricToDb(metric) as Record<string, unknown>;
+  const { revenue, ...rest } = base;
+  return {
+    ...rest,
+    total_revenue_thb: metric.revenue ?? 0,
+  };
 }
 
 /** Decide which base table to write to: by branch type (hotel/accommodation vs restaurant/fnb), else infer from metric content. */
@@ -138,7 +151,7 @@ export async function saveDailyMetric(
     const payload =
       table === TABLE_FNB
         ? buildPayloadForTable(buildFnbPayload(metric), allowedColumns)
-        : buildPayloadForTable(dailyMetricToDb(metric) as Record<string, unknown>, allowedColumns);
+        : buildPayloadForTable(buildAccommodationPayload(metric), allowedColumns);
 
     if (table === TABLE_FNB) {
       console.log('Saving FNB metrics payload:', payload);

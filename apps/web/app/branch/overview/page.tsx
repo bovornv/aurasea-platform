@@ -42,6 +42,8 @@ import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getLatestMetricForDashboard } from '../../services/db/latest-metrics-service';
+import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
+import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import type { DailyMetric } from '../../models/daily-metrics';
@@ -61,15 +63,19 @@ export default function BranchOverviewPage() {
   const [mounted, setMounted] = useState(false);
   // Auto-select first branch if none selected (fallback for timing issues)
   const [attemptingAutoSelect, setAttemptingAutoSelect] = useState(false);
-  // Latest metric from fnb_latest_metrics / accommodation_latest_metrics (no date filter)
+  // Latest metric from branch_latest_kpi (or legacy views)
   const [latestDashboardMetric, setLatestDashboardMetric] = useState<Awaited<ReturnType<typeof getLatestMetricForDashboard>>>(null);
-  
+  // KPI layer: recommendations from branch_recommendations
+  const [kpiRecommendations, setKpiRecommendations] = useState<{ recommendation: string; category?: string }[]>([]);
+
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
   const { coverageDays, stage } = useIntelligenceStageBranch(branch?.id ?? null, branch?.moduleType);
-  // Anomaly signals optional (use branch alerts + health score confidence when not available)
-  const anomalyAlertsAsContracts: AlertContract[] = [];
-  const anomalyConfidenceScore: number | null = null;
+  // Early signal from branch_anomaly_signals (intelligence engine)
+  const { anomaly: anomalySignal, confidenceScore: anomalyConfidenceScore, anomalyAlertsAsContracts } = useAnomalySignals(
+    branch?.id ?? null,
+    locale === 'th' ? 'th' : 'en'
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -440,6 +446,13 @@ export default function BranchOverviewPage() {
     return () => { cancelled = true; };
   }, [branch?.id, branch?.moduleType]);
 
+  useEffect(() => {
+    if (!branch?.id) return;
+    getBranchRecommendationsFromKpi(branch.id).then((rows) => {
+      setKpiRecommendations(rows.map((r) => ({ recommendation: String(r.recommendation ?? ''), category: r.category ?? undefined })));
+    }).catch(() => setKpiRecommendations([]));
+  }, [branch?.id]);
+
   const performanceTrends = useMemo(() => {
     if (!branch?.id) return null;
     
@@ -772,8 +785,14 @@ export default function BranchOverviewPage() {
     return sorted[0] ?? null;
   }, [dailyMetricsForTrends]);
 
-  // Early signal one-liner for Mission Control card
+  // Early signal: prefer branch_anomaly_signals, then performance trend, then first alert
   const earlySignalText = useMemo(() => {
+    if (anomalySignal?.revenue_anomaly_score != null) {
+      const score = Number(anomalySignal.revenue_anomaly_score);
+      if (score < -2) return locale === 'th' ? 'รายได้ต่ำกว่าแนวโน้มปกติอย่างมีนัยสำคัญ' : 'Revenue significantly below normal trend';
+      if (score > 2) return locale === 'th' ? 'รายได้สูงกว่าแนวโน้มปกติอย่างมีนัยสำคัญ' : 'Revenue significantly above normal trend';
+      return locale === 'th' ? 'รายได้อยู่ในช่วงแนวโน้มปกติ' : 'Revenue within normal trend';
+    }
     if (performanceTrends) {
       const { revenueTrend } = performanceTrends;
       if (revenueTrend > 5) return locale === 'th' ? 'รายได้เพิ่มขึ้นเทียบกับแนวโน้มล่าสุด' : 'Revenue up vs recent trend';
@@ -787,7 +806,7 @@ export default function BranchOverviewPage() {
     }
     if (coverageDays < 7) return locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
     return '—';
-  }, [performanceTrends, mergedBranchAlerts, coverageDays, locale]);
+  }, [anomalySignal, performanceTrends, mergedBranchAlerts, coverageDays, locale]);
 
   if (!mounted || branchLoading) {
     return (
@@ -853,7 +872,7 @@ export default function BranchOverviewPage() {
           const isFnb = branchType === 'fnb';
           const isAccommodation = branchType === 'accommodation';
           const healthVal = latestDashboardMetric?.healthScore ?? branchHealthScore?.healthScore;
-          // F&B: total_revenue_thb; accommodation: revenue (mapped in latest-metrics-service)
+          // F&B and accommodation: total_revenue_thb (latest-metrics-service returns as revenue)
           const revenueVal = latestDashboardMetric?.revenue ?? latestDailyMetric?.revenue;
           const customersVal = isFnb ? (latestDashboardMetric?.customers ?? latestDailyMetric?.customers) : null;
           const roomsSoldVal = isAccommodation ? (latestDashboardMetric?.roomsSold ?? latestDailyMetric?.roomsSold) : null;
@@ -1454,12 +1473,36 @@ export default function BranchOverviewPage() {
           )}
         </SectionCard>
 
-        {/* BLOCK 5: Recommended Actions */}
+        {/* BLOCK 5: Recommended Actions (from branch_recommendations when available, else from alerts) */}
         <SectionCard title={locale === 'th' ? 'สิ่งที่คุณควรทำในสัปดาห์นี้' : 'What You Should Do This Week'}>
-          {recommendedActions.length === 0 ? (
+          {kpiRecommendations.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {kpiRecommendations.map((r, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: '1rem',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '0.75rem',
+                  }}
+                >
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#eab308', marginTop: '0.375rem', flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    {r.category && (
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem', textTransform: 'capitalize' }}>{r.category}</div>
+                    )}
+                    <div style={{ fontSize: '14px', color: '#0a0a0a', lineHeight: '1.4' }}>{r.recommendation}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : recommendedActions.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
-              {/* PART 7: Show "Maintain current trajectory" if alerts exist but no suggested actions, otherwise show "No suggested actions" */}
-              {mergedBranchAlerts.length > 0 
+              {mergedBranchAlerts.length > 0
                 ? (locale === 'th' ? 'รักษาแนวโน้มปัจจุบัน' : 'Maintain current trajectory')
                 : (locale === 'th' ? 'ยังไม่มีแนวทางที่แนะนำในขณะนี้' : 'No suggested actions at this time')}
             </div>
