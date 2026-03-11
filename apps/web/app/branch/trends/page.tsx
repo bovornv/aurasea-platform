@@ -49,7 +49,7 @@ export default function BranchTrendsPage() {
 
     const { getBranchKpiMetrics } = require('../../services/db/kpi-analytics-service');
     getBranchKpiMetrics(branch.id, 40)
-      .then((rows) => setKpiMetricsCount(rows?.length ?? 0))
+      .then((rows: unknown[]) => setKpiMetricsCount(rows?.length ?? 0))
       .catch(() => setKpiMetricsCount(0));
   }, [branch?.id, branchMetrics?.dailyHistory]);
 
