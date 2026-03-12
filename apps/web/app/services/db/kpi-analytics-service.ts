@@ -138,6 +138,7 @@ export interface BranchLatestAlertRow {
   metric_date?: string | null;
   alert_message?: string | null;
   alert_type?: string | null;
+  alert_category?: string | null;
   revenue_alert?: string | null;
   customer_alert?: string | null;
   occupancy_alert?: string | null;
@@ -151,6 +152,7 @@ export interface BranchActiveAlertRow {
   metric_date?: string | null;
   alert_message?: string | null;
   alert_type?: string | null;
+  alert_category?: string | null;
   revenue_alert?: string | null;
   customer_alert?: string | null;
   occupancy_alert?: string | null;

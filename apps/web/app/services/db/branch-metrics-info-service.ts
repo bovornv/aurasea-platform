@@ -194,3 +194,41 @@ export async function getAccommodationEarlySignal(
     return null;
   }
 }
+
+/** Row from branch_learning_phase view (learning status per branch). */
+export interface BranchLearningPhaseRow {
+  branch_id: string;
+  message_th?: string | null;
+  message_en?: string | null;
+  data_days?: number | null;
+  confidence_score?: number | null;
+  learning_phase?: string | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch learning status for a branch from branch_learning_phase view.
+ * Limit 1 row per branch.
+ */
+export async function getBranchLearningPhase(
+  branchId: string
+): Promise<BranchLearningPhaseRow | null> {
+  try {
+    if (!isSupabaseAvailable() || !branchId) return null;
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('branch_learning_phase')
+      .select('*')
+      .eq('branch_id', branchId)
+      .limit(1)
+      .maybeSingle();
+    if (error || data == null) return null;
+    return data as BranchLearningPhaseRow;
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[BranchMetricsInfo] getBranchLearningPhase error:', e);
+    }
+    return null;
+  }
+}

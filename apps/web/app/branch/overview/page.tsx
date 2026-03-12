@@ -43,7 +43,7 @@ import { OperatingFooterTrust } from '../../components/operating-layer/operating
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, type OperatingStatusRow } from '../../services/db/latest-metrics-service';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
-import { getAccommodationConfidenceLevel, getAccommodationEarlySignal } from '../../services/db/branch-metrics-info-service';
+import { getAccommodationConfidenceLevel, getAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { getHealthScoreFromBranchHealthMetrics } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
@@ -78,6 +78,8 @@ export default function BranchOverviewPage() {
   const [confidenceLevelFromCoverage, setConfidenceLevelFromCoverage] = useState<string | null>(null);
   // Early Signal card: accommodation uses accommodation_anomaly_signals.early_signal
   const [accommodationEarlySignal, setAccommodationEarlySignal] = useState<string | null>(null);
+  // Learning status from branch_learning_phase view
+  const [learningPhase, setLearningPhase] = useState<BranchLearningPhaseRow | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -458,6 +460,7 @@ export default function BranchOverviewPage() {
       getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
     }
     getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
+    getBranchLearningPhase(branch.id).then(setLearningPhase);
   }, [branch?.id, branch?.moduleType]);
 
   useEffect(() => {
@@ -468,8 +471,9 @@ export default function BranchOverviewPage() {
     };
     const onMetricsSaved = (e: Event) => {
       const detail = (e as CustomEvent<{ branchId: string }>).detail;
-      if (detail?.branchId === branch?.id) {
+        if (detail?.branchId === branch?.id) {
         refreshOperatingStatus();
+        getBranchLearningPhase(branch.id).then(setLearningPhase);
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
@@ -518,6 +522,12 @@ export default function BranchOverviewPage() {
     }
     getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
   }, [branch?.id, branch?.moduleType]);
+
+  // Learning status from branch_learning_phase
+  useEffect(() => {
+    if (!branch?.id) return;
+    getBranchLearningPhase(branch.id).then(setLearningPhase);
+  }, [branch?.id]);
 
   const isOwnerOrSuperAdmin = role?.isSuperAdmin === true || role?.effectiveRole === 'owner';
   const isAccommodationBranch = branch?.moduleType === 'accommodation';
@@ -1108,6 +1118,45 @@ export default function BranchOverviewPage() {
           }}>
             {locale === 'th' ? 'ความครอบคลุมข้อมูล: ' : 'Data coverage: '}
             <strong>{dataCoverageDays}</strong> / 30 {locale === 'th' ? 'วัน' : 'days'}
+          </div>
+        )}
+
+        {/* Learning status from branch_learning_phase */}
+        {learningPhase && (
+          <div style={{
+            padding: '1rem',
+            backgroundColor: '#f0f9ff',
+            border: '1px solid #bae6fd',
+            borderRadius: '8px',
+            fontSize: '14px',
+            color: '#0c4a6e',
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
+              {locale === 'th' ? 'สถานะการเรียนรู้' : 'Learning status'}
+            </div>
+            <div style={{ marginBottom: '0.5rem' }}>
+              {locale === 'th' ? (learningPhase.message_th ?? learningPhase.message_en ?? '—') : (learningPhase.message_en ?? learningPhase.message_th ?? '—')}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', fontSize: '13px', color: '#0369a1' }}>
+              {learningPhase.data_days != null && (
+                <span>
+                  {locale === 'th' ? 'วันที่มีข้อมูล: ' : 'Data days: '}
+                  <strong>{Number(learningPhase.data_days)}</strong>
+                </span>
+              )}
+              {learningPhase.confidence_score != null && (
+                <span>
+                  {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
+                  <strong>{Math.round(Number(learningPhase.confidence_score))}%</strong>
+                </span>
+              )}
+              {learningPhase.learning_phase != null && (
+                <span>
+                  {locale === 'th' ? 'ระยะการเรียนรู้: ' : 'Learning phase: '}
+                  <strong>{String(learningPhase.learning_phase)}</strong>
+                </span>
+              )}
+            </div>
           </div>
         )}
 

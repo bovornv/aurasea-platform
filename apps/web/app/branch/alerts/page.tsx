@@ -37,15 +37,59 @@ import {
   type BranchActiveAlertRow,
 } from '../../services/db/kpi-analytics-service';
 
-/** Derive display title and description from a latest/active alert row. */
-function formatAlertCard(row: BranchLatestAlertRow | BranchActiveAlertRow): { title: string; description: string } {
+/** Normalize alert_type from DB to key (e.g. "Revenue Risk" → "revenue_risk"). */
+function normalizeAlertType(type: string): string {
+  return type.replace(/\s+/g, '_').toLowerCase();
+}
+
+/** Localized alert message by type: th and en. */
+const ALERT_MESSAGE: Record<string, { th: string; en: string }> = {
+  revenue_risk: { th: 'รายได้ต่ำกว่าปกติ', en: 'Revenue is significantly below the recent trend' },
+  pricing_opportunity: { th: 'มีโอกาสปรับราคาเพิ่ม', en: 'Demand surge detected. Pricing opportunity.' },
+  demand_weakening: { th: 'ความต้องการเริ่มลดลง', en: 'Demand is weakening compared to recent days' },
+  low_occupancy: { th: 'อัตราการเข้าพักต่ำ', en: 'Occupancy rate is very low' },
+  near_full_capacity: { th: 'ห้องพักใกล้เต็ม', en: 'Hotel is nearly full' },
+  revenue: { th: 'รายได้ต่ำกว่าปกติ', en: 'Revenue is significantly below the recent trend' },
+  pricing: { th: 'มีโอกาสปรับราคาเพิ่ม', en: 'Demand surge detected. Pricing opportunity.' },
+  demand: { th: 'ความต้องการเริ่มลดลง', en: 'Demand is weakening compared to recent days' },
+  occupancy: { th: 'อัตราการเข้าพักต่ำ', en: 'Occupancy rate is very low' },
+  capacity: { th: 'ห้องพักใกล้เต็ม', en: 'Hotel is nearly full' },
+};
+
+/** Localized alert category label (title). */
+const ALERT_CATEGORY_LABEL: Record<string, { th: string; en: string }> = {
+  revenue: { th: 'รายได้', en: 'Revenue' },
+  demand: { th: 'ความต้องการ', en: 'Demand' },
+  occupancy: { th: 'อัตราการเข้าพัก', en: 'Occupancy' },
+  pricing: { th: 'ราคา', en: 'Pricing' },
+  capacity: { th: 'ความจุ', en: 'Capacity' },
+};
+
+/** Derive display title (category label) and description (localized message) from a row. */
+function formatAlertCard(
+  row: BranchLatestAlertRow | BranchActiveAlertRow,
+  locale: 'th' | 'en' = 'en'
+): { title: string; description: string } {
   const msg = (row.alert_message ?? row.revenue_alert ?? row.customer_alert ?? row.occupancy_alert ?? '').toString().trim();
-  const type = (row.alert_type ?? '').toString().trim();
-  const title = type || (msg.split('.')[0]?.trim() || msg.slice(0, 50) || 'Alert');
-  const description = msg && msg !== title ? msg : (type ? msg : '');
+  const typeRaw = (row.alert_type ?? '').toString().trim();
+  const typeKey = normalizeAlertType(typeRaw);
+  const categoryRaw = (row.alert_category ?? '').toString().trim().toLowerCase();
+  const isTh = locale === 'th';
+
+  const categoryLabel = categoryRaw && ALERT_CATEGORY_LABEL[categoryRaw]
+    ? (isTh ? ALERT_CATEGORY_LABEL[categoryRaw].th : ALERT_CATEGORY_LABEL[categoryRaw].en)
+    : '';
+
+  const messageMap = typeKey && ALERT_MESSAGE[typeKey]
+    ? (isTh ? ALERT_MESSAGE[typeKey].th : ALERT_MESSAGE[typeKey].en)
+    : '';
+
+  const title = categoryLabel || (typeRaw || (msg.split('.')[0]?.trim() || msg.slice(0, 50) || 'Alert'));
+  const description = messageMap || msg;
+
   return {
     title: title.length > 60 ? title.slice(0, 57) + '...' : title,
-    description: description && description !== title ? description : (msg && msg.length > 60 ? msg : ''),
+    description: description.length > 60 ? description.slice(0, 97) + '...' : description,
   };
 }
 
@@ -384,7 +428,7 @@ export default function BranchAlertsPage() {
             </div>
           ) : (
             (() => {
-              const { title, description } = formatAlertCard(latestAlert);
+              const { title, description } = formatAlertCard(latestAlert, locale === 'th' ? 'th' : 'en');
               const msg = (latestAlert.alert_message ?? latestAlert.revenue_alert ?? latestAlert.customer_alert ?? latestAlert.occupancy_alert ?? '').toString().trim();
               return (
                 <div
@@ -561,7 +605,7 @@ export default function BranchAlertsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {activeAlertsFromDb.map((row, idx) => {
-                const { title, description } = formatAlertCard(row);
+                const { title, description } = formatAlertCard(row, locale === 'th' ? 'th' : 'en');
                 const msg = (row.alert_message ?? row.revenue_alert ?? row.customer_alert ?? row.occupancy_alert ?? '').toString().trim();
                 const id = `active-${row.branch_id}-${row.metric_date ?? idx}`;
                 return (
