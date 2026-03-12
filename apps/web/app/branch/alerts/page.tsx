@@ -42,6 +42,14 @@ function normalizeAlertType(type: string): string {
   return type.replace(/\s+/g, '_').toLowerCase();
 }
 
+/** Display confidence from DB: if value <= 1 treat as 0–1 fraction and show as %, else show as 0–100. */
+function formatConfidenceScore(confidence_score: number | null | undefined): number | null {
+  if (confidence_score == null || Number.isNaN(Number(confidence_score))) return null;
+  const n = Number(confidence_score);
+  const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
+  return Math.min(100, Math.max(0, pct));
+}
+
 /** Localized alert message by type: th and en. */
 const ALERT_MESSAGE: Record<string, { th: string; en: string }> = {
   revenue_risk: { th: 'รายได้ต่ำกว่าปกติ', en: 'Revenue is significantly below the recent trend' },
@@ -115,6 +123,22 @@ export default function BranchAlertsPage() {
   } | null>(null);
   const [fullValidationRunning, setFullValidationRunning] = useState(false);
   const [fullValidationResult, setFullValidationResult] = useState<string | null>(null);
+
+  /** Use for alert localization: th when Thai, else en. */
+  const localeKey = locale === 'th' || String(locale || '').toLowerCase().startsWith('th') ? 'th' : 'en';
+
+  /** Deduplicate active alerts by content so the same alert is not shown multiple times. */
+  const uniqueActiveAlerts = useMemo(() => {
+    const seen = new Set<string>();
+    return activeAlertsFromDb.filter((row) => {
+      const type = (row.alert_type ?? '').toString().trim();
+      const msg = (row.alert_message ?? row.revenue_alert ?? row.customer_alert ?? row.occupancy_alert ?? '').toString().trim();
+      const key = `${normalizeAlertType(type)}|${msg}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [activeAlertsFromDb]);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -428,8 +452,9 @@ export default function BranchAlertsPage() {
             </div>
           ) : (
             (() => {
-              const { title, description } = formatAlertCard(latestAlert, locale === 'th' ? 'th' : 'en');
+              const { title, description } = formatAlertCard(latestAlert, localeKey);
               const msg = (latestAlert.alert_message ?? latestAlert.revenue_alert ?? latestAlert.customer_alert ?? latestAlert.occupancy_alert ?? '').toString().trim();
+              const confidencePct = formatConfidenceScore(latestAlert.confidence_score);
               return (
                 <div
                   style={{
@@ -443,10 +468,10 @@ export default function BranchAlertsPage() {
                 >
                   <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>⚠ {title}</div>
                   <div style={{ color: '#374151' }}>{description || msg}</div>
-                  {latestAlert.confidence_score != null && (
+                  {confidencePct != null && (
                     <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.5rem' }}>
-                      {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
-                      <strong>{Math.round(Number(latestAlert.confidence_score))}%</strong>
+                      {localeKey === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
+                      <strong>{confidencePct}%</strong>
                     </div>
                   )}
                 </div>
@@ -604,10 +629,11 @@ export default function BranchAlertsPage() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {activeAlertsFromDb.map((row, idx) => {
-                const { title, description } = formatAlertCard(row, locale === 'th' ? 'th' : 'en');
+              {uniqueActiveAlerts.map((row, idx) => {
+                const { title, description } = formatAlertCard(row, localeKey);
                 const msg = (row.alert_message ?? row.revenue_alert ?? row.customer_alert ?? row.occupancy_alert ?? '').toString().trim();
                 const id = `active-${row.branch_id}-${row.metric_date ?? idx}`;
+                const confidencePct = formatConfidenceScore(row.confidence_score);
                 return (
                   <div
                     key={id}
@@ -622,10 +648,10 @@ export default function BranchAlertsPage() {
                   >
                     <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>⚠ {title}</div>
                     <div style={{ color: '#374151' }}>{description || msg}</div>
-                    {row.confidence_score != null && (
+                    {confidencePct != null && (
                       <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.5rem' }}>
-                        {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
-                        <strong>{Math.round(Number(row.confidence_score))}%</strong>
+                        {localeKey === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
+                        <strong>{confidencePct}%</strong>
                       </div>
                     )}
                   </div>
