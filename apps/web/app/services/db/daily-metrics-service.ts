@@ -18,9 +18,9 @@ const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
   'branch_id', 'metric_date', 'total_revenue_thb', 'total_customers', 'cost', 'cash_balance',
   'additional_cost_today', 'top3_menu_revenue', 'avg_ticket', 'fnb_staff', 'promo_spend', 'monthly_fixed_cost',
 ]);
-/** Columns allowed in accommodation_daily_metrics. Revenue column is total_revenue_thb. */
+/** Columns allowed in accommodation_daily_metrics. Only these columns exist in the table. */
 const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
-  'branch_id', 'metric_date', 'total_revenue_thb', 'cash_balance', 'additional_cost_today',
+  'branch_id', 'metric_date', 'revenue', 'additional_cost_today',
   'rooms_sold', 'rooms_available', 'staff_count', 'monthly_fixed_cost',
 ]);
 
@@ -72,19 +72,20 @@ function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
 
 /**
  * Build accommodation payload for accommodation_daily_metrics.
- * Uses total_revenue_thb (not revenue) for the revenue column.
- * Omits: monthly_fixed_cost (owner-only), adr (computed), cost (column removed; use estimated cost elsewhere).
+ * Payload: branch_id, metric_date, revenue, rooms_sold, rooms_available, staff_count, additional_cost_today.
+ * Omits: monthly_fixed_cost (owner-only), adr, cost, cash_balance (not in table).
  */
 function buildAccommodationPayload(metric: DailyMetricInput): Record<string, unknown> {
   const base = dailyMetricToDb(metric) as Record<string, unknown>;
-  const { revenue, monthly_fixed_cost: _mfc, adr: _adr, cost: _cost, ...rest } = base;
+  const { monthly_fixed_cost: _mfc, adr: _adr, cost: _cost, cash_balance: _cb, ...rest } = base;
   const out = {
     ...rest,
-    total_revenue_thb: metric.revenue ?? 0,
+    revenue: metric.revenue ?? 0,
   };
   delete (out as Record<string, unknown>).monthly_fixed_cost;
   delete (out as Record<string, unknown>).adr;
   delete (out as Record<string, unknown>).cost;
+  delete (out as Record<string, unknown>).cash_balance;
   return out;
 }
 
@@ -469,7 +470,7 @@ export async function setAccommodationMonthlyFixedCost(
       const insertPayload = {
         branch_id: branchId,
         metric_date: today,
-        total_revenue_thb: 0,
+        revenue: 0,
         monthly_fixed_cost: value,
         rooms_available: null,
         staff_count: null,

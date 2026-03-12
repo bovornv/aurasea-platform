@@ -14,6 +14,8 @@ export type BranchModuleType = 'accommodation' | 'fnb';
 export interface OperatingStatusRow {
   branch_id: string;
   metric_date?: string | null;
+  /** F&B: total_revenue_thb. Accommodation: revenue. */
+  revenue?: number | null;
   total_revenue_thb?: number | null;
   total_customers?: number | null;
   health_score?: number | null;
@@ -35,11 +37,11 @@ export interface FnbLatestMetricRow {
   [key: string]: unknown;
 }
 
-/** Accommodation view row (accommodation_latest_metrics). Uses total_revenue_thb for revenue. */
+/** Accommodation view row (accommodation_latest_metrics). Uses revenue column. */
 export interface AccommodationLatestMetricRow {
   branch_id: string;
   metric_date?: string;
-  total_revenue_thb?: number | null;
+  revenue?: number | null;
   rooms_sold?: number | null;
   rooms_available?: number | null;
   occupancy_rate?: number | null;
@@ -134,7 +136,7 @@ export async function getLatestMetricForDashboard(
   const row = await getOperatingStatusData(branchId, moduleType);
   if (!row) return null;
   return {
-    revenue: row.total_revenue_thb != null ? Number(row.total_revenue_thb) : null,
+    revenue: (row.revenue ?? row.total_revenue_thb) != null ? Number(row.revenue ?? row.total_revenue_thb) : null,
     customers: row.total_customers != null ? Number(row.total_customers) : null,
     roomsSold: row.rooms_sold != null ? Number(row.rooms_sold) : null,
     occupancyRate: row.occupancy_rate != null ? Number(row.occupancy_rate) : null,

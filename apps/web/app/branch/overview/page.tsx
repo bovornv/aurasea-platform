@@ -939,7 +939,7 @@ export default function BranchOverviewPage() {
           const isAccommodation = branchType === 'accommodation';
           // Operating Status cards: single source only (operatingStatusData from fnb_latest_metrics or accommodation_latest_metrics)
           const healthVal = operatingStatusData?.health_score ?? null;
-          const revenueVal = operatingStatusData?.total_revenue_thb ?? null;
+          const revenueVal = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? null;
           const customersVal = operatingStatusData?.total_customers ?? null;
           const roomsSoldVal = isAccommodation ? (operatingStatusData?.rooms_sold ?? null) : null;
 
