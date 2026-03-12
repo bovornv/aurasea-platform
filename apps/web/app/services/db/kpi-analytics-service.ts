@@ -70,6 +70,7 @@ export interface BranchKpiMetricRow {
   revenue?: number | null;
   avg_revenue_7d?: number | null;
   avg_revenue_30d?: number | null;
+  health_score?: number | null;
   [key: string]: unknown;
 }
 

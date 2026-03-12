@@ -44,6 +44,7 @@ import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, type OperatingStatusRow } from '../../services/db/latest-metrics-service';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
+import { getHealthScoreFromKpi, computeAndSaveAccommodationHealthScore } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
@@ -70,6 +71,8 @@ export default function BranchOverviewPage() {
   const [kpiRecommendations, setKpiRecommendations] = useState<{ recommendation: string; category?: string }[]>([]);
   // Owner dashboard: monthly fixed cost not configured (accommodation, owner/super_admin only)
   const [monthlyFixedCostStatus, setMonthlyFixedCostStatus] = useState<{ hasValue: boolean; dataDaysCount: number } | null>(null);
+  // Health score from branch_kpi_metrics (computed and stored; preferred for accommodation)
+  const [healthScoreFromKpi, setHealthScoreFromKpi] = useState<number | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -445,6 +448,9 @@ export default function BranchOverviewPage() {
     getOperatingStatusData(branch.id, branch.moduleType ?? undefined).then((data) => {
       setOperatingStatusData(data);
     });
+    getHealthScoreFromKpi(branch.id).then((score) => {
+      setHealthScoreFromKpi(score);
+    });
   }, [branch?.id, branch?.moduleType]);
 
   useEffect(() => {
@@ -460,6 +466,9 @@ export default function BranchOverviewPage() {
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
+          });
+          computeAndSaveAccommodationHealthScore(branch.id).then((score) => {
+            if (score != null) setHealthScoreFromKpi(score);
           });
         }
       }
@@ -478,6 +487,19 @@ export default function BranchOverviewPage() {
       setKpiRecommendations(rows.map((r) => ({ recommendation: String(r.recommendation ?? ''), category: r.category ?? undefined })));
     }).catch(() => setKpiRecommendations([]));
   }, [branch?.id]);
+
+  // Health score from branch_kpi_metrics (accommodation: compute & save in background, then show)
+  useEffect(() => {
+    if (!branch?.id) return;
+    getHealthScoreFromKpi(branch.id).then((score) => {
+      setHealthScoreFromKpi(score);
+    });
+    if (branch.moduleType === 'accommodation') {
+      computeAndSaveAccommodationHealthScore(branch.id).then((score) => {
+        if (score != null) setHealthScoreFromKpi(score);
+      });
+    }
+  }, [branch?.id, branch?.moduleType]);
 
   const isOwnerOrSuperAdmin = role?.isSuperAdmin === true || role?.effectiveRole === 'owner';
   const isAccommodationBranch = branch?.moduleType === 'accommodation';
@@ -938,7 +960,7 @@ export default function BranchOverviewPage() {
           const isFnb = branchType === 'fnb';
           const isAccommodation = branchType === 'accommodation';
           // Operating Status cards: single source only (operatingStatusData from fnb_latest_metrics or accommodation_latest_metrics)
-          const healthVal = operatingStatusData?.health_score ?? null;
+          const healthVal = healthScoreFromKpi ?? operatingStatusData?.health_score ?? null;
           const revenueVal = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? null;
           const customersVal = operatingStatusData?.total_customers ?? null;
           const roomsSoldVal = isAccommodation ? (operatingStatusData?.rooms_sold ?? null) : null;
