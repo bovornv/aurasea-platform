@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS weekly_metrics (
   occupancy_rate_30d NUMERIC,
   avg_daily_room_rate_30d NUMERIC,
   total_rooms INTEGER,
-  accommodation_staff INTEGER,
+  staff_count INTEGER,
   
   -- F&B Metrics (user-entered, nullable)
   customers_7d INTEGER,
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS daily_metrics (
   rooms_sold INTEGER,
   rooms_available INTEGER,
   adr NUMERIC, -- Average Daily Rate
-  accommodation_staff INTEGER,
+  staff_count INTEGER,
   
   -- F&B Fields (nullable)
   customers INTEGER,

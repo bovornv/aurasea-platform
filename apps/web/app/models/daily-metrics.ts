@@ -127,7 +127,7 @@ export interface DailyMetricDb {
   rooms_sold?: number | null;
   rooms_available?: number | null;
   adr?: number | null;
-  accommodation_staff?: number | null; // staff_count
+  staff_count?: number | null;
   monthly_fixed_cost?: number | null;
   
   // F&B Fields (nullable)
@@ -164,7 +164,7 @@ export function dailyMetricFromDb(db: DailyMetricDb): DailyMetric {
     roomsSold: db.rooms_sold != null ? Number(db.rooms_sold) : undefined,
     roomsAvailable: db.rooms_available != null ? Number(db.rooms_available) : undefined,
     adr: db.adr != null ? Number(db.adr) : undefined,
-    accommodationStaff: db.accommodation_staff != null ? Number(db.accommodation_staff) : undefined,
+    accommodationStaff: db.staff_count != null ? Number(db.staff_count) : undefined,
     monthlyFixedCost: db.monthly_fixed_cost != null ? Number(db.monthly_fixed_cost) : undefined,
     customers: customers != null ? Number(customers) : undefined,
     avgTicket: db.avg_ticket ? Number(db.avg_ticket) : undefined,
@@ -189,7 +189,7 @@ export function dailyMetricToDb(metric: DailyMetricInput): Omit<DailyMetricDb, '
     rooms_sold: metric.roomsSold ?? null,
     rooms_available: metric.roomsAvailable ?? null,
     adr: metric.adr ?? null,
-    accommodation_staff: metric.accommodationStaff ?? null,
+    staff_count: metric.accommodationStaff ?? null,
     monthly_fixed_cost: metric.monthlyFixedCost ?? null,
     customers: metric.customers ?? null,
     avg_ticket: metric.avgTicket ?? null,

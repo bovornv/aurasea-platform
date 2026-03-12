@@ -61,7 +61,7 @@ END $$;
 
 -- Add accommodation fields (if they don't exist)
 ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS rooms_available INTEGER;
-ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS accommodation_staff INTEGER;
+ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS staff_count INTEGER;
 
 -- Add F&B fields (if they don't exist)
 ALTER TABLE daily_metrics ADD COLUMN IF NOT EXISTS customers INTEGER;

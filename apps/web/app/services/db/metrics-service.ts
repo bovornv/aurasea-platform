@@ -57,13 +57,13 @@ function dbFormatToMetrics(
     dbRow.occupancy_rate_30d !== null ||
     dbRow.avg_daily_room_rate_30d !== null ||
     dbRow.total_rooms !== null ||
-    dbRow.accommodation_staff !== null
+    dbRow.staff_count !== null
   ) {
     metrics.modules.accommodation = {
       occupancyRateLast30DaysPct: safeNum(dbRow.occupancy_rate_30d, 0),
       averageDailyRoomRateTHB: safeNum(dbRow.avg_daily_room_rate_30d, 0),
       totalRoomsAvailable: safeInt(dbRow.total_rooms, 0),
-      totalStaffAccommodation: safeInt(dbRow.accommodation_staff, 0),
+      totalStaffAccommodation: safeInt(dbRow.staff_count, 0),
     };
   }
 
@@ -152,7 +152,7 @@ function rollingMetricsToBranchMetrics(
           occupancyRateLast30DaysPct: rollingMetrics.avg_occupancy_30d,
           averageDailyRoomRateTHB: latestDaily.adr || 0, // Use canonical 'adr' field
           totalRoomsAvailable: rollingMetrics.rooms_available || 0,
-          totalStaffAccommodation: rollingMetrics.accommodation_staff || 0,
+          totalStaffAccommodation: rollingMetrics.staff_count || 0,
         },
       } : {}),
       ...(hasFnb ? {

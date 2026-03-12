@@ -23,7 +23,7 @@ export interface RollingMetrics {
   avg_occupancy_7d: number;
   avg_occupancy_30d: number;
   rooms_available: number; // From latest daily metric or branch config
-  accommodation_staff: number; // From latest daily metric or branch config
+  staff_count: number; // From latest daily metric or branch config (accommodation_daily_metrics.staff_count)
   
   // F&B metrics (if applicable)
   customers_7d?: number;
@@ -171,7 +171,7 @@ export function calculateRollingMetrics(
   
   // Get rooms_available and staff from latest metric or parameter
   const final_rooms_available = todayMetric.roomsAvailable || roomsAvailable || 0;
-  const final_accommodation_staff = todayMetric.accommodationStaff || accommodationStaff || 0;
+  const final_staff_count = todayMetric.accommodationStaff || accommodationStaff || 0;
   const final_fnb_staff = todayMetric.fnbStaff || fnbStaff || 0;
   
   return {
@@ -184,7 +184,7 @@ export function calculateRollingMetrics(
     avg_occupancy_7d,
     avg_occupancy_30d,
     rooms_available: final_rooms_available,
-    accommodation_staff: final_accommodation_staff,
+    staff_count: final_staff_count,
     customers_7d: customers_7d > 0 ? customers_7d : undefined,
     avg_ticket_7d: avg_ticket_7d,
     avg_top3_menu_pct_30d: avg_top3_menu_pct_30d,
@@ -338,7 +338,7 @@ function createEmptyRollingMetrics(
     avg_occupancy_7d: 0,
     avg_occupancy_30d: 0,
     rooms_available: roomsAvailable || 0,
-    accommodation_staff: accommodationStaff || 0,
+    staff_count: accommodationStaff || 0,
     revenue_trend_direction: 'stable',
     margin_trend: 'stable',
     weekend_revenue_ratio: 0,

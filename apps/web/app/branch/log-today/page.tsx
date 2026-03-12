@@ -188,16 +188,16 @@ export default function LogTodayPage() {
       if (supabase) {
         supabase
           .from('accommodation_daily_metrics')
-          .select('rooms_available, accommodation_staff, monthly_fixed_cost')
+          .select('rooms_available, staff_count, monthly_fixed_cost')
           .eq('branch_id', branch.id)
           .order('metric_date', { ascending: false })
           .limit(1)
           .maybeSingle()
           .then(({ data }) => {
-            const row = data as { rooms_available?: number | null; accommodation_staff?: number | null; staff_count?: number | null; monthly_fixed_cost?: number | null } | null;
+            const row = data as { rooms_available?: number | null; staff_count?: number | null; monthly_fixed_cost?: number | null } | null;
             if (row) {
               const rooms = row.rooms_available != null ? Number(row.rooms_available) : null;
-              const staffRaw = (row as any).accommodation_staff ?? (row as any).staff_count;
+              const staffRaw = row.staff_count;
               const staff = staffRaw != null ? Number(staffRaw) : null;
               const mfc = row.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : null;
               setAccommodationCapacityFromMetrics({ rooms_available: rooms, staff_count: staff, monthly_fixed_cost: mfc });

@@ -15,7 +15,7 @@ Run `migration-unify-daily-metrics.sql` in Supabase SQL Editor:
    - `cost` (canonical field, renamed from `total_operating_cost`)
    - `adr` (renamed from `avg_room_rate`)
    - F&B fields: `customers`, `avg_ticket`, `fnb_staff`, `promo_spend`
-   - Accommodation fields: `rooms_available`, `accommodation_staff`
+   - Accommodation fields: `rooms_available`, `staff_count`
 
 2. Migrates data from `fnb_daily_metrics` to `daily_metrics`
 
@@ -59,7 +59,7 @@ WHERE table_name = 'fnb_daily_metrics';
 - `rooms_sold` - Rooms sold today
 - `rooms_available` - Total rooms capacity
 - `adr` - Average Daily Rate (THB)
-- `accommodation_staff` - Staff count
+- `staff_count` - Staff count
 
 ### F&B Fields (Nullable)
 - `customers` - Customer count today

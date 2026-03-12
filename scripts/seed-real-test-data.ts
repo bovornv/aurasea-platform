@@ -85,7 +85,7 @@ function generateHealthyMetrics(dayOffset: number): {
   occupancy_rate_30d: number;
   avg_daily_room_rate_30d: number;
   total_rooms: number;
-  accommodation_staff: number;
+  staff_count: number;
 } {
   // Base values (stable)
   const baseRevenue30d = 9_600_000; // 320k/day avg
@@ -112,7 +112,7 @@ function generateHealthyMetrics(dayOffset: number): {
     occupancy_rate_30d: 75.0,
     avg_daily_room_rate_30d: 3500,
     total_rooms: 120,
-    accommodation_staff: 45,
+    staff_count: 45,
   };
 }
 
@@ -128,7 +128,7 @@ function generateStressedMetrics(dayOffset: number): {
   occupancy_rate_30d: number;
   avg_daily_room_rate_30d: number;
   total_rooms: number;
-  accommodation_staff: number;
+  staff_count: number;
 } {
   // Base values
   const baseRevenue30d = 9_600_000;
@@ -162,7 +162,7 @@ function generateStressedMetrics(dayOffset: number): {
     occupancy_rate_30d: 60.0 - (dayOffset * 0.2), // Declining from 60%
     avg_daily_room_rate_30d: 3200 - (dayOffset * 5), // Declining ADR
     total_rooms: 120,
-    accommodation_staff: 45,
+    staff_count: 45,
   };
 }
 
@@ -178,7 +178,7 @@ function generateCrisisMetrics(dayOffset: number): {
   occupancy_rate_30d: number;
   avg_daily_room_rate_30d: number;
   total_rooms: number;
-  accommodation_staff: number;
+  staff_count: number;
 } {
   // Base values
   const baseRevenue30d = 9_600_000;
@@ -207,7 +207,7 @@ function generateCrisisMetrics(dayOffset: number): {
     occupancy_rate_30d: 45.0, // Low occupancy
     avg_daily_room_rate_30d: 2800, // Discounted rates
     total_rooms: 120,
-    accommodation_staff: 45,
+    staff_count: 45,
   };
 }
 
@@ -228,7 +228,7 @@ async function seedScenario(
     occupancy_rate_30d: number;
     avg_daily_room_rate_30d: number;
     total_rooms: number;
-    accommodation_staff: number;
+    staff_count: number;
   }
 ): Promise<void> {
   console.log(`\n📦 Seeding ${orgName}...`);
@@ -308,7 +308,7 @@ async function seedScenario(
     occupancy_rate_30d: number;
     avg_daily_room_rate_30d: number;
     total_rooms: number;
-    accommodation_staff: number;
+    staff_count: number;
   }> = [];
   
   // Generate one metric per week for 30 weeks

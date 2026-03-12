@@ -21,7 +21,7 @@ const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
 /** Columns allowed in accommodation_daily_metrics. Revenue column is total_revenue_thb. */
 const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
   'branch_id', 'metric_date', 'total_revenue_thb', 'cost', 'cash_balance', 'additional_cost_today',
-  'rooms_sold', 'rooms_available', 'adr', 'accommodation_staff', 'monthly_fixed_cost',
+  'rooms_sold', 'rooms_available', 'adr', 'staff_count', 'monthly_fixed_cost',
 ]);
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
@@ -470,7 +470,7 @@ export async function setAccommodationMonthlyFixedCost(
         total_revenue_thb: 0,
         monthly_fixed_cost: value,
         rooms_available: null,
-        accommodation_staff: null,
+        staff_count: null,
       };
       const { error: insertError } = await supabase
         .from(TABLE_ACCOMMODATION as 'accommodation_daily_metrics')

@@ -80,7 +80,7 @@ This ensures clean, predictable test data.
 - `occupancy_rate_30d` - Occupancy rate (%)
 - `avg_daily_room_rate_30d` - Average daily rate (ADR)
 - `total_rooms` - Total rooms available
-- `accommodation_staff` - Staff count
+- `staff_count` - Staff count (accommodation_daily_metrics)
 
 **Computed values are NOT stored:**
 - Health scores
