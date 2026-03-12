@@ -45,7 +45,7 @@ import { getOperatingStatusData, type OperatingStatusRow } from '../../services/
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
 import { getAccommodationConfidenceLevel, getAccommodationEarlySignal } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
-import { getHealthScoreFromKpi, computeAndSaveAccommodationHealthScore } from '../../services/db/health-score-kpi-service';
+import { getHealthScoreFromBranchHealthMetrics } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
@@ -72,8 +72,8 @@ export default function BranchOverviewPage() {
   const [kpiRecommendations, setKpiRecommendations] = useState<{ recommendation: string; category?: string }[]>([]);
   // Owner dashboard: monthly fixed cost not configured (accommodation, owner/super_admin only)
   const [monthlyFixedCostStatus, setMonthlyFixedCostStatus] = useState<{ hasValue: boolean; dataDaysCount: number } | null>(null);
-  // Health score from branch_kpi_metrics (computed and stored; preferred for accommodation)
-  const [healthScoreFromKpi, setHealthScoreFromKpi] = useState<number | null>(null);
+  // Business Health Score card: only from branch_health_metrics
+  const [healthScore, setHealthScore] = useState<number | null>(null);
   // Confidence card: accommodation uses accommodation_data_coverage.confidence_level
   const [confidenceLevelFromCoverage, setConfidenceLevelFromCoverage] = useState<string | null>(null);
   // Early Signal card: accommodation uses accommodation_anomaly_signals.early_signal
@@ -457,9 +457,7 @@ export default function BranchOverviewPage() {
       getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
       getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
     }
-    getHealthScoreFromKpi(branch.id).then((score) => {
-      setHealthScoreFromKpi(score);
-    });
+    getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
   }, [branch?.id, branch?.moduleType]);
 
   useEffect(() => {
@@ -478,10 +476,8 @@ export default function BranchOverviewPage() {
           });
           getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
           getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
-          computeAndSaveAccommodationHealthScore(branch.id).then((score) => {
-            if (score != null) setHealthScoreFromKpi(score);
-          });
         }
+        getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
       }
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -499,18 +495,11 @@ export default function BranchOverviewPage() {
     }).catch(() => setKpiRecommendations([]));
   }, [branch?.id]);
 
-  // Health score from branch_kpi_metrics (accommodation: compute & save in background, then show)
+  // Business Health Score card: load from branch_health_metrics only
   useEffect(() => {
     if (!branch?.id) return;
-    getHealthScoreFromKpi(branch.id).then((score) => {
-      setHealthScoreFromKpi(score);
-    });
-    if (branch.moduleType === 'accommodation') {
-      computeAndSaveAccommodationHealthScore(branch.id).then((score) => {
-        if (score != null) setHealthScoreFromKpi(score);
-      });
-    }
-  }, [branch?.id, branch?.moduleType]);
+    getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
+  }, [branch?.id]);
 
   // Confidence card: accommodation uses accommodation_data_coverage.confidence_level
   useEffect(() => {
@@ -1002,7 +991,7 @@ export default function BranchOverviewPage() {
           const isFnb = branchType === 'fnb';
           const isAccommodation = branchType === 'accommodation';
           // Operating Status cards: single source only (operatingStatusData from fnb_latest_metrics or accommodation_latest_metrics)
-          const healthVal = healthScoreFromKpi ?? operatingStatusData?.health_score ?? null;
+          const healthVal = healthScore ?? null;
           const revenueVal = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? null;
           const customersVal = operatingStatusData?.total_customers ?? null;
           const roomsSoldVal = isAccommodation ? (operatingStatusData?.rooms_sold ?? null) : null;

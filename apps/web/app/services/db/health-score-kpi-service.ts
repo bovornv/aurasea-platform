@@ -176,6 +176,7 @@ export async function computeAndSaveAccommodationHealthScore(
 
 /**
  * Get latest health_score from branch_kpi_metrics for a branch (for Operating Status).
+ * @deprecated Use getHealthScoreFromBranchHealthMetrics for the Operating Status card.
  */
 export async function getHealthScoreFromKpi(
   branchId: string
@@ -193,6 +194,33 @@ export async function getHealthScoreFromKpi(
       .eq('branch_id', branchId)
       .order('metric_date', { ascending: false })
       .limit(1)
+      .maybeSingle();
+
+    if (error || data == null) return null;
+    const row = data as { health_score?: number | null };
+    return row.health_score != null ? Number(row.health_score) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get health_score from branch_health_metrics for the Operating Status Business Health Score card.
+ * Only source for the card; do not use branch_kpi_metrics, accommodation_daily_metrics, or fnb_daily_metrics.
+ */
+export async function getHealthScoreFromBranchHealthMetrics(
+  branchId: string
+): Promise<number | null> {
+  if (branchId == null || branchId === '') return null;
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from('branch_health_metrics')
+      .select('health_score')
+      .eq('branch_id', branchId)
       .maybeSingle();
 
     if (error || data == null) return null;
