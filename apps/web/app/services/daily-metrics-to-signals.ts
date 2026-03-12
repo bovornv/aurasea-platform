@@ -73,8 +73,10 @@ export function convertDailyMetricsToSignals(
       occupancyRate = metric.roomsSold / roomsAvailable;
     }
     
-    // Calculate ADR (if accommodation)
-    const averageDailyRate = metric.adr;
+    // Calculate ADR (if accommodation): stored or computed as revenue/rooms_sold
+    const averageDailyRate = (metric.revenue != null && metric.roomsSold != null && metric.roomsSold > 0)
+      ? metric.revenue / metric.roomsSold
+      : (metric.adr ?? 0);
     
     // Calculate customer volume (if F&B)
     const customerVolume = metric.customers;

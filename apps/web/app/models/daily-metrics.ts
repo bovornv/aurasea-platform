@@ -163,7 +163,7 @@ export function dailyMetricFromDb(db: DailyMetricDb): DailyMetric {
     cashBalance: db.cash_balance !== null && db.cash_balance !== undefined ? Number(db.cash_balance) : undefined,
     roomsSold: db.rooms_sold != null ? Number(db.rooms_sold) : undefined,
     roomsAvailable: db.rooms_available != null ? Number(db.rooms_available) : undefined,
-    adr: db.adr != null ? Number(db.adr) : undefined,
+    adr: db.adr != null ? Number(db.adr) : (Number(revenue ?? 0) > 0 && Number(db.rooms_sold ?? 0) > 0 ? Number(revenue ?? 0) / Number(db.rooms_sold ?? 0) : undefined),
     accommodationStaff: db.staff_count != null ? Number(db.staff_count) : undefined,
     monthlyFixedCost: db.monthly_fixed_cost != null ? Number(db.monthly_fixed_cost) : undefined,
     customers: customers != null ? Number(customers) : undefined,

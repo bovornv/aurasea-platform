@@ -121,7 +121,7 @@ function createDefaultMetrics(branchId: string, groupId: string): BranchMetrics 
  */
 /**
  * Convert rolling metrics (computed from unified daily_metrics) to BranchMetrics format
- * Uses canonical field names: revenue, cost, adr, customers, avg_ticket
+ * Uses canonical field names: revenue, cost, customers, avg_ticket. ADR computed as revenue/rooms_sold when not stored.
  */
 function rollingMetricsToBranchMetrics(
   branchId: string,
@@ -150,7 +150,7 @@ function rollingMetricsToBranchMetrics(
       ...(hasAccommodation ? {
         accommodation: {
           occupancyRateLast30DaysPct: rollingMetrics.avg_occupancy_30d,
-          averageDailyRoomRateTHB: latestDaily.adr || 0, // Use canonical 'adr' field
+          averageDailyRoomRateTHB: (latestDaily.revenue != null && latestDaily.roomsSold != null && latestDaily.roomsSold > 0) ? latestDaily.revenue / latestDaily.roomsSold : (latestDaily.adr ?? 0),
           totalRoomsAvailable: rollingMetrics.rooms_available || 0,
           totalStaffAccommodation: rollingMetrics.staff_count || 0,
         },
