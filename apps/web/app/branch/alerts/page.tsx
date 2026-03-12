@@ -30,25 +30,23 @@ import { businessGroupService } from '../../services/business-group-service';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import { runAppAlertValidation, runFullAlertValidation } from '../../lib/run-alert-validation-app';
-import { getBranchAlertsFromKpi, type BranchAlertRow } from '../../services/db/kpi-analytics-service';
+import {
+  getLatestAlertFromBranchLatestAlerts,
+  getActiveAlertsFromBranchActiveAlerts,
+  type BranchLatestAlertRow,
+  type BranchActiveAlertRow,
+} from '../../services/db/kpi-analytics-service';
 
-/** Map branch_alerts rows to display list. Prefer alert_message + confidence_score; fallback to legacy columns. */
-function flattenKpiAlerts(rows: BranchAlertRow[]): { id: string; message: string; type?: string; confidenceScore?: number | null }[] {
-  const out: { id: string; message: string; type?: string; confidenceScore?: number | null }[] = [];
-  rows.forEach((r, i) => {
-    const baseId = `kpi-${r.branch_id}-${r.metric_date ?? i}`;
-    const confidenceScore = r.confidence_score != null ? Number(r.confidence_score) : null;
-    if (r.alert_message != null && String(r.alert_message).trim()) {
-      out.push({ id: `${baseId}-msg`, message: String(r.alert_message).trim(), confidenceScore });
-      return;
-    }
-    if (r.revenue_alert != null && String(r.revenue_alert).trim()) out.push({ id: `${baseId}-revenue`, message: String(r.revenue_alert), type: 'revenue', confidenceScore });
-    if (r.customer_alert != null && String(r.customer_alert).trim()) out.push({ id: `${baseId}-customer`, message: String(r.customer_alert), type: 'customer', confidenceScore });
-    if (r.occupancy_alert != null && String(r.occupancy_alert).trim()) out.push({ id: `${baseId}-occupancy`, message: String(r.occupancy_alert), type: 'occupancy', confidenceScore });
-    if (r.cost_alert != null && String(r.cost_alert).trim()) out.push({ id: `${baseId}-cost`, message: String(r.cost_alert), type: 'cost', confidenceScore });
-    if (r.cash_alert != null && String(r.cash_alert).trim()) out.push({ id: `${baseId}-cash`, message: String(r.cash_alert), type: 'cash', confidenceScore });
-  });
-  return out;
+/** Derive display title and description from a latest/active alert row. */
+function formatAlertCard(row: BranchLatestAlertRow | BranchActiveAlertRow): { title: string; description: string } {
+  const msg = (row.alert_message ?? row.revenue_alert ?? row.customer_alert ?? row.occupancy_alert ?? '').toString().trim();
+  const type = (row.alert_type ?? '').toString().trim();
+  const title = type || (msg.split('.')[0]?.trim() || msg.slice(0, 50) || 'Alert');
+  const description = msg && msg !== title ? msg : (type ? msg : '');
+  return {
+    title: title.length > 60 ? title.slice(0, 57) + '...' : title,
+    description: description && description !== title ? description : (msg && msg.length > 60 ? msg : ''),
+  };
 }
 
 export default function BranchAlertsPage() {
@@ -99,14 +97,16 @@ export default function BranchAlertsPage() {
   // STEP 3: Use resolved branch data (single source of truth)
   const branchMetrics = useResolvedBranchData(branch?.id);
   
-  // KPI layer: alerts from branch_alerts (preferred when available)
-  const [kpiAlertsRows, setKpiAlertsRows] = useState<BranchAlertRow[]>([]);
+  // Alerts section: latest alert only (branch_latest_alerts)
+  const [latestAlert, setLatestAlert] = useState<BranchLatestAlertRow | null>(null);
+  // All Active Alerts section: last 3 days (branch_active_alerts)
+  const [activeAlertsFromDb, setActiveAlertsFromDb] = useState<BranchActiveAlertRow[]>([]);
+
   useEffect(() => {
     if (!branch?.id) return;
-    getBranchAlertsFromKpi(branch.id).then(setKpiAlertsRows).catch(() => setKpiAlertsRows([]));
+    getLatestAlertFromBranchLatestAlerts(branch.id).then(setLatestAlert).catch(() => setLatestAlert(null));
+    getActiveAlertsFromBranchActiveAlerts(branch.id).then(setActiveAlertsFromDb).catch(() => setActiveAlertsFromDb([]));
   }, [branch?.id]);
-
-  const kpiAlertsDisplay = useMemo(() => flattenKpiAlerts(kpiAlertsRows), [kpiAlertsRows]);
 
   // Fallback: daily metrics for financial impact when using engine alerts
   const [dailyMetricsLast30Days, setDailyMetricsLast30Days] = useState<any[]>([]);
@@ -294,98 +294,6 @@ export default function BranchAlertsPage() {
       .slice(0, 3);
   }, [branchAlerts]);
 
-  // Get active alerts (simplified) with deduplication
-  // FIX: Deduplicate by code first (most reliable), then by ID, then by content
-  const activeAlerts = useMemo(() => {
-    // FIX: Deduplicate by code first
-    const alertsByCode = new Map<string, AlertContract>();
-    branchAlerts.forEach(alert => {
-      const code = (alert as any).code || alert.id;
-      if (!alertsByCode.has(code)) {
-        alertsByCode.set(code, alert);
-      }
-    });
-    
-    // Deduplicate alerts by ID (keep first occurrence)
-    const alertsById = new Map<string, AlertContract>();
-    Array.from(alertsByCode.values()).forEach(alert => {
-      if (!alertsById.has(alert.id)) {
-        alertsById.set(alert.id, alert);
-      }
-    });
-
-    // Then deduplicate by content signature (message + severity + domain)
-    const seenContent = new Set<string>();
-    const uniqueAlerts: AlertContract[] = [];
-    
-    alertsById.forEach(alert => {
-      const contentKey = `${alert.message || ''}|${alert.severity}|${alert.domain || ''}`;
-      if (!seenContent.has(contentKey)) {
-        seenContent.add(contentKey);
-        uniqueAlerts.push(alert);
-      }
-    });
-
-    return uniqueAlerts.map(alert => {
-      const extended = alert as ExtendedAlertContract;
-      
-      // Clean up alert title - remove confusing ": 0" patterns and "within 0 days"
-      let alertName = extended.revenueImpactTitle || alert.message.split('.')[0] || alert.message;
-      
-      // Remove "within 0 days" patterns (replace with "immediately")
-      alertName = alertName.replace(/\s+within\s+0\s+days?/gi, ' immediately');
-      alertName = alertName.replace(/\s+within\s+0\.0\s+days?/gi, ' immediately');
-      
-      // Remove duplicate "0 days" patterns
-      alertName = alertName.replace(/\s*\.\s*0\s+days?\s*$/i, '');
-      alertName = alertName.replace(/\s+0\s+days?\s*\.\s*0\s+days?\s*$/i, '');
-      
-      if (alertName.includes(':') && alertName.split(':').length > 1) {
-        const parts = alertName.split(':');
-        const lastPart = parts[parts.length - 1].trim();
-        // Remove ": 0" or ": 0.0" patterns
-        if (lastPart === '0' || lastPart === '0.0') {
-          alertName = parts.slice(0, -1).join(':').trim();
-        } else {
-          alertName = lastPart || parts[0].trim();
-        }
-      }
-      // Remove ": 0" at the end
-      alertName = alertName.replace(/:\s*0(\.\d+)?\s*$/, '').trim() || alertName;
-      
-      // Calculate impact using revenue exposure calculator
-      let impact = 0;
-      if (branchMetrics) {
-        const exposure = calculateRevenueExposure(branchMetrics, [alert]);
-        impact = exposure.totalMonthlyLeakage;
-      } else {
-        // Fallback to revenueImpact if available
-        impact = extended.revenueImpact || 0;
-      }
-      
-      // Determine status based on history
-      const historyItem = history.find(h => h.alertId === alert.id);
-      let status: 'New' | 'Ongoing' | 'Improved' = 'New';
-      if (historyItem) {
-        if (historyItem.outcome === 'Resolved') {
-          status = 'Improved';
-        } else {
-          status = 'Ongoing';
-        }
-      }
-      
-      return {
-        id: alert.id,
-        name: alertName,
-        impact,
-        status,
-        confidence: Math.round((alert.confidence || 0.75) * 100),
-        severity: alert.severity,
-        domain: alert.domain || 'general',
-      };
-    });
-  }, [branchAlerts, history, branchMetrics]);
-
   // Get resolved/improved alerts
   const resolvedAlerts = useMemo(() => {
     return history
@@ -468,17 +376,18 @@ export default function BranchAlertsPage() {
   return (
     <PageLayout title="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {/* Alerts from intelligence engine (branch_alerts) — primary source */}
+        {/* Alerts: latest alert only (branch_latest_alerts) — one card */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}>
-          {kpiAlertsDisplay.length === 0 ? (
+          {!latestAlert || (!latestAlert.alert_message && !latestAlert.revenue_alert && !latestAlert.customer_alert && !latestAlert.occupancy_alert) ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
               {locale === 'th' ? 'ไม่มีการแจ้งเตือนจากระบบวิเคราะห์ในขณะนี้' : 'No alerts from the intelligence engine at this time.'}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {kpiAlertsDisplay.map((a) => (
+            (() => {
+              const { title, description } = formatAlertCard(latestAlert);
+              const msg = (latestAlert.alert_message ?? latestAlert.revenue_alert ?? latestAlert.customer_alert ?? latestAlert.occupancy_alert ?? '').toString().trim();
+              return (
                 <div
-                  key={a.id}
                   style={{
                     padding: '1rem',
                     backgroundColor: '#fefce8',
@@ -488,22 +397,23 @@ export default function BranchAlertsPage() {
                     color: '#0a0a0a',
                   }}
                 >
-                  <div style={{ marginBottom: a.confidenceScore != null ? '0.5rem' : 0 }}>{a.message}</div>
-                  {a.confidenceScore != null && (
-                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                  <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>⚠ {title}</div>
+                  <div style={{ color: '#374151' }}>{description || msg}</div>
+                  {latestAlert.confidence_score != null && (
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.5rem' }}>
                       {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
-                      <strong>{Math.round(a.confidenceScore)}%</strong>
+                      <strong>{Math.round(Number(latestAlert.confidence_score))}%</strong>
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
+              );
+            })()
           )}
         </SectionCard>
 
         {/* SECTION 1: Revenue Risk Summary (engine alerts; when no KPI alerts or in addition) */}
         <SectionCard title={locale === 'th' ? 'ผลกระทบทางการเงิน (30 วันล่าสุด)' : 'Financial Impact (Last 30 Days)'}>
-          {kpiAlertsDisplay.length > 0 && branchAlerts.length === 0 ? (
+          {activeAlertsFromDb.length > 0 && branchAlerts.length === 0 ? (
             <div style={{ padding: '1.5rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
               {locale === 'th' ? 'ใช้การแจ้งเตือนจากระบบวิเคราะห์ด้านบน' : 'Using alerts from analytics layer above.'}
             </div>
@@ -629,11 +539,11 @@ export default function BranchAlertsPage() {
           </SectionCard>
         )}
 
-        {/* SECTION 3: All Active Alerts (Simplified) */}
+        {/* SECTION 3: All Active Alerts (branch_active_alerts, last 3 days); System stable only when none */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือนที่ใช้งานอยู่ทั้งหมด' : 'All Active Alerts'}>
-          {activeAlerts.length === 0 ? (
-            <div style={{ 
-              padding: '2rem', 
+          {activeAlertsFromDb.length === 0 ? (
+            <div style={{
+              padding: '2rem',
               textAlign: 'center',
               backgroundColor: '#f0fdf4',
               border: '1px solid #bbf7d0',
@@ -643,78 +553,37 @@ export default function BranchAlertsPage() {
                 {locale === 'th' ? '✓ ระบบเสถียร' : '✓ System stable'}
               </div>
               <div style={{ fontSize: '14px', color: '#6b7280' }}>
-                {locale === 'th' 
+                {locale === 'th'
                   ? 'ไม่พบการแจ้งเตือนที่ใช้งานอยู่ในขณะนี้'
                   : 'No active alerts detected. System is operating normally.'}
               </div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {activeAlerts.map((alert) => {
-                const severityColor = getSeverityColor(alert.severity);
-                const statusColors = {
-                  New: { bg: '#dbeafe', text: '#1e40af' },
-                  Ongoing: { bg: '#fef3c7', text: '#92400e' },
-                  Improved: { bg: '#d1fae5', text: '#065f46' },
-                };
-                const statusColor = statusColors[alert.status];
-                
+              {activeAlertsFromDb.map((row, idx) => {
+                const { title, description } = formatAlertCard(row);
+                const msg = (row.alert_message ?? row.revenue_alert ?? row.customer_alert ?? row.occupancy_alert ?? '').toString().trim();
+                const id = `active-${row.branch_id}-${row.metric_date ?? idx}`;
                 return (
                   <div
-                    key={alert.id}
-                    onClick={() => router.push(`/branch/alerts?alert=${alert.id}`)}
+                    key={id}
                     style={{
                       padding: '1rem',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '6px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '1rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#d1d5db';
-                      e.currentTarget.style.backgroundColor = '#f9fafb';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = '#e5e7eb';
-                      e.currentTarget.style.backgroundColor = '#ffffff';
+                      backgroundColor: '#fefce8',
+                      border: '1px solid #eab308',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      color: '#0a0a0a',
                     }}
                   >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#0a0a0a' }}>
-                          {alert.name}
-                        </div>
-                        <span style={{
-                          padding: '0.125rem 0.5rem',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: 500,
-                          backgroundColor: statusColor.bg,
-                          color: statusColor.text,
-                        }}>
-                          {alert.status}
-                        </span>
+                    <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>⚠ {title}</div>
+                    <div style={{ color: '#374151' }}>{description || msg}</div>
+                    {row.confidence_score != null && (
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.5rem' }}>
+                        {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
+                        <strong>{Math.round(Number(row.confidence_score))}%</strong>
                       </div>
-                      {alert.impact > 0 && !hideFinancials ? (
-                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                          {locale === 'th' ? 'ผลกระทบ: ' : 'Impact: '}
-                          <span style={{ fontWeight: 600, color: '#ef4444' }}>฿{formatCurrency(alert.impact)}/mo</span>
-                          {' • '}
-                          {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
-                          {alert.confidence}%
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                          {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
-                          {alert.confidence}%
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 );
               })}

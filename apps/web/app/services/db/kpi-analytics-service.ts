@@ -132,6 +132,79 @@ export async function getLatestKpiForDashboard(
   }
 }
 
+/** Row from branch_latest_alerts (single latest alert per branch). */
+export interface BranchLatestAlertRow {
+  branch_id: string;
+  metric_date?: string | null;
+  alert_message?: string | null;
+  alert_type?: string | null;
+  revenue_alert?: string | null;
+  customer_alert?: string | null;
+  occupancy_alert?: string | null;
+  confidence_score?: number | null;
+  [key: string]: unknown;
+}
+
+/** Row from branch_active_alerts (alerts from last 3 days). */
+export interface BranchActiveAlertRow {
+  branch_id: string;
+  metric_date?: string | null;
+  alert_message?: string | null;
+  alert_type?: string | null;
+  revenue_alert?: string | null;
+  customer_alert?: string | null;
+  occupancy_alert?: string | null;
+  confidence_score?: number | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch the latest alert for a branch from branch_latest_alerts (one row).
+ */
+export async function getLatestAlertFromBranchLatestAlerts(
+  branchId: string
+): Promise<BranchLatestAlertRow | null> {
+  if (branchId == null || branchId === '') return null;
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('branch_latest_alerts')
+      .select('*')
+      .eq('branch_id', branchId)
+      .maybeSingle();
+    if (error || data == null) return null;
+    return data as BranchLatestAlertRow;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch active alerts for a branch from branch_active_alerts (last 3 days).
+ * Ordered by metric_date descending.
+ */
+export async function getActiveAlertsFromBranchActiveAlerts(
+  branchId: string
+): Promise<BranchActiveAlertRow[]> {
+  if (branchId == null || branchId === '') return [];
+  if (!isSupabaseAvailable()) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('branch_active_alerts')
+      .select('*')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false });
+    if (error) return [];
+    return (data ?? []) as BranchActiveAlertRow[];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Get alerts for a branch from branch_alerts (intelligence engine).
  * Ordered by metric_date descending. Prefer alert_message; support legacy revenue_alert/customer_alert etc.
