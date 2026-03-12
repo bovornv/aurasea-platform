@@ -75,7 +75,6 @@ export default function LogTodayPage() {
     additionalCostToday: string;
     totalRoomsAvailable: string;
     accommodationStaffCount: string;
-    monthlyFixedCost: string;
     fnbStaffCount: string;
   } | null>(null);
   
@@ -120,7 +119,6 @@ export default function LogTodayPage() {
   // SECTION 2: Optional Finance & Capacity (Advanced)
   const [financeData, setFinanceData] = useState({
     cashBalance: '',
-    monthlyFixedCost: '',
     debtPayment: '',
     // Accommodation capacity fields (manager+)
     totalRoomsAvailable: branch?.totalRooms != null ? String(branch.totalRooms) : '',
@@ -129,6 +127,13 @@ export default function LogTodayPage() {
     fnbStaffCount: '',
   });
   const [financeExpanded, setFinanceExpanded] = useState(false);
+
+  // Accommodation: capacity from latest accommodation_daily_metrics (rooms_available, staff → lock if set)
+  const [accommodationCapacityFromMetrics, setAccommodationCapacityFromMetrics] = useState<{
+    rooms_available: number | null;
+    staff_count: number | null;
+    monthly_fixed_cost: number | null;
+  } | null>(null);
 
   // Expand Advanced Finance when navigated from "Please configure hotel capacity" (?expand=finance)
   useEffect(() => {
@@ -161,7 +166,6 @@ export default function LogTodayPage() {
       additionalCostToday: '',
       totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
       accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
-      monthlyFixedCost: '',
       fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
     };
     setOriginalValues((prev) => prev ?? emptySnapshot);
@@ -172,37 +176,46 @@ export default function LogTodayPage() {
         totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : prev.totalRoomsAvailable,
         accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : prev.accommodationStaffCount,
         fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : prev.fnbStaffCount,
-        monthlyFixedCost: branch.monthlyFixedCost != null ? String(branch.monthlyFixedCost) : prev.monthlyFixedCost,
       }));
     };
     fromBranch();
 
-    // Fallback: if accommodation and branch cache has no capacity fields, fetch from DB (e.g. older cache)
-    if (moduleType === 'accommodation' && (branch.totalRooms == null || branch.accommodationStaffCount == null)) {
+    const today = getTodayDateString();
+
+    // Accommodation: fetch latest capacity from accommodation_daily_metrics (single source for rooms_available, staff_count, monthly_fixed_cost)
+    if (moduleType === 'accommodation') {
       const supabase = getSupabaseClient();
       if (supabase) {
         supabase
-          .from('branches')
-          .select('total_rooms, accommodation_staff_count')
-          .eq('id', branch.id)
+          .from('accommodation_daily_metrics')
+          .select('rooms_available, accommodation_staff, monthly_fixed_cost')
+          .eq('branch_id', branch.id)
+          .order('metric_date', { ascending: false })
+          .limit(1)
           .maybeSingle()
           .then(({ data }) => {
-            const row = data as { total_rooms?: number | null; accommodation_staff_count?: number | null } | null;
-            if (row && (row.total_rooms != null || row.accommodation_staff_count != null)) {
-              const tr = row.total_rooms != null ? String(row.total_rooms) : '';
-              const asc = row.accommodation_staff_count != null ? String(row.accommodation_staff_count) : '';
+            const row = data as { rooms_available?: number | null; accommodation_staff?: number | null; staff_count?: number | null; monthly_fixed_cost?: number | null } | null;
+            if (row) {
+              const rooms = row.rooms_available != null ? Number(row.rooms_available) : null;
+              const staffRaw = (row as any).accommodation_staff ?? (row as any).staff_count;
+              const staff = staffRaw != null ? Number(staffRaw) : null;
+              const mfc = row.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : null;
+              setAccommodationCapacityFromMetrics({ rooms_available: rooms, staff_count: staff, monthly_fixed_cost: mfc });
               setFinanceData((prev) => ({
                 ...prev,
-                totalRoomsAvailable: tr || prev.totalRoomsAvailable,
-                accommodationStaffCount: asc || prev.accommodationStaffCount,
+                totalRoomsAvailable: rooms != null && rooms > 0 ? String(rooms) : prev.totalRoomsAvailable,
+                accommodationStaffCount: staff != null && staff > 0 ? String(staff) : prev.accommodationStaffCount,
               }));
-              setOriginalValues((prev) => prev ? { ...prev, totalRoomsAvailable: tr || prev.totalRoomsAvailable, accommodationStaffCount: asc || prev.accommodationStaffCount } : null);
+              setOriginalValues((prev) => prev ? {
+                ...prev,
+                totalRoomsAvailable: rooms != null && rooms > 0 ? String(rooms) : prev.totalRoomsAvailable,
+                accommodationStaffCount: staff != null && staff > 0 ? String(staff) : prev.accommodationStaffCount,
+              } : null);
             }
           });
       }
     }
 
-    const today = getTodayDateString();
     const toDateOnly = (d: string | undefined) => (d ? String(d).slice(0, 10) : '');
 
     (async () => {
@@ -243,7 +256,6 @@ export default function LogTodayPage() {
             additionalCostToday: addCost,
             totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
             accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
-            monthlyFixedCost: branch.monthlyFixedCost != null ? String(branch.monthlyFixedCost) : '',
             fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
           });
         } else {
@@ -256,7 +268,6 @@ export default function LogTodayPage() {
             additionalCostToday: '',
             totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
             accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
-            monthlyFixedCost: branch.monthlyFixedCost != null ? String(branch.monthlyFixedCost) : '',
             fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
           });
           const last2 = await getDailyMetrics(branch.id, 2);
@@ -338,13 +349,12 @@ export default function LogTodayPage() {
       todayData.additionalCostToday !== originalValues.additionalCostToday ||
       financeData.totalRoomsAvailable !== originalValues.totalRoomsAvailable ||
       financeData.accommodationStaffCount !== originalValues.accommodationStaffCount ||
-      financeData.monthlyFixedCost !== originalValues.monthlyFixedCost ||
       financeData.fnbStaffCount !== originalValues.fnbStaffCount
     );
   }, [originalValues, todayData, financeData]);
 
   const todayFields = ['revenue', 'roomsSold', 'customers', 'top3MenuRevenue', 'additionalCostToday'] as const;
-  const financeFields = ['totalRoomsAvailable', 'accommodationStaffCount', 'monthlyFixedCost', 'fnbStaffCount'] as const;
+  const financeFields = ['totalRoomsAvailable', 'accommodationStaffCount', 'fnbStaffCount'] as const;
   const currentValueFor = (field: keyof NonNullable<typeof originalValues>) =>
     todayFields.includes(field as any) ? (todayData as Record<string, string>)[field] : (financeData as Record<string, string>)[field];
 
@@ -402,20 +412,17 @@ export default function LogTodayPage() {
       newErrors.revenue = locale === 'th' ? 'กรุณากรอกรายได้' : 'Revenue is required';
     }
     
-    // Accommodation: first-time config — Total Rooms and Accommodation Staff required when not yet set on branch
-    const accommodationNeedsConfig = isAccommodation && (branch?.totalRooms == null || branch?.accommodationStaffCount == null);
-    if (accommodationNeedsConfig) {
+    // Accommodation: Total Rooms and Staff required when blank (NULL or 0)
+    if (isAccommodation) {
       const totalRoomsVal = safeNumber(financeData.totalRoomsAvailable, undefined);
-      const staffVal = safeNumber(financeData.accommodationStaffCount, undefined);
       if (totalRoomsVal == null || totalRoomsVal <= 0) {
-        newErrors.totalRoomsAvailable = locale === 'th' ? 'กรุณากรอกจำนวนห้องทั้งหมด (จำเป็นในการตั้งค่าแรก)' : 'Total Rooms Available is required on first setup';
+        newErrors.totalRoomsAvailable = locale === 'th' ? 'กรุณากรอกจำนวนห้องทั้งหมด' : 'Total Rooms Available is required';
       }
+      const staffVal = safeNumber(financeData.accommodationStaffCount, undefined);
       if (staffVal == null || staffVal < 0) {
-        newErrors.accommodationStaffCount = locale === 'th' ? 'กรุณากรอกจำนวนพนักงานที่พัก (จำเป็นในการตั้งค่าแรก)' : 'Accommodation Staff Count is required on first setup';
+        newErrors.accommodationStaffCount = locale === 'th' ? 'กรุณากรอกจำนวนพนักงานที่พัก' : 'Accommodation Staff Count is required';
       }
-      if (Object.keys(newErrors).some((k) => k === 'totalRoomsAvailable' || k === 'accommodationStaffCount')) {
-        setFinanceExpanded(true);
-      }
+      if (newErrors.totalRoomsAvailable || newErrors.accommodationStaffCount) setFinanceExpanded(true);
     }
 
     // F&B: first-time config — F&B Staff Count required when not yet set on branch
@@ -499,40 +506,17 @@ export default function LogTodayPage() {
         cashBalance: isOwner && financeData.cashBalance ? safeNumber(financeData.cashBalance, undefined) : undefined,
       };
       
-      // Accommodation fields (rooms_available, monthly_fixed_cost, staff_count)
+      // Accommodation: save rooms_available and staff_count from current form values. Upsert ON CONFLICT (branch_id, metric_date).
       if (isAccommodation) {
         dailyMetric.roomsSold = safeNumber(todayData.roomsSold, undefined);
-        dailyMetric.roomsAvailable = safeNumber(financeData.totalRoomsAvailable, undefined) ?? (branchSetup as any)?.rooms_available;
-        dailyMetric.monthlyFixedCost = safeNumber(financeData.monthlyFixedCost, undefined) ?? (branchSetup as any)?.monthly_fixed_cost;
-        dailyMetric.accommodationStaff = safeNumber(financeData.accommodationStaffCount, undefined) ?? (branchSetup as any)?.accommodation_staff_count;
-        
-        // Update static capacity fields in branches table if changed
-        const newTotalRooms = safeNumber(financeData.totalRoomsAvailable, undefined);
-        const newStaffCount = safeNumber(financeData.accommodationStaffCount, undefined);
-        
-        if (
-          (newTotalRooms !== undefined && newTotalRooms !== branch.totalRooms) ||
-          (newStaffCount !== undefined && newStaffCount !== branch.accommodationStaffCount)
-        ) {
-          const supabase = getSupabaseClient();
-          if (supabase) {
-            const updatePayload: any = {};
-            if (newTotalRooms !== undefined) updatePayload.total_rooms = newTotalRooms;
-            if (newStaffCount !== undefined) updatePayload.accommodation_staff_count = newStaffCount;
-            
-            // Non-blocking update
-            // @ts-ignore - total_rooms is added via migration but may not be in generated types yet
-            supabase.from('branches').update(updatePayload).eq('id', branch.id).then(({ error }) => {
-              if (error) console.error('[LogToday] Failed to update branch capacity:', error);
-            });
-          }
-        }
+        dailyMetric.roomsAvailable = safeNumber(financeData.totalRoomsAvailable, undefined) ?? undefined;
+        dailyMetric.accommodationStaff = safeNumber(financeData.accommodationStaffCount, undefined) ?? undefined;
+        // monthly_fixed_cost is owner-only; set in Owner Settings, not Log Today
       }
       
-      // F&B fields (including Advanced Finance & Capacity: monthly_fixed_cost, fnb_staff)
+      // F&B fields (Advanced Finance: fnb_staff only; monthly_fixed_cost is owner-only)
       if (isFnb) {
         dailyMetric.customers = safeNumber(todayData.customers, undefined);
-        dailyMetric.monthlyFixedCost = safeNumber(financeData.monthlyFixedCost, undefined) ?? branch?.monthlyFixedCost ?? (branchSetup as any)?.monthly_fixed_cost;
         dailyMetric.fnbStaff = safeNumber(financeData.fnbStaffCount, undefined) ?? branch?.fnbStaffCount ?? (branchSetup as any)?.fnb_staff_count;
         // Branch table update for fnb_staff_count/monthly_fixed_cost skipped until branches has those columns (run add-branch-fnb-fields.sql)
         if (todayData.top3MenuRevenue) {
@@ -584,7 +568,7 @@ export default function LogTodayPage() {
       
       // Get branch setup for calculations (occupancy uses branch.totalRooms, not daily rooms_available)
       const setup: BranchSetup = {
-        monthlyFixedCost: branchSetup ? (branchSetup as any).monthly_fixed_cost : undefined,
+        monthlyFixedCost: isAccommodation ? (accommodationCapacityFromMetrics?.monthly_fixed_cost ?? (branchSetup as any)?.monthly_fixed_cost) : (branchSetup as any)?.monthly_fixed_cost,
         variableCostRatio: branchSetup ? (branchSetup as any).variable_cost_ratio : undefined,
         roomsAvailable: branch?.totalRooms ?? (branchSetup as any)?.rooms_available ?? safeNumber(financeData.totalRoomsAvailable, undefined),
         seatingCapacity: branchSetup ? (branchSetup as any).seating_capacity : undefined,
@@ -651,7 +635,6 @@ export default function LogTodayPage() {
             additionalCostToday: addCost,
             totalRoomsAvailable: financeData.totalRoomsAvailable,
             accommodationStaffCount: financeData.accommodationStaffCount,
-            monthlyFixedCost: financeData.monthlyFixedCost,
             fnbStaffCount: financeData.fnbStaffCount,
           });
         }
@@ -1166,39 +1149,7 @@ export default function LogTodayPage() {
                     </div>
                   )}
                   
-                  {/* Monthly Fixed Cost (Manager+) */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
-                      {locale === 'th' ? 'อัปเดตต้นทุนคงที่รายเดือน' : 'Update Monthly Fixed Cost'}
-                    </label>
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type="text"
-                        value={formatDisplayNumber(financeData.monthlyFixedCost)}
-                        onChange={(e) => {
-                          const parsed = parseInputNumber(e.target.value);
-                          setFinanceData({ ...financeData, monthlyFixedCost: parsed });
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '0.625rem 3rem 0.625rem 0.75rem',
-                          borderRadius: '6px',
-                          fontSize: '14px',
-                          textAlign: 'right',
-                          ...inputStyleFor('monthlyFixedCost'),
-                        }}
-                        placeholder="0"
-                      />
-                      <span style={{
-                        position: 'absolute',
-                        right: '0.75rem',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        fontSize: '13px',
-                        color: '#6b7280',
-                      }}>THB</span>
-                    </div>
-                  </div>
+                  {/* Monthly Fixed Cost: owner-only, configured in Branch Settings → Finance Setup */}
                   
                   {/* Debt Payment (Owner Only) */}
                   {isOwner && (
@@ -1236,21 +1187,13 @@ export default function LogTodayPage() {
                     </div>
                   )}
                   
-                  {/* Accommodation Capacity Fields (Manager+) — required on first setup */}
+                  {/* Accommodation Capacity: auto-filled from latest record, always editable. Saves as rooms_available, staff_count. */}
                   {isAccommodation && (
                     <>
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
                           {locale === 'th' ? 'จำนวนห้องทั้งหมด' : 'Total Rooms Available'}
-                          {(branch?.totalRooms == null && branch?.accommodationStaffCount == null) ? (
-                            <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>
-                              ({locale === 'th' ? 'จำเป็นในการตั้งค่าแรก' : 'required on first setup'})
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
-                              ({locale === 'th' ? 'แก้ไขได้เมื่อต้องการ' : 'edit when needed'})
-                            </span>
-                          )}
+                          <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>({locale === 'th' ? 'จำเป็น' : 'required'})</span>
                         </label>
                         <input
                           type="text"
@@ -1269,6 +1212,9 @@ export default function LogTodayPage() {
                           }}
                           placeholder="0"
                         />
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
+                          {locale === 'th' ? 'เติมจากรายการล่าสุด แก้ไขได้เมื่อความจุเปลี่ยน' : 'Auto-filled from last entry. Edit only if capacity changed.'}
+                        </div>
                         {errors.totalRoomsAvailable && (
                           <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>{errors.totalRoomsAvailable}</div>
                         )}
@@ -1277,15 +1223,7 @@ export default function LogTodayPage() {
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
                           {locale === 'th' ? 'จำนวนพนักงานที่พัก' : 'Accommodation Staff Count'}
-                          {(branch?.totalRooms == null && branch?.accommodationStaffCount == null) ? (
-                            <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>
-                              ({locale === 'th' ? 'จำเป็นในการตั้งค่าแรก' : 'required on first setup'})
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
-                              ({locale === 'th' ? 'แก้ไขได้เมื่อต้องการ' : 'edit when needed'})
-                            </span>
-                          )}
+                          <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>({locale === 'th' ? 'จำเป็น' : 'required'})</span>
                         </label>
                         <input
                           type="text"
@@ -1304,6 +1242,9 @@ export default function LogTodayPage() {
                           }}
                           placeholder="0"
                         />
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
+                          {locale === 'th' ? 'เติมจากรายการล่าสุด แก้ไขได้เมื่อจำนวนพนักงานเปลี่ยน' : 'Auto-filled from last entry. Edit only if staff count changed.'}
+                        </div>
                         {errors.accommodationStaffCount && (
                           <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>{errors.accommodationStaffCount}</div>
                         )}

@@ -59,9 +59,10 @@ function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
     additional_cost_today: metric.additionalCostToday ?? 0,
     cost: metric.cost ?? 0,
     avg_ticket: metric.avgTicket ?? null,
-    monthly_fixed_cost: metric.monthlyFixedCost ?? null,
     fnb_staff: metric.fnbStaff ?? null,
   };
+  // monthly_fixed_cost only when explicitly provided (Owner Settings); do not overwrite from Log Today
+  if (metric.monthlyFixedCost !== undefined) payload.monthly_fixed_cost = metric.monthlyFixedCost;
   if (metric.cashBalance != null) payload.cash_balance = metric.cashBalance;
   if (metric.promoSpend != null) payload.promo_spend = metric.promoSpend;
   return Object.fromEntries(
@@ -72,14 +73,17 @@ function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
 /**
  * Build accommodation payload for accommodation_daily_metrics.
  * Uses total_revenue_thb (not revenue) for the revenue column.
+ * Omits monthly_fixed_cost so only Owner Settings can set it (not Log Today).
  */
 function buildAccommodationPayload(metric: DailyMetricInput): Record<string, unknown> {
   const base = dailyMetricToDb(metric) as Record<string, unknown>;
-  const { revenue, ...rest } = base;
-  return {
+  const { revenue, monthly_fixed_cost: _mfc, ...rest } = base;
+  const out = {
     ...rest,
     total_revenue_thb: metric.revenue ?? 0,
   };
+  delete (out as Record<string, unknown>).monthly_fixed_cost;
+  return out;
 }
 
 /** Decide which base table to write to: by branch type (hotel/accommodation vs restaurant/fnb), else infer from metric content. */
@@ -365,6 +369,123 @@ export async function getDailyMetrics(
     console.error('[DailyMetricsService] Error getting daily metrics:', error);
     // Data Guard: Return empty array on error
     return [];
+  }
+}
+
+/** Status for owner dashboard: has monthly_fixed_cost configured and how many days of data exist. */
+export interface AccommodationMonthlyFixedCostStatus {
+  hasValue: boolean;
+  dataDaysCount: number;
+  currentValue: number | null;
+}
+
+/**
+ * Get whether accommodation branch has monthly_fixed_cost set and how many days of data.
+ * Used for owner dashboard warning/reminder banners. Queries accommodation_daily_metrics only.
+ */
+export async function getAccommodationMonthlyFixedCostStatus(
+  branchId: string
+): Promise<AccommodationMonthlyFixedCostStatus> {
+  if (branchId == null || branchId === '') {
+    return { hasValue: false, dataDaysCount: 0, currentValue: null };
+  }
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return { hasValue: false, dataDaysCount: 0, currentValue: null };
+  const supabase = getSupabaseClient();
+  if (!supabase) return { hasValue: false, dataDaysCount: 0, currentValue: null };
+
+  try {
+    const [latestWithValueRes, countRes] = await Promise.all([
+      supabase
+        .from(TABLE_ACCOMMODATION)
+        .select('monthly_fixed_cost')
+        .eq('branch_id', branchId)
+        .not('monthly_fixed_cost', 'is', null)
+        .order('metric_date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from(TABLE_ACCOMMODATION)
+        .select('*', { count: 'exact', head: true })
+        .eq('branch_id', branchId),
+    ]);
+    const row = latestWithValueRes.data as { monthly_fixed_cost?: number | null } | null;
+    const dataDaysCount = countRes.count ?? 0;
+    const currentValue = row?.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : null;
+    const hasValue = currentValue != null;
+    return { hasValue, dataDaysCount, currentValue };
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') console.warn('[DailyMetricsService] getAccommodationMonthlyFixedCostStatus error:', e);
+    return { hasValue: false, dataDaysCount: 0, currentValue: null };
+  }
+}
+
+/**
+ * Get latest monthly_fixed_cost for accommodation branch (for Owner Settings form).
+ */
+export async function getAccommodationMonthlyFixedCost(branchId: string): Promise<number | null> {
+  const status = await getAccommodationMonthlyFixedCostStatus(branchId);
+  return status.currentValue;
+}
+
+/**
+ * Save monthly_fixed_cost for accommodation branch (Owner Settings only).
+ * Updates the latest row by metric_date, or inserts a row for today if none exists.
+ */
+export async function setAccommodationMonthlyFixedCost(
+  branchId: string,
+  value: number
+): Promise<{ ok: boolean; error?: string }> {
+  if (branchId == null || branchId === '') {
+    return { ok: false, error: 'branchId required' };
+  }
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return { ok: false, error: 'Supabase not available' };
+  const supabase = getSupabaseClient();
+  if (!supabase) return { ok: false, error: 'No client' };
+
+  try {
+    const today = getTodayDateString();
+    const { data: latest } = await supabase
+      .from(TABLE_ACCOMMODATION)
+      .select('id, metric_date')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latest && (latest as { id?: string }).id) {
+      const { error: updateError } = await supabase
+        .from(TABLE_ACCOMMODATION as 'accommodation_daily_metrics')
+        .update({ monthly_fixed_cost: value } as never)
+        .eq('id', (latest as { id: string }).id);
+      if (updateError) {
+        console.error('[DailyMetricsService] setAccommodationMonthlyFixedCost update error:', updateError);
+        return { ok: false, error: updateError.message };
+      }
+    } else {
+      const insertPayload = {
+        branch_id: branchId,
+        metric_date: today,
+        total_revenue_thb: 0,
+        monthly_fixed_cost: value,
+        rooms_available: null,
+        accommodation_staff: null,
+      };
+      const { error: insertError } = await supabase
+        .from(TABLE_ACCOMMODATION as 'accommodation_daily_metrics')
+        .insert(insertPayload as never);
+      if (insertError) {
+        console.error('[DailyMetricsService] setAccommodationMonthlyFixedCost insert error:', insertError);
+        return { ok: false, error: insertError.message };
+      }
+    }
+    clearDailyMetricsCacheForBranch(branchId);
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[DailyMetricsService] setAccommodationMonthlyFixedCost error:', e);
+    return { ok: false, error: msg };
   }
 }
 

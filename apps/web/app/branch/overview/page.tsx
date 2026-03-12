@@ -42,6 +42,7 @@ import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, type OperatingStatusRow } from '../../services/db/latest-metrics-service';
+import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
@@ -67,6 +68,8 @@ export default function BranchOverviewPage() {
   const [operatingStatusData, setOperatingStatusData] = useState<OperatingStatusRow | null>(null);
   // KPI layer: recommendations from branch_recommendations
   const [kpiRecommendations, setKpiRecommendations] = useState<{ recommendation: string; category?: string }[]>([]);
+  // Owner dashboard: monthly fixed cost not configured (accommodation, owner/super_admin only)
+  const [monthlyFixedCostStatus, setMonthlyFixedCostStatus] = useState<{ hasValue: boolean; dataDaysCount: number } | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -452,7 +455,14 @@ export default function BranchOverviewPage() {
     };
     const onMetricsSaved = (e: Event) => {
       const detail = (e as CustomEvent<{ branchId: string }>).detail;
-      if (detail?.branchId === branch?.id) refreshOperatingStatus();
+      if (detail?.branchId === branch?.id) {
+        refreshOperatingStatus();
+        if (branch.moduleType === 'accommodation') {
+          getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
+            setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
+          });
+        }
+      }
     };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('aurasea:metrics-saved', onMetricsSaved);
@@ -468,6 +478,18 @@ export default function BranchOverviewPage() {
       setKpiRecommendations(rows.map((r) => ({ recommendation: String(r.recommendation ?? ''), category: r.category ?? undefined })));
     }).catch(() => setKpiRecommendations([]));
   }, [branch?.id]);
+
+  const isOwnerOrSuperAdmin = role?.isSuperAdmin === true || role?.effectiveRole === 'owner';
+  const isAccommodationBranch = branch?.moduleType === 'accommodation';
+  useEffect(() => {
+    if (!branch?.id || !isOwnerOrSuperAdmin || !isAccommodationBranch) {
+      setMonthlyFixedCostStatus(null);
+      return;
+    }
+    getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
+      setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
+    });
+  }, [branch?.id, isOwnerOrSuperAdmin, isAccommodationBranch]);
 
   const performanceTrends = useMemo(() => {
     if (!branch?.id) return null;
@@ -882,6 +904,34 @@ export default function BranchOverviewPage() {
   return (
     <PageLayout title="" subtitle={branch?.branchName ?? ''}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        {/* Owner dashboard: Monthly Fixed Cost not configured (accommodation, owner/super_admin only) */}
+        {monthlyFixedCostStatus && !monthlyFixedCostStatus.hasValue && (
+          <div
+            style={{
+              padding: '0.75rem 1rem',
+              borderRadius: '8px',
+              backgroundColor: monthlyFixedCostStatus.dataDaysCount >= 7 ? '#fef3c7' : '#eff6ff',
+              border: `1px solid ${monthlyFixedCostStatus.dataDaysCount >= 7 ? '#f59e0b' : '#3b82f6'}`,
+              fontSize: '14px',
+              color: '#1e293b',
+            }}
+          >
+            {monthlyFixedCostStatus.dataDaysCount >= 7
+              ? (locale === 'th' ? 'กรุณาตั้งค่าต้นทุนคงที่รายเดือนเพื่อปรับปรุงข้อมูลเชิงการเงิน' : 'Please configure Monthly Fixed Cost to improve financial insights.')
+              : (locale === 'th' ? 'ยังไม่ได้ตั้งค่าต้นทุนคงที่รายเดือน การตั้งค่าจะช่วยให้ AuraSea คำนวณสัญญาณกำไรและคำแนะนำได้ดีขึ้น' : 'Monthly Fixed Cost has not been configured. This helps AuraSea calculate profit signals and recommendations.')}
+            {paths.branchSettings && (
+              <span style={{ marginLeft: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => router.push(paths.branchSettings!)}
+                  style={{ color: '#2563eb', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit', fontWeight: 500 }}
+                >
+                  {locale === 'th' ? 'ไปที่การตั้งค่า' : 'Go to Settings'}
+                </button>
+              </span>
+            )}
+          </div>
+        )}
         {/* Mission Control: business intelligence cards (from latest-metrics views when possible) */}
         {(() => {
           const branchType = branch?.moduleType;
