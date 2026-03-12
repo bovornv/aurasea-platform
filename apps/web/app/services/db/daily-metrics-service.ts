@@ -20,7 +20,7 @@ const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
 ]);
 /** Columns allowed in accommodation_daily_metrics. Revenue column is total_revenue_thb. */
 const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
-  'branch_id', 'metric_date', 'total_revenue_thb', 'cost', 'cash_balance', 'additional_cost_today',
+  'branch_id', 'metric_date', 'total_revenue_thb', 'cash_balance', 'additional_cost_today',
   'rooms_sold', 'rooms_available', 'staff_count', 'monthly_fixed_cost',
 ]);
 
@@ -73,17 +73,18 @@ function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
 /**
  * Build accommodation payload for accommodation_daily_metrics.
  * Uses total_revenue_thb (not revenue) for the revenue column.
- * Omits monthly_fixed_cost (owner-only) and adr (ADR is computed: revenue/rooms_sold, not stored).
+ * Omits: monthly_fixed_cost (owner-only), adr (computed), cost (column removed; use estimated cost elsewhere).
  */
 function buildAccommodationPayload(metric: DailyMetricInput): Record<string, unknown> {
   const base = dailyMetricToDb(metric) as Record<string, unknown>;
-  const { revenue, monthly_fixed_cost: _mfc, adr: _adr, ...rest } = base;
+  const { revenue, monthly_fixed_cost: _mfc, adr: _adr, cost: _cost, ...rest } = base;
   const out = {
     ...rest,
     total_revenue_thb: metric.revenue ?? 0,
   };
   delete (out as Record<string, unknown>).monthly_fixed_cost;
   delete (out as Record<string, unknown>).adr;
+  delete (out as Record<string, unknown>).cost;
   return out;
 }
 
