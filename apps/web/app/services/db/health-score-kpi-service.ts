@@ -69,7 +69,7 @@ export async function computeAccommodationHealthScore(
         .maybeSingle(),
       supabase
         .from('accommodation_data_coverage')
-        .select('branch_id, days_with_data, confidence_score')
+        .select('confidence_level, confidence_score')
         .eq('branch_id', branchId)
         .maybeSingle(),
     ]);
@@ -93,12 +93,10 @@ export async function computeAccommodationHealthScore(
     const isAnomaly = anomalyScore != null && (anomalyScore < -2 || anomalyScore > 2);
     const signalScore = isAnomaly ? 10 : 20;
 
-    const coverageRow = coverageRes.data as { days_with_data?: number; confidence_score?: number | null } | null;
+    const coverageRow = coverageRes.data as { confidence_score?: number | null } | null;
     let confidenceScore = 100;
     if (coverageRow?.confidence_score != null && !Number.isNaN(Number(coverageRow.confidence_score))) {
       confidenceScore = Math.max(0, Math.min(100, Number(coverageRow.confidence_score)));
-    } else if (typeof coverageRow?.days_with_data === 'number') {
-      confidenceScore = Math.min(100, coverageRow.days_with_data * 10);
     }
 
     const revenuePerformance =

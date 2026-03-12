@@ -81,8 +81,8 @@ export async function getLastUpdatedDate(
 }
 
 /**
- * Coverage = distinct metric_date rows for branch_id only.
- * Prefer views accommodation_data_coverage / fnb_data_coverage (branch_id, days_with_data); fallback to base table count.
+ * Coverage = distinct metric_date rows for branch_id only (last 30 days).
+ * Uses base table count (distinct metric_date in last 30 days).
  */
 export async function getDataCoverageDays(
   branchId: string,
@@ -117,26 +117,10 @@ export async function getDataCoverageDays(
     };
 
     if (moduleType === 'accommodation') {
-      const { data, error } = await supabase
-        .from('accommodation_data_coverage')
-        .select('branch_id, days_with_data')
-        .eq('branch_id', branchId)
-        .maybeSingle();
-      if (!error && data && typeof (data as { days_with_data?: number }).days_with_data === 'number') {
-        return { coverageDays: (data as { days_with_data: number }).days_with_data };
-      }
       return { coverageDays: await countDistinctFromTable('accommodation_daily_metrics') };
     }
 
     if (moduleType === 'fnb') {
-      const { data, error } = await supabase
-        .from('fnb_data_coverage')
-        .select('branch_id, days_with_data')
-        .eq('branch_id', branchId)
-        .maybeSingle();
-      if (!error && data && typeof (data as { days_with_data?: number }).days_with_data === 'number') {
-        return { coverageDays: (data as { days_with_data: number }).days_with_data };
-      }
       return { coverageDays: await countDistinctFromTable('fnb_daily_metrics') };
     }
 
@@ -155,7 +139,8 @@ export async function getDataCoverageDays(
 }
 
 /**
- * Get confidence_level from accommodation_data_coverage for the Confidence card (Operating Status).
+ * Get confidence_level (and optional confidence_score) from accommodation_data_coverage for the Confidence card.
+ * Query: confidence_level, confidence_score.
  * Values: 'collecting' | 'low' | 'medium' | 'high', or null if no row.
  */
 export async function getAccommodationConfidenceLevel(
@@ -167,7 +152,7 @@ export async function getAccommodationConfidenceLevel(
     if (!supabase) return null;
     const { data, error } = await supabase
       .from('accommodation_data_coverage')
-      .select('confidence_level')
+      .select('confidence_level, confidence_score')
       .eq('branch_id', branchId)
       .maybeSingle();
     if (error || data == null) return null;
