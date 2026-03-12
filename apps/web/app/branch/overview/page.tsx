@@ -43,6 +43,7 @@ import { OperatingFooterTrust } from '../../components/operating-layer/operating
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, type OperatingStatusRow } from '../../services/db/latest-metrics-service';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
+import { getAccommodationConfidenceLevel, getAccommodationEarlySignal } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { getHealthScoreFromKpi, computeAndSaveAccommodationHealthScore } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
@@ -73,6 +74,10 @@ export default function BranchOverviewPage() {
   const [monthlyFixedCostStatus, setMonthlyFixedCostStatus] = useState<{ hasValue: boolean; dataDaysCount: number } | null>(null);
   // Health score from branch_kpi_metrics (computed and stored; preferred for accommodation)
   const [healthScoreFromKpi, setHealthScoreFromKpi] = useState<number | null>(null);
+  // Confidence card: accommodation uses accommodation_data_coverage.confidence_level
+  const [confidenceLevelFromCoverage, setConfidenceLevelFromCoverage] = useState<string | null>(null);
+  // Early Signal card: accommodation uses accommodation_anomaly_signals.early_signal
+  const [accommodationEarlySignal, setAccommodationEarlySignal] = useState<string | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -448,6 +453,10 @@ export default function BranchOverviewPage() {
     getOperatingStatusData(branch.id, branch.moduleType ?? undefined).then((data) => {
       setOperatingStatusData(data);
     });
+    if (branch.moduleType === 'accommodation') {
+      getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
+      getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
+    }
     getHealthScoreFromKpi(branch.id).then((score) => {
       setHealthScoreFromKpi(score);
     });
@@ -467,6 +476,8 @@ export default function BranchOverviewPage() {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
           });
+          getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
+          getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
           computeAndSaveAccommodationHealthScore(branch.id).then((score) => {
             if (score != null) setHealthScoreFromKpi(score);
           });
@@ -499,6 +510,24 @@ export default function BranchOverviewPage() {
         if (score != null) setHealthScoreFromKpi(score);
       });
     }
+  }, [branch?.id, branch?.moduleType]);
+
+  // Confidence card: accommodation uses accommodation_data_coverage.confidence_level
+  useEffect(() => {
+    if (!branch?.id || branch.moduleType !== 'accommodation') {
+      setConfidenceLevelFromCoverage(null);
+      return;
+    }
+    getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
+  }, [branch?.id, branch?.moduleType]);
+
+  // Early Signal card: accommodation uses accommodation_anomaly_signals.early_signal
+  useEffect(() => {
+    if (!branch?.id || branch.moduleType !== 'accommodation') {
+      setAccommodationEarlySignal(null);
+      return;
+    }
+    getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
   }, [branch?.id, branch?.moduleType]);
 
   const isOwnerOrSuperAdmin = role?.isSuperAdmin === true || role?.effectiveRole === 'owner';
@@ -845,8 +874,21 @@ export default function BranchOverviewPage() {
     return sorted[0] ?? null;
   }, [dailyMetricsForTrends]);
 
-  // Early signal: prefer branch_anomaly_signals, then performance trend, then first alert
+  // Early signal: accommodation = accommodation_anomaly_signals.early_signal; F&B = anomaly/trend/alert fallback
   const earlySignalText = useMemo(() => {
+    if (branch?.moduleType === 'accommodation') {
+      if (accommodationEarlySignal) {
+        const s = accommodationEarlySignal.toLowerCase();
+        if (s === 'normal') return locale === 'th' ? 'ปกติ' : 'Normal';
+        if (s === 'demand_drop') return locale === 'th' ? 'ตรวจพบความต้องการลดลง' : 'Demand weakening detected';
+        if (s === 'demand_spike') return locale === 'th' ? 'ตรวจพบความต้องการพุ่งสูง' : 'Demand spike detected';
+        if (s === 'weak_midweek') return locale === 'th' ? 'วันกลางสัปดาห์อ่อนแอ' : 'Weak midweek';
+        if (s === 'strong_weekend') return locale === 'th' ? 'สุดสัปดาห์แข็งแรง' : 'Strong weekend';
+        if (s === 'seasonal_risk') return locale === 'th' ? 'ความเสี่ยงตามฤดูกาล' : 'Seasonal risk';
+        return accommodationEarlySignal;
+      }
+      return '—';
+    }
     if (anomalySignal?.revenue_anomaly_score != null) {
       const score = Number(anomalySignal.revenue_anomaly_score);
       if (score < -2) return locale === 'th' ? 'รายได้ต่ำกว่าแนวโน้มปกติอย่างมีนัยสำคัญ' : 'Revenue significantly below normal trend';
@@ -866,7 +908,7 @@ export default function BranchOverviewPage() {
     }
     if (coverageDays < 7) return locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
     return '—';
-  }, [anomalySignal, performanceTrends, mergedBranchAlerts, coverageDays, locale]);
+  }, [branch?.moduleType, accommodationEarlySignal, anomalySignal, performanceTrends, mergedBranchAlerts, coverageDays, locale]);
 
   if (!mounted || branchLoading) {
     return (
@@ -974,8 +1016,24 @@ export default function BranchOverviewPage() {
             }
           }
 
-          const confidenceVal = operatingStatusData?.confidence_score ?? null;
           const collecting = locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
+          // Accommodation: use accommodation_data_coverage.confidence_level; F&B: use confidence_score
+          const confidenceVal = isAccommodation ? null : (operatingStatusData?.confidence_score ?? null);
+          const confidenceLevel = isAccommodation ? confidenceLevelFromCoverage : null;
+          const confidenceDisplayText =
+            isAccommodation
+              ? (confidenceLevel == null || confidenceLevel === '' || confidenceLevel === 'collecting'
+                  ? collecting
+                  : confidenceLevel === 'low'
+                    ? (locale === 'th' ? 'ความมั่นใจต่ำ' : 'Low confidence')
+                    : confidenceLevel === 'medium'
+                      ? (locale === 'th' ? 'ความมั่นใจปานกลาง' : 'Medium confidence')
+                      : confidenceLevel === 'high'
+                        ? (locale === 'th' ? 'ความมั่นใจสูง' : 'High confidence')
+                        : collecting)
+              : (confidenceVal != null
+                  ? `${Math.round(Number(confidenceVal) <= 1 ? Number(confidenceVal) * 100 : Number(confidenceVal))}%`
+                  : collecting);
           return (
         <div style={{
           display: 'grid',
@@ -1040,9 +1098,7 @@ export default function BranchOverviewPage() {
               {locale === 'th' ? 'ความมั่นใจ' : 'Confidence'}
             </div>
             <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-              {confidenceVal != null
-                ? `${Math.round(Number(confidenceVal) <= 1 ? Number(confidenceVal) * 100 : Number(confidenceVal))}%`
-                : collecting}
+              {confidenceDisplayText}
             </div>
           </div>
         </div>

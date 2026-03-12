@@ -153,3 +153,59 @@ export async function getDataCoverageDays(
     };
   }
 }
+
+/**
+ * Get confidence_level from accommodation_data_coverage for the Confidence card (Operating Status).
+ * Values: 'collecting' | 'low' | 'medium' | 'high', or null if no row.
+ */
+export async function getAccommodationConfidenceLevel(
+  branchId: string
+): Promise<string | null> {
+  try {
+    if (!isSupabaseAvailable() || !branchId) return null;
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('accommodation_data_coverage')
+      .select('confidence_level')
+      .eq('branch_id', branchId)
+      .maybeSingle();
+    if (error || data == null) return null;
+    const level = (data as { confidence_level?: string | null }).confidence_level;
+    return level != null ? String(level).trim().toLowerCase() : null;
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[BranchMetricsInfo] getAccommodationConfidenceLevel error:', e);
+    }
+    return null;
+  }
+}
+
+/**
+ * Get latest early_signal from accommodation_anomaly_signals for the Early Signal card.
+ * Returns the raw value (e.g. 'normal', 'demand_drop') or null.
+ */
+export async function getAccommodationEarlySignal(
+  branchId: string
+): Promise<string | null> {
+  try {
+    if (!isSupabaseAvailable() || !branchId) return null;
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('accommodation_anomaly_signals')
+      .select('early_signal, metric_date')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || data == null) return null;
+    const signal = (data as { early_signal?: string | null }).early_signal;
+    return signal != null ? String(signal).trim() : null;
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[BranchMetricsInfo] getAccommodationEarlySignal error:', e);
+    }
+    return null;
+  }
+}
