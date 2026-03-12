@@ -127,19 +127,6 @@ export default function BranchAlertsPage() {
   /** Use for alert localization: th when Thai, else en. */
   const localeKey = locale === 'th' || String(locale || '').toLowerCase().startsWith('th') ? 'th' : 'en';
 
-  /** Deduplicate active alerts by content so the same alert is not shown multiple times. */
-  const uniqueActiveAlerts = useMemo(() => {
-    const seen = new Set<string>();
-    return activeAlertsFromDb.filter((row) => {
-      const type = (row.alert_type ?? '').toString().trim();
-      const msg = (row.alert_message ?? row.revenue_alert ?? row.customer_alert ?? row.occupancy_alert ?? '').toString().trim();
-      const key = `${normalizeAlertType(type)}|${msg}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [activeAlertsFromDb]);
-
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
 
@@ -169,6 +156,19 @@ export default function BranchAlertsPage() {
   const [latestAlert, setLatestAlert] = useState<BranchLatestAlertRow | null>(null);
   // All Active Alerts section: last 3 days (branch_active_alerts)
   const [activeAlertsFromDb, setActiveAlertsFromDb] = useState<BranchActiveAlertRow[]>([]);
+
+  /** Deduplicate active alerts by content so the same alert is not shown multiple times. */
+  const uniqueActiveAlerts = useMemo(() => {
+    const seen = new Set<string>();
+    return activeAlertsFromDb.filter((row) => {
+      const type = (row.alert_type ?? '').toString().trim();
+      const msg = (row.alert_message ?? row.revenue_alert ?? row.customer_alert ?? row.occupancy_alert ?? '').toString().trim();
+      const key = `${normalizeAlertType(type)}|${msg}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [activeAlertsFromDb]);
 
   useEffect(() => {
     if (!branch?.id) return;
