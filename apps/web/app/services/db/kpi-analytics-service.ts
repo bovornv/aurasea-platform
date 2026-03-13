@@ -351,25 +351,43 @@ export interface FnbAlertsTodayRow {
   [key: string]: unknown;
 }
 
+/** Row from branch_alerts_display — single source for Accommodation and F&B alerts. All text from DB (message_th/en, action_th/en). */
+export interface BranchAlertsDisplayRow {
+  branch_id: string;
+  metric_date?: string | null;
+  business_type?: string | null;
+  alert_code?: string | null;
+  message_th?: string | null;
+  message_en?: string | null;
+  action_th?: string | null;
+  action_en?: string | null;
+  confidence_score?: number | null;
+  estimated_revenue_impact?: number | null;
+  alert_severity?: string | null;
+  [key: string]: unknown;
+}
+
 /**
- * Fetch alerts from fnb_alerts_today for an F&B branch. Do not use branch_alerts_today or accommodation tables.
- * Caller should filter out rows where alert_name is null.
+ * Fetch alerts from branch_alerts_display for a branch. Filter by business_type so Accommodation and F&B are separate.
+ * No duplicate sources; all alert text comes from Supabase (message_th/en, action_th/en).
  */
-export async function getAlertsFromFnbAlertsToday(
-  branchId: string
-): Promise<FnbAlertsTodayRow[]> {
+export async function getAlertsFromBranchAlertsDisplay(
+  branchId: string,
+  businessType: 'accommodation' | 'fnb'
+): Promise<BranchAlertsDisplayRow[]> {
   if (branchId == null || branchId === '') return [];
   if (!isSupabaseAvailable()) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
   try {
     const { data, error } = await supabase
-      .from('fnb_alerts_today')
+      .from('branch_alerts_display')
       .select('*')
       .eq('branch_id', branchId)
+      .eq('business_type', businessType)
       .order('metric_date', { ascending: false });
     if (error) return [];
-    return (data ?? []) as FnbAlertsTodayRow[];
+    return (data ?? []) as BranchAlertsDisplayRow[];
   } catch {
     return [];
   }

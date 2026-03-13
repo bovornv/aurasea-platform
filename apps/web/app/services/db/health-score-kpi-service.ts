@@ -204,7 +204,7 @@ export async function getHealthScoreFromKpi(
 
 /**
  * Get health_score from branch_health_metrics for the Operating Status Business Health Score card.
- * Only source for the card; do not use branch_kpi_metrics, accommodation_daily_metrics, or fnb_daily_metrics.
+ * @deprecated Use getHealthScoreFromAccommodationHealthToday or getHealthScoreFromFnbHealthToday instead.
  */
 export async function getHealthScoreFromBranchHealthMetrics(
   branchId: string
@@ -217,6 +217,60 @@ export async function getHealthScoreFromBranchHealthMetrics(
   try {
     const { data, error } = await supabase
       .from('branch_health_metrics')
+      .select('health_score')
+      .eq('branch_id', branchId)
+      .maybeSingle();
+
+    if (error || data == null) return null;
+    const row = data as { health_score?: number | null };
+    return row.health_score != null ? Number(row.health_score) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get health_score from accommodation_health_today for the Operating Status Business Health Score card.
+ * Do not calculate in frontend; always from Supabase.
+ */
+export async function getHealthScoreFromAccommodationHealthToday(
+  branchId: string
+): Promise<number | null> {
+  if (branchId == null || branchId === '') return null;
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from('accommodation_health_today')
+      .select('health_score')
+      .eq('branch_id', branchId)
+      .single();
+
+    if (error || data == null) return null;
+    const row = data as { health_score?: number | null };
+    return row.health_score != null ? Number(row.health_score) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get health_score from fnb_health_today for the Operating Status Business Health Score card.
+ * Do not calculate in frontend; always from Supabase.
+ */
+export async function getHealthScoreFromFnbHealthToday(
+  branchId: string
+): Promise<number | null> {
+  if (branchId == null || branchId === '') return null;
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from('fnb_health_today')
       .select('health_score')
       .eq('branch_id', branchId)
       .maybeSingle();

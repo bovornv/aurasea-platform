@@ -17,24 +17,15 @@ import { LoadingSpinner } from '../../components/loading-spinner';
 import { ErrorState } from '../../components/error-state';
 import { SectionCard } from '../../components/section-card';
 import { formatCurrency } from '../../utils/formatting';
-import { getSeverityColor, getSeverityLabel } from '../../utils/alert-utils';
+import { getSeverityColor } from '../../utils/alert-utils';
 import { runAppAlertValidation, runFullAlertValidation } from '../../lib/run-alert-validation-app';
 import {
-  getAlertsFromBranchAlertsToday,
-  getAlertsFromBranchIntelligenceEngine,
-  getAlertsFromFnbAlertsToday,
+  getAlertsFromBranchAlertsDisplay,
   getFnbFinancialImpact,
   severityOrder,
-  type BranchAlertsTodayRow,
-  type BranchIntelligenceEngineRow,
-  type FnbAlertsTodayRow,
+  type BranchAlertsDisplayRow,
   type FnbFinancialImpactRow,
 } from '../../services/db/kpi-analytics-service';
-
-/** Normalize alert_type from DB to key (e.g. "Revenue Risk" → "revenue_risk"). */
-function normalizeAlertType(type: string): string {
-  return type.replace(/\s+/g, '_').toLowerCase();
-}
 
 /** Display confidence from DB: if value <= 1 treat as 0–1 fraction and show as %, else show as 0–100. */
 function formatConfidenceScore(confidence_score: number | null | undefined): number | null {
@@ -51,81 +42,6 @@ function effectiveConfidencePct(confidence_score: number | null | undefined): nu
   return n <= 1 ? n * 100 : n;
 }
 
-/** Localized alert message by type: th and en. */
-const ALERT_MESSAGE: Record<string, { th: string; en: string }> = {
-  revenue_risk: { th: 'รายได้ต่ำกว่าปกติ', en: 'Revenue is significantly below the recent trend' },
-  pricing_opportunity: { th: 'มีโอกาสปรับราคาเพิ่ม', en: 'Demand surge detected. Pricing opportunity.' },
-  demand_weakening: { th: 'ความต้องการเริ่มลดลง', en: 'Demand is weakening compared to recent days' },
-  low_occupancy: { th: 'อัตราการเข้าพักต่ำ', en: 'Occupancy rate is very low' },
-  near_full_capacity: { th: 'ห้องพักใกล้เต็ม', en: 'Hotel is nearly full' },
-  revenue: { th: 'รายได้ต่ำกว่าปกติ', en: 'Revenue is significantly below the recent trend' },
-  pricing: { th: 'มีโอกาสปรับราคาเพิ่ม', en: 'Demand surge detected. Pricing opportunity.' },
-  demand: { th: 'ความต้องการเริ่มลดลง', en: 'Demand is weakening compared to recent days' },
-  occupancy: { th: 'อัตราการเข้าพักต่ำ', en: 'Occupancy rate is very low' },
-  capacity: { th: 'ห้องพักใกล้เต็ม', en: 'Hotel is nearly full' },
-  weak_weekday_demand: { th: 'ความต้องการวันธรรมดาอ่อนแอ', en: 'Weak weekday demand' },
-  strong_weekend_demand: { th: 'ความต้องการสุดสัปดาห์แข็งแรง', en: 'Strong weekend demand' },
-  occupancy_gap: { th: 'ช่องว่างอัตราการเข้าพัก', en: 'Occupancy gap' },
-  adr_pricing_opportunity: { th: 'โอกาสปรับราคา ADR', en: 'ADR pricing opportunity' },
-  revenue_instability: { th: 'รายได้ไม่เสถียร', en: 'Revenue instability' },
-};
-
-/** Localized alert category label (title). */
-const ALERT_CATEGORY_LABEL: Record<string, { th: string; en: string }> = {
-  revenue: { th: 'รายได้', en: 'Revenue' },
-  demand: { th: 'ความต้องการ', en: 'Demand' },
-  occupancy: { th: 'อัตราการเข้าพัก', en: 'Occupancy' },
-  pricing: { th: 'ราคา', en: 'Pricing' },
-  capacity: { th: 'ความจุ', en: 'Capacity' },
-};
-
-/** Action recommendation by alert type (normalized key). Display under each alert. */
-const ACTION_RECOMMENDATIONS: Record<string, string> = {
-  revenue_risk: 'Run promotion or reduce price',
-  demand_weakening: 'Increase marketing',
-  low_occupancy: 'Launch discount campaign',
-  near_full_capacity: 'Increase room price',
-  weak_weekday_demand: 'Offer weekday deals',
-  strong_weekend_demand: 'Increase weekend price',
-  occupancy_gap: 'Adjust pricing distribution',
-  adr_pricing_opportunity: 'Raise ADR gradually',
-  revenue_instability: 'Stabilize pricing strategy',
-  revenue: 'Run promotion or reduce price',
-  demand: 'Increase marketing',
-  occupancy: 'Launch discount campaign',
-  capacity: 'Increase room price',
-};
-
-/** Row shape for formatAlertCard (branch_alerts_today or branch_intelligence_engine). */
-type AlertRowLike = BranchAlertsTodayRow | BranchIntelligenceEngineRow;
-
-/** Card title = alert_category (localized); message = alert_message; never use "Alert" as title. */
-function formatAlertCard(
-  row: AlertRowLike,
-  locale: 'th' | 'en' = 'en'
-): { title: string; description: string } {
-  const msg = (row.alert_message ?? (row as any).revenue_alert ?? (row as any).customer_alert ?? (row as any).occupancy_alert ?? '').toString().trim();
-  const categoryRaw = (row.alert_category ?? '').toString().trim().toLowerCase();
-  const isTh = locale === 'th';
-
-  const categoryLabel = categoryRaw && ALERT_CATEGORY_LABEL[categoryRaw]
-    ? (isTh ? ALERT_CATEGORY_LABEL[categoryRaw].th : ALERT_CATEGORY_LABEL[categoryRaw].en)
-    : '';
-
-  let title = categoryLabel || (categoryRaw || (row.alert_type ?? '').toString().trim() || msg.split('.')[0]?.trim() || msg.slice(0, 50) || '—');
-  if (title === 'Alert' || /^alert$/i.test(title)) title = '—';
-  title = title.length > 60 ? title.slice(0, 57) + '...' : title;
-
-  const description = msg.length > 60 ? msg.slice(0, 97) + '...' : msg;
-  return { title, description };
-}
-
-function getActionRecommendation(alertType: string | null | undefined): string | null {
-  if (!alertType) return null;
-  const key = normalizeAlertType(alertType);
-  return ACTION_RECOMMENDATIONS[key] ?? null;
-}
-
 /** Severity badge color: high → red, medium → orange, low → yellow. */
 function getSeverityBadgeColor(severity: string | null | undefined): { bg: string; text: string; border: string } {
   const s = (severity ?? '').toString().toLowerCase();
@@ -134,11 +50,8 @@ function getSeverityBadgeColor(severity: string | null | undefined): { bg: strin
   return { bg: '#fefce8', text: '#a16207', border: '#eab308' };
 }
 
-/** Unified alert row: accommodation = branch_alerts_today + engine; F&B = fnb_alerts_today (alert_name as title, confidence as confidence_score). */
-type AlertDisplayRow = Pick<
-  BranchAlertsTodayRow,
-  'branch_id' | 'metric_date' | 'alert_type' | 'alert_message' | 'recommendation' | 'confidence_score' | 'estimated_revenue_impact'
-> & { alert_severity?: string | null; alert_name?: string | null };
+/** Display row: from branch_alerts_display; title and action from message_th/en and action_th/en. */
+type AlertDisplayRow = BranchAlertsDisplayRow;
 
 export default function BranchAlertsPage() {
   const { locale } = useI18n();
@@ -175,75 +88,20 @@ export default function BranchAlertsPage() {
     if (!branch?.id) return;
     setAlertsLoading(true);
     setAlertsError(null);
-    if (branch.moduleType === 'fnb') {
-      Promise.all([
-        getAlertsFromFnbAlertsToday(branch.id),
-        getFnbFinancialImpact(branch.id),
-      ])
-        .then(([rows, impact]) => {
-          const filtered = (rows as FnbAlertsTodayRow[]).filter((r) => r.alert_name != null && String(r.alert_name).trim() !== '');
-          const mapped: AlertDisplayRow[] = filtered.map((r) => ({
-            branch_id: r.branch_id,
-            metric_date: r.metric_date,
-            alert_type: r.alert_name ?? null,
-            alert_message: r.alert_message ?? null,
-            recommendation: r.recommendation ?? null,
-            confidence_score: r.confidence ?? null,
-            estimated_revenue_impact: r.estimated_revenue_impact ?? null,
-            alert_severity: null,
-            alert_name: r.alert_name ?? null,
-          }));
-          setAlertRows(mapped);
-          setFnbFinancialImpact(impact ?? null);
-        })
-        .catch((e) => {
-          setAlertsError(e instanceof Error ? e : new Error(String(e)));
-          setAlertRows([]);
-          setFnbFinancialImpact(null);
-        })
-        .finally(() => setAlertsLoading(false));
-      return;
-    }
-    setFnbFinancialImpact(null);
+    const businessType = branch.moduleType === 'fnb' ? 'fnb' : 'accommodation';
     Promise.all([
-      getAlertsFromBranchAlertsToday(branch.id),
-      getAlertsFromBranchIntelligenceEngine(branch.id),
+      getAlertsFromBranchAlertsDisplay(branch.id, businessType),
+      branch.moduleType === 'fnb' ? getFnbFinancialImpact(branch.id) : Promise.resolve(null),
     ])
-      .then(([today, engine]) => {
-        const todayNorm: AlertDisplayRow[] = (today as BranchAlertsTodayRow[]).map((r) => ({
-          branch_id: r.branch_id,
-          metric_date: r.metric_date,
-          alert_type: r.alert_type,
-          alert_message: r.alert_message,
-          recommendation: r.recommendation,
-          confidence_score: r.confidence_score,
-          estimated_revenue_impact: r.estimated_revenue_impact,
-          alert_severity: r.alert_severity,
-        }));
-        const engineNorm: AlertDisplayRow[] = (engine as BranchIntelligenceEngineRow[]).map((r) => ({
-          branch_id: r.branch_id,
-          metric_date: r.metric_date,
-          alert_type: r.alert_type,
-          alert_message: r.alert_message,
-          recommendation: r.recommendation,
-          confidence_score: r.confidence_score,
-          estimated_revenue_impact: r.estimated_revenue_impact,
-          alert_severity: null,
-        }));
-        const keys = new Set(todayNorm.map((r) => `${r.alert_type ?? ''}|${r.alert_message ?? ''}|${r.metric_date ?? ''}`));
-        const merged = [...todayNorm];
-        engineNorm.forEach((r) => {
-          const key = `${r.alert_type ?? ''}|${r.alert_message ?? ''}|${r.metric_date ?? ''}`;
-          if (!keys.has(key)) {
-            keys.add(key);
-            merged.push(r);
-          }
-        });
-        setAlertRows(merged);
+      .then(([rows, impact]) => {
+        setAlertRows(rows);
+        if (branch.moduleType === 'fnb' && impact != null) setFnbFinancialImpact(impact);
+        else setFnbFinancialImpact(null);
       })
       .catch((e) => {
         setAlertsError(e instanceof Error ? e : new Error(String(e)));
         setAlertRows([]);
+        setFnbFinancialImpact(null);
       })
       .finally(() => setAlertsLoading(false));
   }, [branch?.id, branch?.moduleType]);
@@ -252,18 +110,21 @@ export default function BranchAlertsPage() {
     fetchAlerts();
   }, [fetchAlerts]);
 
-  /** displayAlerts: F&B = no confidence filter, no dedupe (single source); accommodation = confidence >= 10, dedupe, sort by severity then metric_date desc. */
+  /** displayAlerts: one per alert_code (dedupe), confidence >= 10 for accommodation, sort by severity then metric_date desc. */
   const displayAlerts = useMemo(() => {
     const isFnb = branch?.moduleType === 'fnb';
-    const seen = new Set<string>();
     const filtered = alertRows.filter((row) => {
       if (!isFnb && effectiveConfidencePct(row.confidence_score) < 10) return false;
-      const key = `${row.alert_name ?? row.alert_type ?? ''}|${row.alert_message ?? ''}|${row.metric_date ?? ''}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
       return true;
     });
-    filtered.sort((a, b) => {
+    const uniqueByCode = Object.values(
+      filtered.reduce<Record<string, BranchAlertsDisplayRow>>((acc, alert) => {
+        const code = alert.alert_code ?? alert.metric_date ?? String(Math.random());
+        if (!acc[code]) acc[code] = alert;
+        return acc;
+      }, {})
+    );
+    uniqueByCode.sort((a, b) => {
       const orderA = severityOrder(a.alert_severity);
       const orderB = severityOrder(b.alert_severity);
       if (orderA !== orderB) return orderA - orderB;
@@ -271,12 +132,8 @@ export default function BranchAlertsPage() {
       const dateB = b.metric_date ?? '';
       return dateB.localeCompare(dateA);
     });
-    return filtered;
+    return uniqueByCode;
   }, [alertRows, branch?.moduleType]);
-
-  /** alert_type categories: risk (revenue at risk) vs opportunity (opportunity gain). Daily impact × 30 = monthly. Accommodation only. */
-  const ALERT_TYPES_REVENUE_AT_RISK = ['Revenue Collapse', 'Revenue Risk', 'Low Occupancy', 'Demand Weakening'];
-  const ALERT_TYPES_OPPORTUNITY_GAIN = ['Pricing Opportunity', 'Near Full Capacity', 'Strong Demand'];
 
   const financialMetrics = useMemo(() => {
     if (branch?.moduleType === 'fnb' && fnbFinancialImpact) {
@@ -287,38 +144,21 @@ export default function BranchAlertsPage() {
         warningCount: Number(fnbFinancialImpact.warnings) || 0,
       };
     }
-    const norm = (t: string | null | undefined) => (t ?? '').toString().trim();
-    const isRiskType = (type: string | null | undefined) =>
-      ALERT_TYPES_REVENUE_AT_RISK.some((k) => norm(type).toLowerCase() === k.toLowerCase());
-    const isOpportunityType = (type: string | null | undefined) =>
-      ALERT_TYPES_OPPORTUNITY_GAIN.some((k) => norm(type).toLowerCase() === k.toLowerCase());
-
-    const dailyRisk = displayAlerts
-      .filter((r) => isRiskType(r.alert_type))
-      .reduce((sum, r) => sum + Math.abs(Number(r.estimated_revenue_impact) || 0), 0);
-    const dailyGain = displayAlerts
-      .filter((r) => isOpportunityType(r.alert_type))
-      .reduce((sum, r) => sum + Math.max(0, Number(r.estimated_revenue_impact) || 0), 0);
-
+    const dailyRisk = displayAlerts.reduce((sum, r) => {
+      const v = Number(r.estimated_revenue_impact) || 0;
+      return sum + (v < 0 ? Math.abs(v) : 0);
+    }, 0);
+    const dailyGain = displayAlerts.reduce((sum, r) => {
+      const v = Number(r.estimated_revenue_impact) || 0;
+      return sum + (v > 0 ? v : 0);
+    }, 0);
     return {
       totalRevenueAtRisk: dailyRisk * 30,
       totalOpportunityGain: dailyGain * 30,
-      criticalCount: displayAlerts.filter((r) => (r as AlertDisplayRow).alert_severity === 'high').length,
-      warningCount: displayAlerts.filter((r) => (r as AlertDisplayRow).alert_severity === 'medium').length,
+      criticalCount: displayAlerts.filter((r) => (r.alert_severity ?? '').toString().toLowerCase() === 'high').length,
+      warningCount: displayAlerts.filter((r) => (r.alert_severity ?? '').toString().toLowerCase() === 'medium').length,
     };
   }, [displayAlerts, branch?.moduleType, fnbFinancialImpact]);
-
-  // Get category label
-  const getCategoryLabel = (domain: string): string => {
-    const categories: Record<string, { en: string; th: string }> = {
-      cash: { en: 'Cash', th: 'เงินสด' },
-      risk: { en: 'Risk', th: 'ความเสี่ยง' },
-      demand: { en: 'Demand', th: 'ความต้องการ' },
-      forecast: { en: 'Demand', th: 'ความต้องการ' },
-      labor: { en: 'Cost', th: 'ต้นทุน' },
-    };
-    return categories[domain]?.[locale] || domain;
-  };
 
   if (!mounted) {
     return (
@@ -371,7 +211,7 @@ export default function BranchAlertsPage() {
   return (
     <PageLayout title="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {/* Alerts: F&B = fnb_alerts_today only (alert_name, alert_message, recommendation, confidence, estimated_revenue_impact); accommodation = branch_alerts_today + engine */}
+        {/* Alerts: branch_alerts_display only; title = message_th/message_en, action = action_th/action_en from Supabase */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}>
           {displayAlerts.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
@@ -380,15 +220,14 @@ export default function BranchAlertsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {displayAlerts.map((row, idx) => {
-                const title = (row.alert_name ?? row.alert_type ?? '').toString().trim() || '—';
-                const message = (row.alert_message ?? '').toString().trim();
-                const recommendation = (row.recommendation ?? '').toString().trim();
+                const isTh = localeKey === 'th';
+                const alertTitle = (isTh ? (row.message_th ?? row.message_en) : (row.message_en ?? row.message_th)) ?? '';
+                const alertAction = (isTh ? (row.action_th ?? row.action_en) : (row.action_en ?? row.action_th)) ?? '';
                 const confidencePct = formatConfidenceScore(row.confidence_score);
                 const impact = row.estimated_revenue_impact != null && !Number.isNaN(Number(row.estimated_revenue_impact)) ? Number(row.estimated_revenue_impact) : null;
                 const severity = (row.alert_severity ?? 'low').toString().toLowerCase();
                 const severityColors = getSeverityBadgeColor(row.alert_severity);
-                const id = `engine-${row.branch_id}-${row.alert_name ?? row.alert_type ?? ''}-${row.metric_date ?? idx}`;
-                const isFnb = branch?.moduleType === 'fnb';
+                const id = `alert-${row.branch_id}-${row.alert_code ?? idx}-${row.metric_date ?? ''}`;
                 return (
                   <div
                     key={id}
@@ -402,8 +241,7 @@ export default function BranchAlertsPage() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 600 }}>⚠ {title || '—'}</span>
-                      {!isFnb && (
+                      <span style={{ fontWeight: 600 }}>⚠ {String(alertTitle).trim() || '—'}</span>
                       <span
                         style={{
                           padding: '0.2rem 0.5rem',
@@ -415,15 +253,13 @@ export default function BranchAlertsPage() {
                           textTransform: 'capitalize',
                         }}
                       >
-                        {severity || 'low'}
+                        {severity}
                       </span>
-                      )}
                     </div>
-                    {message && <div style={{ color: '#374151', marginBottom: '0.5rem' }}>{message}</div>}
-                    {recommendation && (
+                    {alertAction && (
                       <div style={{ fontSize: '13px', color: '#0369a1', marginBottom: '0.25rem' }}>
-                        {locale === 'th' ? 'แนะนำ: ' : 'Suggested action: '}
-                        <strong>{recommendation}</strong>
+                        {localeKey === 'th' ? 'แนะนำ: ' : 'Suggested action: '}
+                        <strong>{alertAction}</strong>
                       </div>
                     )}
                     {confidencePct != null && (
@@ -434,7 +270,7 @@ export default function BranchAlertsPage() {
                     )}
                     {impact != null && (
                       <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
-                        {localeKey === 'th' ? 'ผลกระทบโดยประมาณ: ' : 'Impact: '}
+                        {localeKey === 'th' ? 'ผลกระทบโดยประมาณ: ' : 'Estimated impact: '}
                         <strong>{hideFinancials ? '—' : `฿${formatCurrency(impact)}`}</strong>
                       </div>
                     )}
@@ -496,7 +332,7 @@ export default function BranchAlertsPage() {
           )}
         </SectionCard>
 
-        {/* All Active Alerts: F&B = fnb_alerts_today only; accommodation = branch_alerts_today + engine */}
+        {/* All Active Alerts: same as above, from branch_alerts_display; deduped by alert_code */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือนที่ใช้งานอยู่ทั้งหมด' : 'All Active Alerts'}>
           {displayAlerts.length === 0 ? (
             <div style={{
@@ -513,15 +349,14 @@ export default function BranchAlertsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {displayAlerts.map((row, idx) => {
-                const title = (row.alert_name ?? row.alert_type ?? '').toString().trim() || '—';
-                const message = (row.alert_message ?? '').toString().trim();
-                const recommendation = (row.recommendation ?? '').toString().trim();
+                const isTh = localeKey === 'th';
+                const alertTitle = (isTh ? (row.message_th ?? row.message_en) : (row.message_en ?? row.message_th)) ?? '';
+                const alertAction = (isTh ? (row.action_th ?? row.action_en) : (row.action_en ?? row.action_th)) ?? '';
                 const confidencePct = formatConfidenceScore(row.confidence_score);
                 const impact = row.estimated_revenue_impact != null && !Number.isNaN(Number(row.estimated_revenue_impact)) ? Number(row.estimated_revenue_impact) : null;
                 const severity = (row.alert_severity ?? 'low').toString().toLowerCase();
                 const severityColors = getSeverityBadgeColor(row.alert_severity);
-                const id = `active-${row.branch_id}-${row.alert_name ?? row.alert_type ?? ''}-${row.metric_date ?? idx}`;
-                const isFnbActive = branch?.moduleType === 'fnb';
+                const id = `active-${row.branch_id}-${row.alert_code ?? idx}-${row.metric_date ?? ''}`;
                 return (
                   <div
                     key={id}
@@ -535,8 +370,7 @@ export default function BranchAlertsPage() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 600 }}>⚠ {title || '—'}</span>
-                      {!isFnbActive && (
+                      <span style={{ fontWeight: 600 }}>⚠ {String(alertTitle).trim() || '—'}</span>
                       <span
                         style={{
                           padding: '0.2rem 0.5rem',
@@ -548,15 +382,13 @@ export default function BranchAlertsPage() {
                           textTransform: 'capitalize',
                         }}
                       >
-                        {severity || 'low'}
+                        {severity}
                       </span>
-                      )}
                     </div>
-                    {message && <div style={{ color: '#374151', marginBottom: '0.5rem' }}>{message}</div>}
-                    {recommendation && (
+                    {alertAction && (
                       <div style={{ fontSize: '13px', color: '#0369a1', marginBottom: '0.25rem' }}>
-                        {locale === 'th' ? 'แนะนำ: ' : 'Suggested action: '}
-                        <strong>{recommendation}</strong>
+                        {localeKey === 'th' ? 'แนะนำ: ' : 'Suggested action: '}
+                        <strong>{alertAction}</strong>
                       </div>
                     )}
                     {confidencePct != null && (
@@ -567,7 +399,7 @@ export default function BranchAlertsPage() {
                     )}
                     {impact != null && (
                       <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
-                        {localeKey === 'th' ? 'ผลกระทบโดยประมาณ: ' : 'Impact: '}
+                        {localeKey === 'th' ? 'ผลกระทบโดยประมาณ: ' : 'Estimated impact: '}
                         <strong>{hideFinancials ? '—' : `฿${formatCurrency(impact)}`}</strong>
                       </div>
                     )}

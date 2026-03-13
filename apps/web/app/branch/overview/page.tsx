@@ -17,7 +17,6 @@ import { useMonitoring } from '../../hooks/use-monitoring';
 import { useResolvedBranchData } from '../../hooks/use-resolved-branch-data';
 import { businessGroupService } from '../../services/business-group-service';
 import { operationalSignalsService } from '../../services/operational-signals-service';
-import { calculateHealthScoreFromAlerts, type HealthScoreCalculationResult } from '../../../../../core/sme-os/engine/services/alert-health-score-mapper';
 import { LoadingSpinner } from '../../components/loading-spinner';
 import { ErrorState } from '../../components/error-state';
 import { SectionCard } from '../../components/section-card';
@@ -45,7 +44,7 @@ import { getOperatingStatusData, getFnbOperatingStatus, type OperatingStatusRow,
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
 import { getAccommodationConfidenceLevel, getAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
-import { getHealthScoreFromBranchHealthMetrics } from '../../services/db/health-score-kpi-service';
+import { getHealthScoreFromAccommodationHealthToday, getHealthScoreFromFnbHealthToday } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
@@ -73,7 +72,7 @@ export default function BranchOverviewPage() {
   const [kpiRecommendations, setKpiRecommendations] = useState<{ recommendation: string; category?: string }[]>([]);
   // Owner dashboard: monthly fixed cost not configured (accommodation, owner/super_admin only)
   const [monthlyFixedCostStatus, setMonthlyFixedCostStatus] = useState<{ hasValue: boolean; dataDaysCount: number } | null>(null);
-  // Business Health Score card: only from branch_health_metrics
+  // Business Health Score card: from accommodation_health_today or fnb_health_today only (no frontend calculation)
   const [healthScore, setHealthScore] = useState<number | null>(null);
   // Confidence card: accommodation uses accommodation_data_coverage.confidence_level
   const [confidenceLevelFromCoverage, setConfidenceLevelFromCoverage] = useState<string | null>(null);
@@ -177,139 +176,10 @@ export default function BranchOverviewPage() {
 
   // PHASE 3: Calculate performance trends from daily_metrics
   // Compare last 7 days vs previous 7 days (requires minimum 14 days)
-  // PART 1.1: Declare before branchHealthScore useMemo to avoid initialization error
   const [dailyMetricsForTrends, setDailyMetricsForTrends] = useState<DailyMetric[] | null>(null);
   
 
-  // Calculate branch health score directly from active alerts weighted by money impact
-  // Health score must compute from active alerts weighted by money impact
-  // Wrapped in try-catch for safety
-  const branchHealthScore = useMemo(() => {
-    if (!branch || !branch.id || branchAlerts.length === 0) return null;
-    
-    try {
-      // Calculate health score from active alerts weighted by money impact
-      const healthScoreResult = calculateHealthScoreFromAlerts(branchAlerts as AlertContract[]);
-      // Ensure score is valid (0-100, never NaN)
-      const healthScore = Math.max(0, Math.min(100, healthScoreResult.score || 0));
-      if (isNaN(healthScore) || !isFinite(healthScore)) {
-        return null; // Return null to trigger fallback UI
-      }
-    
-    // Calculate data confidence: freshnessScore * 0.5 + dependencyCoverageScore * 0.5
-    const businessGroup = businessGroupService.getBusinessGroup();
-    if (!businessGroup) return null;
-    
-    const branchSignals = operationalSignalsService.getAllSignals(branch.id, businessGroup.id);
-    const latestSignal = branchSignals[0];
-    
-    // Calculate freshness score (0-100)
-    const now = new Date();
-    const dataAgeMs = latestSignal 
-      ? now.getTime() - latestSignal.timestamp.getTime()
-      : Infinity;
-    const dataAgeDays = Math.floor(dataAgeMs / (1000 * 60 * 60 * 24));
-    const freshnessScore = latestSignal && dataAgeDays <= 7
-      ? 100
-      : latestSignal && dataAgeDays > 7
-      ? Math.max(0, 100 - (dataAgeDays - 7) * 5)
-      : 0;
-    
-    // Calculate dependency coverage score (0-100)
-    let dependencyCoverageScore = 0;
-    try {
-      const latestMetrics = operationalSignalsService.getLatestMetrics(branch.id, businessGroup.id, undefined);
-      if (latestMetrics) {
-        const { calculateDataConfidence } = require('../../models/branch-metrics');
-        const dependencyScore = calculateDataConfidence(latestMetrics);
-        dependencyCoverageScore = dependencyScore; // Already 0-100
-      } else {
-        // Fallback: use signal count as proxy
-        const signalCount = branchSignals.length;
-        dependencyCoverageScore = signalCount >= 14 ? 100 : signalCount >= 7 ? 85 : signalCount >= 3 ? 70 : 50;
-      }
-    } catch (e) {
-      // Fallback: use signal count as proxy
-      const signalCount = branchSignals.length;
-      dependencyCoverageScore = signalCount >= 14 ? 100 : signalCount >= 7 ? 85 : signalCount >= 3 ? 70 : 50;
-    }
-    
-    // Data confidence = freshnessScore * 0.5 + dependencyCoverageScore * 0.5 (convert to 0-1)
-    let dataConfidence = (freshnessScore * 0.5 + dependencyCoverageScore * 0.5) / 100;
-    
-    // PART 1.1: Fix confidence calculation - ensure never shows 0 when data exists
-    // Confidence must NEVER show 0 if >= 7 days of data exist OR required daily metrics exist
-    // Use dailyMetricsForTrends for actual data existence (most accurate)
-    const hasRequiredData = branchSignals.length > 0 && latestSignal !== undefined;
-    const hasDailyMetrics = dailyMetricsForTrends && dailyMetricsForTrends.length > 0;
-    
-    // Calculate actual data coverage from daily_metrics (most accurate)
-    let actualDataCoverage = 0;
-    if (hasDailyMetrics) {
-      // Count unique days with data
-      const uniqueDays = new Set(dailyMetricsForTrends.map(m => m.date));
-      actualDataCoverage = uniqueDays.size;
-    } else if (coverageDays > 0) {
-      actualDataCoverage = coverageDays;
-    }
-    
-    // PART 1.1: Confidence guard - never show 0 if data exists
-    // Confidence must be computed from: Data coverage, Missing required fields, Freshness, Data mode (real vs simulation)
-    // Minimum confidence floor = 40 if basic daily data exists
-    // Minimum confidence floor = 60 if >= 7 days exist
-    
-    // Guard: if (confidence <= 0 && dataCoverage > 7 days) { confidence = 60; }
-    if (actualDataCoverage >= 7 && dataConfidence <= 0) {
-      dataConfidence = 0.60; // Minimum 60% if we have 7+ days
-    }
-    
-    // Additional guards for different coverage levels
-    if (actualDataCoverage >= 7) {
-      // If we have >= 7 days of data, ensure minimum confidence floor
-      if (dataConfidence <= 0) {
-        dataConfidence = 0.60; // Minimum 60% if we have 7+ days
-      } else if (dataConfidence < 0.40) {
-        dataConfidence = Math.max(0.40, dataConfidence); // Minimum floor of 40% if basic data exists
-      }
-    } else if (actualDataCoverage > 0 && dataConfidence <= 0) {
-      // If we have any daily data, ensure minimum floor
-      dataConfidence = 0.40; // Minimum floor of 40% if any daily data exists
-    } else if (hasRequiredData && dataConfidence <= 0) {
-      // If we have required signals/metrics but no daily data count, still set minimum
-      dataConfidence = 0.40; // Minimum floor of 40% if basic data exists
-    }
-    
-    
-    // Final guard: Confidence must NEVER show 0 if >= 7 days of data exist OR required daily metrics exist
-    if (actualDataCoverage >= 7 && dataConfidence <= 0) {
-      dataConfidence = 0.60; // Force 60% if we have 7+ days
-    } else if (actualDataCoverage > 0 && dataConfidence <= 0) {
-      dataConfidence = 0.40; // Force 40% if we have any data
-    }
-    
-    // Ensure confidence is valid (0-1)
-    dataConfidence = Math.max(0, Math.min(1, dataConfidence));
-    
-    // Get alert counts directly from branchAlerts
-    const alertCountsFromResult = {
-      critical: branchAlerts.filter(a => a.severity === 'critical').length,
-      warning: branchAlerts.filter(a => a.severity === 'warning').length,
-      informational: branchAlerts.filter(a => a.severity === 'informational').length,
-    };
-    
-      return {
-        healthScore,
-        dataConfidence,
-        alertCounts: alertCountsFromResult,
-      };
-    } catch (e) {
-      // Log error in DEV mode only
-      if (process.env.NODE_ENV === 'development') {
-        console.error('[BranchOverview] Error calculating health score:', e);
-      }
-      return null; // Return null to trigger fallback UI
-    }
-  }, [branch, branchAlerts, coverageDays, dailyMetricsForTrends]); // PART 1.1 & 2: Include dailyMetricsForTrends to trigger recalculation
+  // Business Health Score comes only from Supabase (accommodation_health_today / fnb_health_today). No frontend calculation.
 
   // Calculate alert counts (include anomaly alerts for display)
   const alertCounts = useMemo(() => {
@@ -450,19 +320,20 @@ export default function BranchOverviewPage() {
     fetchDailyMetrics();
   }, [branch?.id]);
 
-  // Operating Status: F&B = fnb_operating_status only; accommodation = accommodation_latest_metrics + confidence + early signal + branch_health_metrics
+  // Operating Status: F&B = fnb_operating_status + fnb_health_today; accommodation = accommodation_latest_metrics + confidence + early signal + accommodation_health_today
   const refreshOperatingStatus = useCallback(() => {
     if (!branch?.id) return;
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
+      getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
     } else {
       setFnbOperatingStatus(null);
       getOperatingStatusData(branch.id, 'accommodation').then(setOperatingStatusData);
       if (branch.moduleType === 'accommodation') {
         getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
         getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
-        getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
+        getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
       }
     }
     getBranchLearningPhase(branch.id).then(setLearningPhase);
@@ -485,10 +356,11 @@ export default function BranchOverviewPage() {
           });
           getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
           getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
-          getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
+          getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
         }
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
+          getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
         }
       }
     };
@@ -507,13 +379,16 @@ export default function BranchOverviewPage() {
     }).catch(() => setKpiRecommendations([]));
   }, [branch?.id]);
 
-  // Business Health Score card: accommodation only (branch_health_metrics); F&B uses fnb_operating_status.health_score
+  // Business Health Score card: from accommodation_health_today (accommodation) or fnb_health_today (F&B) only
   useEffect(() => {
-    if (!branch?.id || branch.moduleType !== 'accommodation') {
-      if (branch?.moduleType === 'fnb') setHealthScore(null);
-      return;
+    if (!branch?.id) return;
+    if (branch.moduleType === 'accommodation') {
+      getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
+    } else if (branch.moduleType === 'fnb') {
+      getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
+    } else {
+      setHealthScore(null);
     }
-    getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
   }, [branch?.id, branch?.moduleType]);
 
   // Confidence card: accommodation uses accommodation_data_coverage.confidence_level
@@ -864,14 +739,14 @@ export default function BranchOverviewPage() {
     return actions;
   }, [topRevenueLeaks, mergedBranchAlerts, locale]);
 
-  // Determine health status label
+  // Determine health status label from Supabase health score only
   const healthStatus = useMemo(() => {
-    if (!branchHealthScore) return null;
-    const score = branchHealthScore.healthScore;
+    if (healthScore == null) return null;
+    const score = Number(healthScore);
     if (score >= 80) return { label: locale === 'th' ? 'เสถียร' : 'Stable', color: '#10b981' };
     if (score >= 60) return { label: locale === 'th' ? 'มีความเสี่ยง' : 'At Risk', color: '#f59e0b' };
     return { label: locale === 'th' ? 'วิกฤต' : 'Critical', color: '#ef4444' };
-  }, [branchHealthScore, locale]);
+  }, [healthScore, locale]);
 
   const hospitalityLabels = getHospitalityLabels(branch ?? null, locale === 'th' ? 'th' : 'en');
 
@@ -1021,10 +896,8 @@ export default function BranchOverviewPage() {
           const branchType = branch?.moduleType;
           const isFnb = branchType === 'fnb';
           const isAccommodation = branchType === 'accommodation';
-          // F&B: all from fnb_operating_status; Accommodation: operatingStatusData + healthScore + confidenceLevelFromCoverage + accommodationEarlySignal
-          const healthVal = isFnb
-            ? (fnbOperatingStatus?.health_score ?? null)
-            : (healthScore ?? null);
+          // Business Health Score: always from Supabase (accommodation_health_today or fnb_health_today)
+          const healthVal = healthScore ?? null;
           const revenueVal = isFnb
             ? (fnbOperatingStatus?.todays_revenue ?? null)
             : (operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? null);
@@ -1281,7 +1154,7 @@ export default function BranchOverviewPage() {
             </SectionCard>
           }
         >
-          {branchHealthScore ? (
+          {healthScore != null ? (
             <SectionCard title={locale === 'th' ? 'ภาพรวมสุขภาพสาขา' : 'Branch Health Snapshot'}>
             <div style={{
               display: 'flex',
@@ -1291,7 +1164,7 @@ export default function BranchOverviewPage() {
               backgroundColor: '#f9fafb',
               borderRadius: '8px',
             }}>
-              {/* Left: Health Score */}
+              {/* Left: Health Score (from Supabase only) */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                 <div>
                   <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
@@ -1300,10 +1173,10 @@ export default function BranchOverviewPage() {
                   <div style={{
                     fontSize: '48px',
                     fontWeight: 700,
-                    color: branchHealthScore.healthScore >= 80 ? '#10b981' : branchHealthScore.healthScore >= 60 ? '#f59e0b' : '#ef4444',
+                    color: healthScore >= 80 ? '#10b981' : healthScore >= 60 ? '#f59e0b' : '#ef4444',
                     lineHeight: '1',
                   }}>
-                    {Math.round(branchHealthScore.healthScore)}
+                    {Math.round(healthScore)}
                   </div>
                 </div>
                 <div>
@@ -1319,7 +1192,7 @@ export default function BranchOverviewPage() {
                     {healthStatus?.label}
                   </div>
                   <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.5rem' }}>
-                    {locale === 'th' ? `ความมั่นใจ: ${anomalyConfidenceScore ?? Math.round(branchHealthScore.dataConfidence * 100)}%` : `Confidence: ${anomalyConfidenceScore ?? Math.round(branchHealthScore.dataConfidence * 100)}%`}
+                    {locale === 'th' ? `ความมั่นใจ: ${anomalyConfidenceScore != null ? `${Math.round(anomalyConfidenceScore)}%` : '—'}` : `Confidence: ${anomalyConfidenceScore != null ? `${Math.round(anomalyConfidenceScore)}%` : '—'}`}
                   </div>
                 </div>
               </div>
