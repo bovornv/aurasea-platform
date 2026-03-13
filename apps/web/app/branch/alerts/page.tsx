@@ -92,8 +92,8 @@ const ACTION_RECOMMENDATIONS: Record<string, string> = {
   capacity: 'Increase room price',
 };
 
-/** Row shape shared by latest, active, engine, and today alerts. */
-type AlertRowLike = BranchLatestAlertRow | BranchActiveAlertRow | BranchAlertsEngineRow | BranchAlertsTodayRow;
+/** Row shape for formatAlertCard (branch_alerts_today or branch_intelligence_engine). */
+type AlertRowLike = BranchAlertsTodayRow | BranchIntelligenceEngineRow;
 
 /** Card title = alert_category (localized); message = alert_message; never use "Alert" as title. */
 function formatAlertCard(
