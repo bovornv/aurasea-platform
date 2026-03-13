@@ -283,8 +283,8 @@ export default function BranchAlertsPage() {
       return {
         totalRevenueAtRisk: Number(fnbFinancialImpact.total_revenue_at_risk) || 0,
         totalOpportunityGain: Number(fnbFinancialImpact.total_opportunity_gain) || 0,
-        criticalCount: Number(fnbFinancialImpact.critical_count) || 0,
-        warningCount: Number(fnbFinancialImpact.warning_count) || 0,
+        criticalCount: Number(fnbFinancialImpact.critical_alerts) || 0,
+        warningCount: Number(fnbFinancialImpact.warnings) || 0,
       };
     }
     const norm = (t: string | null | undefined) => (t ?? '').toString().trim();
@@ -371,7 +371,7 @@ export default function BranchAlertsPage() {
   return (
     <PageLayout title="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {/* Alerts: branch_alerts_today + branch_active_alerts (engine); hide if confidence < 10; fields: alert_type, alert_message, recommendation, estimated_revenue_impact, confidence_score */}
+        {/* Alerts: F&B = fnb_alerts_today only (alert_name, alert_message, recommendation, confidence, estimated_revenue_impact); accommodation = branch_alerts_today + engine */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}>
           {displayAlerts.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>

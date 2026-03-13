@@ -380,13 +380,14 @@ export interface FnbFinancialImpactRow {
   branch_id: string;
   total_revenue_at_risk?: number | null;
   total_opportunity_gain?: number | null;
-  critical_count?: number | null;
-  warning_count?: number | null;
+  critical_alerts?: number | null;
+  warnings?: number | null;
   [key: string]: unknown;
 }
 
 /**
  * Fetch financial impact from fnb_financial_impact for an F&B branch.
+ * Uses .single() as per view contract; returns null when no row or error.
  */
 export async function getFnbFinancialImpact(
   branchId: string
@@ -400,7 +401,7 @@ export async function getFnbFinancialImpact(
       .from('fnb_financial_impact')
       .select('*')
       .eq('branch_id', branchId)
-      .maybeSingle();
+      .single();
     if (error) return null;
     return data as FnbFinancialImpactRow | null;
   } catch {
