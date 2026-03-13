@@ -369,7 +369,6 @@ export interface BranchAlertsDisplayRow {
 
 /**
  * Fetch alerts from branch_alerts_display for a branch. Filter by business_type so Accommodation and F&B are separate.
- * No duplicate sources; all alert text comes from Supabase (message_th/en, action_th/en).
  */
 export async function getAlertsFromBranchAlertsDisplay(
   branchId: string,
@@ -388,6 +387,29 @@ export async function getAlertsFromBranchAlertsDisplay(
       .order('metric_date', { ascending: false });
     if (error) return [];
     return (data ?? []) as BranchAlertsDisplayRow[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch alerts from fnb_alerts_today for F&B. Used as fallback when branch_alerts_display returns no rows.
+ */
+export async function getAlertsFromFnbAlertsToday(
+  branchId: string
+): Promise<FnbAlertsTodayRow[]> {
+  if (branchId == null || branchId === '') return [];
+  if (!isSupabaseAvailable()) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('fnb_alerts_today')
+      .select('*')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false });
+    if (error) return [];
+    return (data ?? []) as FnbAlertsTodayRow[];
   } catch {
     return [];
   }

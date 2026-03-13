@@ -216,17 +216,23 @@ export default function FnbDailyEntryPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               {/* Total Customers */}
               <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  marginBottom: '0.5rem',
-                  color: '#374151',
-                }}>
+                <label
+                  htmlFor="fnb-daily-total-customers"
+                  style={{
+                    display: 'block',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    marginBottom: '0.5rem',
+                    color: '#374151',
+                  }}
+                >
                   {locale === 'th' ? 'จำนวนลูกค้า (วันนี้)' : 'Total Customers (Today)'} <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <input
+                  id="fnb-daily-total-customers"
+                  name="totalCustomers"
                   type="text"
+                  autoComplete="off"
                   value={formData.totalCustomers}
                   onChange={(e) => {
                     const formatted = formatNumberWithCommas(e.target.value);
@@ -253,17 +259,23 @@ export default function FnbDailyEntryPage() {
 
               {/* Total Sales */}
               <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  marginBottom: '0.5rem',
-                  color: '#374151',
-                }}>
+                <label
+                  htmlFor="fnb-daily-total-sales"
+                  style={{
+                    display: 'block',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    marginBottom: '0.5rem',
+                    color: '#374151',
+                  }}
+                >
                   {locale === 'th' ? 'ยอดขายรวม (วันนี้)' : 'Total Sales (Today)'} <span style={{ color: '#dc2626' }}>*</span>
                 </label>
                 <input
+                  id="fnb-daily-total-sales"
+                  name="totalSales"
                   type="text"
+                  autoComplete="off"
                   value={formData.totalSales}
                   onChange={(e) => {
                     const formatted = formatNumberWithCommas(e.target.value);
