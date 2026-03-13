@@ -368,12 +368,10 @@ export interface BranchAlertsDisplayRow {
 }
 
 /**
- * Fetch alerts from branch_alerts_display for a branch. Filter by business_type so Accommodation and F&B are separate.
+ * Fetch alerts from branch_alerts_display for a branch.
+ * View filters alerts internally; no business_type filter. Map: message_en/th → title, action_en/th → suggested action, confidence_score, estimated_revenue_impact.
  */
-export async function getAlertsFromBranchAlertsDisplay(
-  branchId: string,
-  businessType: 'accommodation' | 'fnb'
-): Promise<BranchAlertsDisplayRow[]> {
+export async function getAlertsFromBranchAlertsDisplay(branchId: string): Promise<BranchAlertsDisplayRow[]> {
   if (branchId == null || branchId === '') return [];
   if (!isSupabaseAvailable()) return [];
   const supabase = getSupabaseClient();
@@ -383,7 +381,6 @@ export async function getAlertsFromBranchAlertsDisplay(
       .from('branch_alerts_display')
       .select('*')
       .eq('branch_id', branchId)
-      .eq('business_type', businessType)
       .order('metric_date', { ascending: false });
     if (error) return [];
     return (data ?? []) as BranchAlertsDisplayRow[];

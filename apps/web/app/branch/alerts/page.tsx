@@ -21,12 +21,10 @@ import { getSeverityColor } from '../../utils/alert-utils';
 import { runAppAlertValidation, runFullAlertValidation } from '../../lib/run-alert-validation-app';
 import {
   getAlertsFromBranchAlertsDisplay,
-  getAlertsFromFnbAlertsToday,
   getFnbFinancialImpact,
   severityOrder,
   type BranchAlertsDisplayRow,
   type FnbFinancialImpactRow,
-  type FnbAlertsTodayRow,
 } from '../../services/db/kpi-analytics-service';
 
 /** Display confidence from DB: if value <= 1 treat as 0–1 fraction and show as %, else show as 0–100. */
@@ -90,49 +88,13 @@ export default function BranchAlertsPage() {
     if (!branch?.id) return;
     setAlertsLoading(true);
     setAlertsError(null);
-    const businessType = branch.moduleType === 'fnb' ? 'fnb' : 'accommodation';
-    if (branch.moduleType === 'fnb') {
-      getAlertsFromBranchAlertsDisplay(branch.id, 'fnb')
-        .then((displayRows) => {
-          if (displayRows.length > 0) {
-            setAlertRows(displayRows);
-            return;
-          }
-          return getAlertsFromFnbAlertsToday(branch.id).then((fnbRows: FnbAlertsTodayRow[]) => {
-            const filtered = fnbRows.filter((r) => r.alert_name != null && String(r.alert_name).trim() !== '');
-            const mapped: BranchAlertsDisplayRow[] = filtered.map((r) => ({
-              branch_id: r.branch_id,
-              metric_date: r.metric_date,
-              business_type: 'fnb',
-              alert_code: r.alert_name ?? r.metric_date ?? undefined,
-              message_th: r.alert_message ?? r.alert_name ?? null,
-              message_en: r.alert_name ?? r.alert_message ?? null,
-              action_th: r.recommendation ?? null,
-              action_en: r.recommendation ?? null,
-              confidence_score: r.confidence ?? null,
-              estimated_revenue_impact: r.estimated_revenue_impact ?? null,
-              alert_severity: null,
-            }));
-            setAlertRows(mapped);
-          });
-        })
-        .then(() => getFnbFinancialImpact(branch.id))
-        .then((impact) => setFnbFinancialImpact(impact ?? null))
-        .catch((e) => {
-          setAlertsError(e instanceof Error ? e : new Error(String(e)));
-          setAlertRows([]);
-          setFnbFinancialImpact(null);
-        })
-        .finally(() => setAlertsLoading(false));
-      return;
-    }
     Promise.all([
-      getAlertsFromBranchAlertsDisplay(branch.id, 'accommodation'),
-      Promise.resolve(null),
+      getAlertsFromBranchAlertsDisplay(branch.id),
+      branch.moduleType === 'fnb' ? getFnbFinancialImpact(branch.id) : Promise.resolve(null),
     ])
-      .then(([rows]) => {
+      .then(([rows, impact]) => {
         setAlertRows(rows);
-        setFnbFinancialImpact(null);
+        setFnbFinancialImpact(impact ?? null);
       })
       .catch((e) => {
         setAlertsError(e instanceof Error ? e : new Error(String(e)));
