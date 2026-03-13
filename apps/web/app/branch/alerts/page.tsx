@@ -32,6 +32,7 @@ import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts'
 import { runAppAlertValidation, runFullAlertValidation } from '../../lib/run-alert-validation-app';
 import {
   getAlertsFromBranchAlertsToday,
+  getActiveAlertsFromBranchActiveAlerts,
   severityOrder,
   type BranchLatestAlertRow,
   type BranchActiveAlertRow,
@@ -51,6 +52,13 @@ function formatConfidenceScore(confidence_score: number | null | undefined): num
   const n = Number(confidence_score);
   const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
   return Math.min(100, Math.max(0, pct));
+}
+
+/** Effective confidence as 0–100 for filtering. Hide alerts when < 10. */
+function effectiveConfidencePct(confidence_score: number | null | undefined): number {
+  if (confidence_score == null || Number.isNaN(Number(confidence_score))) return 0;
+  const n = Number(confidence_score);
+  return n <= 1 ? n * 100 : n;
 }
 
 /** Localized alert message by type: th and en. */
@@ -187,13 +195,23 @@ export default function BranchAlertsPage() {
   // STEP 3: Use resolved branch data (single source of truth)
   const branchMetrics = useResolvedBranchData(branch?.id);
   
-  // branch_alerts_today: raw rows; branch_learning_phase for learning_phase
+  // Hospitality alert engine: branch_alerts_today + branch_active_alerts (analytics layer: branch_alerts_engine)
   const [todayAlerts, setTodayAlerts] = useState<BranchAlertsTodayRow[]>([]);
+  const [activeAlerts, setActiveAlerts] = useState<BranchActiveAlertRow[]>([]);
   const [learningPhase, setLearningPhase] = useState<{ data_days?: number | null; learning_phase?: string | null } | null>(null);
 
   useEffect(() => {
     if (!branch?.id) return;
-    getAlertsFromBranchAlertsToday(branch.id).then(setTodayAlerts).catch(() => setTodayAlerts([]));
+    Promise.all([
+      getAlertsFromBranchAlertsToday(branch.id),
+      getActiveAlertsFromBranchActiveAlerts(branch.id),
+    ]).then(([today, active]) => {
+      setTodayAlerts(today);
+      setActiveAlerts(active);
+    }).catch(() => {
+      setTodayAlerts([]);
+      setActiveAlerts([]);
+    });
     getBranchLearningPhase(branch.id).then((row) => setLearningPhase(row ? { data_days: row.data_days, learning_phase: row.learning_phase } : null)).catch(() => setLearningPhase(null));
   }, [branch?.id]);
 
@@ -211,13 +229,21 @@ export default function BranchAlertsPage() {
     return 0;
   }, [learningPhase?.data_days, learningPhase?.learning_phase]);
 
-  /** No duplicates; hide if learning_phase < alert_phase; order by severity (high, medium, else) then metric_date desc. */
+  /** Merged from branch_alerts_today + branch_active_alerts; hide if confidence_score < 10; dedupe; order by severity then metric_date desc. */
   const displayAlerts = useMemo(() => {
+    type EngineRow = BranchAlertsTodayRow | BranchActiveAlertRow;
+    const merged: EngineRow[] = [...todayAlerts];
+    const todayKeys = new Set(todayAlerts.map((r) => `${r.alert_type ?? ''}|${r.alert_message ?? ''}|${r.metric_date ?? ''}`));
+    activeAlerts.forEach((r) => {
+      const key = `${r.alert_type ?? ''}|${r.alert_message ?? ''}|${r.metric_date ?? ''}`;
+      if (!todayKeys.has(key)) merged.push(r);
+    });
     const seen = new Set<string>();
-    const filtered = todayAlerts.filter((row) => {
-      const phase = row.alert_phase != null && !Number.isNaN(Number(row.alert_phase)) ? Number(row.alert_phase) : 1;
+    const filtered = merged.filter((row) => {
+      if (effectiveConfidencePct(row.confidence_score) < 10) return false;
+      const phase = (row as BranchAlertsTodayRow).alert_phase != null && !Number.isNaN(Number((row as BranchAlertsTodayRow).alert_phase)) ? Number((row as BranchAlertsTodayRow).alert_phase) : 1;
       if (currentLearningPhase < phase) return false;
-      const key = `${row.alert_type ?? ''}|${row.alert_message ?? ''}|${row.alert_category ?? ''}`;
+      const key = `${row.alert_type ?? ''}|${row.alert_message ?? ''}|${row.alert_category ?? ''}|${row.metric_date ?? ''}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -231,7 +257,7 @@ export default function BranchAlertsPage() {
       return dateB.localeCompare(dateA);
     });
     return filtered;
-  }, [todayAlerts, currentLearningPhase]);
+  }, [todayAlerts, activeAlerts, currentLearningPhase]);
 
   // Fallback: daily metrics for financial impact when using engine alerts
   const [dailyMetricsLast30Days, setDailyMetricsLast30Days] = useState<any[]>([]);
@@ -501,7 +527,7 @@ export default function BranchAlertsPage() {
   return (
     <PageLayout title="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {/* Alerts: branch_alerts_today — title=alert_type, message=alert_message, recommendation, confidence_score, estimated_revenue_impact */}
+        {/* Alerts: branch_alerts_today + branch_active_alerts (engine); hide if confidence < 10; fields: alert_type, alert_message, recommendation, estimated_revenue_impact, confidence_score */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}>
           {displayAlerts.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
@@ -700,7 +726,7 @@ export default function BranchAlertsPage() {
           </SectionCard>
         )}
 
-        {/* SECTION 3: All Active Alerts (branch_alerts_today); System stable only when none */}
+        {/* SECTION 3: All Active Alerts (branch_alerts_today + branch_active_alerts); System stable only when none */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือนที่ใช้งานอยู่ทั้งหมด' : 'All Active Alerts'}>
           {displayAlerts.length === 0 ? (
             <div style={{

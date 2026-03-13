@@ -146,17 +146,20 @@ export interface BranchLatestAlertRow {
   [key: string]: unknown;
 }
 
-/** Row from branch_active_alerts (alerts from last 3 days). */
+/** Row from branch_active_alerts (alerts from last 3 days). Same display shape as BranchAlertsTodayRow. */
 export interface BranchActiveAlertRow {
   branch_id: string;
   metric_date?: string | null;
   alert_message?: string | null;
   alert_type?: string | null;
   alert_category?: string | null;
+  alert_severity?: string | null;
+  recommendation?: string | null;
+  estimated_revenue_impact?: number | null;
+  confidence_score?: number | null;
   revenue_alert?: string | null;
   customer_alert?: string | null;
   occupancy_alert?: string | null;
-  confidence_score?: number | null;
   [key: string]: unknown;
 }
 
