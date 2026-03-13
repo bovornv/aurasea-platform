@@ -5,16 +5,12 @@
  */
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageLayout } from '../../components/page-layout';
 import { useOrgBranchPaths } from '../../hooks/use-org-branch-paths';
 import { useI18n } from '../../hooks/use-i18n';
-import { useHospitalityAlerts } from '../../hooks/use-hospitality-alerts';
-import { useAlertStore } from '../../contexts/alert-store-context';
 import { useCurrentBranch } from '../../hooks/use-current-branch';
-import { useAlertHistory } from '../../hooks/use-alert-history';
-import { useResolvedBranchData } from '../../hooks/use-resolved-branch-data';
 import { useSystemValidation } from '../../hooks/use-system-validation';
 import { useUserRole } from '../../contexts/user-role-context';
 import { LoadingSpinner } from '../../components/loading-spinner';
@@ -22,24 +18,14 @@ import { ErrorState } from '../../components/error-state';
 import { SectionCard } from '../../components/section-card';
 import { formatCurrency } from '../../utils/formatting';
 import { getSeverityColor, getSeverityLabel } from '../../utils/alert-utils';
-import { formatDateTime } from '../../utils/date-utils';
-import { safeNumber } from '../../utils/safe-number';
-import { calculateRevenueExposure } from '../../utils/revenue-exposure-calculator';
-import { operationalSignalsService } from '../../services/operational-signals-service';
-import { businessGroupService } from '../../services/business-group-service';
-import type { ExtendedAlertContract } from '../../services/monitoring-service';
-import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import { runAppAlertValidation, runFullAlertValidation } from '../../lib/run-alert-validation-app';
 import {
   getAlertsFromBranchAlertsToday,
-  getActiveAlertsFromBranchActiveAlerts,
+  getAlertsFromBranchIntelligenceEngine,
   severityOrder,
-  type BranchLatestAlertRow,
-  type BranchActiveAlertRow,
-  type BranchAlertsEngineRow,
   type BranchAlertsTodayRow,
+  type BranchIntelligenceEngineRow,
 } from '../../services/db/kpi-analytics-service';
-import { getBranchLearningPhase } from '../../services/db/branch-metrics-info-service';
 
 /** Normalize alert_type from DB to key (e.g. "Revenue Risk" → "revenue_risk"). */
 function normalizeAlertType(type: string): string {
@@ -144,18 +130,23 @@ function getSeverityBadgeColor(severity: string | null | undefined): { bg: strin
   return { bg: '#fefce8', text: '#a16207', border: '#eab308' };
 }
 
+/** Unified alert row from branch_alerts_today or branch_intelligence_engine (display fields only). */
+type AlertDisplayRow = Pick<
+  BranchAlertsTodayRow,
+  'branch_id' | 'metric_date' | 'alert_type' | 'alert_message' | 'recommendation' | 'confidence_score' | 'estimated_revenue_impact'
+> & { alert_severity?: string | null };
+
 export default function BranchAlertsPage() {
   const { locale } = useI18n();
   const router = useRouter();
   const paths = useOrgBranchPaths();
-  const { alerts, loading, error, refreshAlerts } = useHospitalityAlerts();
-  const { alerts: rawAlerts } = useAlertStore();
   const { branch } = useCurrentBranch();
-  const { history } = useAlertHistory();
   const { role } = useUserRole();
   const hideFinancials = role?.canViewOnly === true;
   const [mounted, setMounted] = useState(false);
-  const [showResolved, setShowResolved] = useState(false);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [alertsError, setAlertsError] = useState<Error | null>(null);
+  const [alertRows, setAlertRows] = useState<AlertDisplayRow[]>([]);
   const [validationRunning, setValidationRunning] = useState(false);
   const [validationResult, setValidationResult] = useState<{
     branchType: 'accommodation' | 'fnb';
@@ -167,83 +158,71 @@ export default function BranchAlertsPage() {
   const [fullValidationRunning, setFullValidationRunning] = useState(false);
   const [fullValidationResult, setFullValidationResult] = useState<string | null>(null);
 
-  /** Use for alert localization: th when Thai, else en. */
   const localeKey = locale === 'th' || String(locale || '').toLowerCase().startsWith('th') ? 'th' : 'en';
 
-  // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Filter alerts for current branch only and exclude resolved alerts
-  const branchAlerts = useMemo(() => {
-    if (!mounted || !branch || !rawAlerts) return [];
-    return rawAlerts.filter(alert => {
-      // Must belong to current branch
-      if (alert.branchId !== branch.id) return false;
-      
-      // PART 3: Exclude resolved alerts
-      const extended = alert as ExtendedAlertContract;
-      if (extended.status === 'resolved' || extended.resolvedAt) return false;
-      
-      return true;
-    });
-  }, [rawAlerts, branch, mounted]);
-
-  // STEP 3: Use resolved branch data (single source of truth)
-  const branchMetrics = useResolvedBranchData(branch?.id);
-  
-  // Hospitality alert engine: branch_alerts_today + branch_active_alerts (analytics layer: branch_alerts_engine)
-  const [todayAlerts, setTodayAlerts] = useState<BranchAlertsTodayRow[]>([]);
-  const [activeAlerts, setActiveAlerts] = useState<BranchActiveAlertRow[]>([]);
-  const [learningPhase, setLearningPhase] = useState<{ data_days?: number | null; learning_phase?: string | null } | null>(null);
-
-  useEffect(() => {
+  const fetchAlerts = useCallback(() => {
     if (!branch?.id) return;
+    setAlertsLoading(true);
+    setAlertsError(null);
     Promise.all([
       getAlertsFromBranchAlertsToday(branch.id),
-      getActiveAlertsFromBranchActiveAlerts(branch.id),
-    ]).then(([today, active]) => {
-      setTodayAlerts(today);
-      setActiveAlerts(active);
-    }).catch(() => {
-      setTodayAlerts([]);
-      setActiveAlerts([]);
-    });
-    getBranchLearningPhase(branch.id).then((row) => setLearningPhase(row ? { data_days: row.data_days, learning_phase: row.learning_phase } : null)).catch(() => setLearningPhase(null));
+      getAlertsFromBranchIntelligenceEngine(branch.id),
+    ])
+      .then(([today, engine]) => {
+        const todayNorm: AlertDisplayRow[] = (today as BranchAlertsTodayRow[]).map((r) => ({
+          branch_id: r.branch_id,
+          metric_date: r.metric_date,
+          alert_type: r.alert_type,
+          alert_message: r.alert_message,
+          recommendation: r.recommendation,
+          confidence_score: r.confidence_score,
+          estimated_revenue_impact: r.estimated_revenue_impact,
+          alert_severity: r.alert_severity,
+        }));
+        const engineNorm: AlertDisplayRow[] = (engine as BranchIntelligenceEngineRow[]).map((r) => ({
+          branch_id: r.branch_id,
+          metric_date: r.metric_date,
+          alert_type: r.alert_type,
+          alert_message: r.alert_message,
+          recommendation: r.recommendation,
+          confidence_score: r.confidence_score,
+          estimated_revenue_impact: r.estimated_revenue_impact,
+          alert_severity: null,
+        }));
+        const keys = new Set(todayNorm.map((r) => `${r.alert_type ?? ''}|${r.alert_message ?? ''}|${r.metric_date ?? ''}`));
+        const merged = [...todayNorm];
+        engineNorm.forEach((r) => {
+          const key = `${r.alert_type ?? ''}|${r.alert_message ?? ''}|${r.metric_date ?? ''}`;
+          if (!keys.has(key)) {
+            keys.add(key);
+            merged.push(r);
+          }
+        });
+        setAlertRows(merged);
+      })
+      .catch((e) => {
+        setAlertsError(e instanceof Error ? e : new Error(String(e)));
+        setAlertRows([]);
+      })
+      .finally(() => setAlertsLoading(false));
   }, [branch?.id]);
 
-  /** Current learning phase (number): from learning_phase or derived from data_days. */
-  const currentLearningPhase = useMemo(() => {
-    const lp = learningPhase?.learning_phase;
-    if (lp != null && lp !== '') {
-      const n = parseInt(String(lp), 10);
-      if (!Number.isNaN(n)) return n;
-    }
-    const dataDays = learningPhase?.data_days != null ? Number(learningPhase.data_days) : 0;
-    if (dataDays >= 30) return 3;
-    if (dataDays >= 14) return 2;
-    if (dataDays >= 7) return 1;
-    return 0;
-  }, [learningPhase?.data_days, learningPhase?.learning_phase]);
+  useEffect(() => {
+    fetchAlerts();
+  }, [fetchAlerts]);
 
-  /** Merged from branch_alerts_today + branch_active_alerts; hide if confidence_score < 10; dedupe; order by severity then metric_date desc. */
+  /** displayAlerts: confidence >= 10, dedupe, sort by severity then metric_date desc. */
   const displayAlerts = useMemo(() => {
-    type EngineRow = BranchAlertsTodayRow | BranchActiveAlertRow;
-    const merged: EngineRow[] = [...todayAlerts];
-    const todayKeys = new Set(todayAlerts.map((r) => `${r.alert_type ?? ''}|${r.alert_message ?? ''}|${r.metric_date ?? ''}`));
-    activeAlerts.forEach((r) => {
-      const key = `${r.alert_type ?? ''}|${r.alert_message ?? ''}|${r.metric_date ?? ''}`;
-      if (!todayKeys.has(key)) merged.push(r);
-    });
     const seen = new Set<string>();
-    const filtered = merged.filter((row) => {
+    const filtered = alertRows.filter((row) => {
       if (effectiveConfidencePct(row.confidence_score) < 10) return false;
-      const phase = (row as BranchAlertsTodayRow).alert_phase != null && !Number.isNaN(Number((row as BranchAlertsTodayRow).alert_phase)) ? Number((row as BranchAlertsTodayRow).alert_phase) : 1;
-      if (currentLearningPhase < phase) return false;
-      const key = `${row.alert_type ?? ''}|${row.alert_message ?? ''}|${row.alert_category ?? ''}|${row.metric_date ?? ''}`;
+      const key = `${row.alert_type ?? ''}|${row.alert_message ?? ''}|${row.metric_date ?? ''}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -257,212 +236,20 @@ export default function BranchAlertsPage() {
       return dateB.localeCompare(dateA);
     });
     return filtered;
-  }, [todayAlerts, activeAlerts, currentLearningPhase]);
+  }, [alertRows]);
 
-  // Fallback: daily metrics for financial impact when using engine alerts
-  const [dailyMetricsLast30Days, setDailyMetricsLast30Days] = useState<any[]>([]);
-  useEffect(() => {
-    if (!branch?.id) return;
-    const { getDailyMetrics } = require('../../services/db/daily-metrics-service');
-    getDailyMetrics(branch.id, 30).then((m: any) => setDailyMetricsLast30Days(m || [])).catch(() => setDailyMetricsLast30Days([]));
-  }, [branch?.id]);
+  // (Removed: daily metrics, financialMetrics, topMoneyDrivers, resolvedAlerts — only branch_alerts_today + branch_intelligence_engine used)
 
-  // PART 3: Calculate financial impact metrics using rolling 30 days from daily_metrics
   const financialMetrics = useMemo(() => {
-    if (!branchAlerts.length) {
-      return {
-        totalRevenueAtRisk: 0,
-        totalOpportunityGain: 0,
-        criticalCount: 0,
-        warningCount: 0,
-      };
-    }
-
-    // PART 3: Deduplicate alerts by code before calculating
-    const alertsByCode = new Map<string, AlertContract>();
-    branchAlerts.forEach(alert => {
-      const code = (alert as any).code || alert.id;
-      if (!alertsByCode.has(code)) {
-        alertsByCode.set(code, alert);
-      }
-    });
-    const uniqueBranchAlerts = Array.from(alertsByCode.values());
-
-    // Calculate exposure for risk alerts (non-opportunity) using calculateRevenueExposure
-    const riskAlerts = uniqueBranchAlerts.filter(alert => {
-      const extended = alert as ExtendedAlertContract;
-      return extended.type !== 'opportunity';
-    });
-    
-    let totalRevenueAtRisk = 0;
-    if (branchMetrics && riskAlerts.length > 0) {
-      // PART 3: Use calculateRevenueExposure which uses rolling metrics from daily_metrics
-      const riskExposure = calculateRevenueExposure(branchMetrics, riskAlerts);
-      totalRevenueAtRisk = riskExposure.totalMonthlyLeakage;
-      
-      // Debug logging
-      if (process.env.NODE_ENV === 'development') {
-        const alertsWithImpact = riskAlerts.filter(a => ((a as ExtendedAlertContract).revenueImpact ?? 0) > 0);
-        console.log('[FinancialImpact] Risk alerts:', {
-          total: riskAlerts.length,
-          withRevenueImpact: alertsWithImpact.length,
-          calculatedExposure: totalRevenueAtRisk,
-          sumOfRevenueImpact: alertsWithImpact.reduce((sum, a) => sum + ((a as ExtendedAlertContract).revenueImpact || 0), 0),
-        });
-      }
-      
-      // Fallback: if calculated exposure is 0 but alerts have revenueImpact, use that
-      if (totalRevenueAtRisk === 0) {
-        const sumFromImpact = riskAlerts.reduce((sum, alert) => {
-          const extended = alert as ExtendedAlertContract;
-          return sum + (extended.revenueImpact || 0);
-        }, 0);
-        if (sumFromImpact > 0) {
-          totalRevenueAtRisk = sumFromImpact;
-          if (process.env.NODE_ENV === 'development') {
-            console.log('[FinancialImpact] Using revenueImpact fallback:', sumFromImpact);
-          }
-        }
-      }
-    } else if (riskAlerts.length > 0) {
-      // Fallback: use revenueImpact if available (when branchMetrics not available)
-      totalRevenueAtRisk = riskAlerts.reduce((sum, alert) => {
-        const extended = alert as ExtendedAlertContract;
-        return sum + (extended.revenueImpact || 0);
-      }, 0);
-    }
-
-    // Calculate opportunity gain from opportunity alerts
-    // Opportunities use revenueImpact directly (already calculated as potential gain)
-    const opportunityAlerts = uniqueBranchAlerts.filter(alert => {
-      const extended = alert as ExtendedAlertContract;
-      return extended.type === 'opportunity';
-    });
-    
-    let totalOpportunityGain = 0;
-    if (opportunityAlerts.length > 0 && branchMetrics) {
-      // Use revenueImpact directly if available (it's already calculated as potential gain)
-      totalOpportunityGain = opportunityAlerts.reduce((sum, alert) => {
-        const extended = alert as ExtendedAlertContract;
-        const impact = extended.revenueImpact || 0;
-        return sum + (impact > 0 ? impact : 0);
-      }, 0);
-      
-      // Debug logging
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[FinancialImpact] Opportunity alerts:', {
-          total: opportunityAlerts.length,
-          withRevenueImpact: opportunityAlerts.filter(a => ((a as ExtendedAlertContract).revenueImpact ?? 0) > 0).length,
-          totalGain: totalOpportunityGain,
-        });
-      }
-      
-      // If no revenueImpact, calculate potential gain based on alert type
-      if (totalOpportunityGain === 0) {
-        opportunityAlerts.forEach(alert => {
-          const alertId = alert.id.toLowerCase();
-          
-          // Unused capacity opportunity (accommodation)
-          if ((alertId.includes('capacity') || alertId.includes('occupancy') || alertId.includes('utilization'))
-              && branchMetrics.modules.accommodation) {
-            const occupancy = safeNumber(branchMetrics.modules.accommodation.occupancyRateLast30DaysPct, 0) / 100;
-            const targetOccupancy = 0.75; // 75% target
-            const rooms = safeNumber(branchMetrics.modules.accommodation.totalRoomsAvailable, 0);
-            const adr = safeNumber(branchMetrics.modules.accommodation.averageDailyRoomRateTHB, 0);
-            
-            if (occupancy < targetOccupancy && rooms > 0 && adr > 0) {
-              const occupancyGap = targetOccupancy - occupancy;
-              const dailyGain = occupancyGap * rooms * adr;
-              const monthlyGain = dailyGain * 30;
-              totalOpportunityGain += Math.max(0, monthlyGain);
-            }
-          }
-          
-          // F&B opportunity (increase ticket size or customers)
-          if ((alertId.includes('fnb') || alertId.includes('menu') || alertId.includes('customer'))
-              && branchMetrics.modules.fnb) {
-            const avgTicket = safeNumber(branchMetrics.modules.fnb.averageTicketPerCustomerTHB, 0);
-            const expectedTicket = avgTicket * 1.2; // 20% higher potential
-            const customers7d = safeNumber(branchMetrics.modules.fnb.totalCustomersLast7Days, 0);
-            const customers30d = customers7d * (30 / 7);
-            
-            if (avgTicket < expectedTicket && customers30d > 0) {
-              const ticketGap = expectedTicket - avgTicket;
-              const monthlyGain = ticketGap * customers30d;
-              totalOpportunityGain += Math.max(0, monthlyGain);
-            }
-          }
-        });
-      }
-    }
-
+    const risk = displayAlerts.reduce((sum, r) => sum + (Number(r.estimated_revenue_impact) < 0 ? Math.abs(Number(r.estimated_revenue_impact)) : 0), 0);
+    const gain = displayAlerts.reduce((sum, r) => sum + (Number(r.estimated_revenue_impact) > 0 ? Number(r.estimated_revenue_impact) : 0), 0);
     return {
-      totalRevenueAtRisk: safeNumber(totalRevenueAtRisk, 0),
-      totalOpportunityGain: safeNumber(totalOpportunityGain, 0),
-      criticalCount: uniqueBranchAlerts.filter(a => a.severity === 'critical').length,
-      warningCount: uniqueBranchAlerts.filter(a => a.severity === 'warning').length,
+      totalRevenueAtRisk: risk,
+      totalOpportunityGain: gain,
+      criticalCount: displayAlerts.filter((r) => (r as AlertDisplayRow).alert_severity === 'high').length,
+      warningCount: displayAlerts.filter((r) => (r as AlertDisplayRow).alert_severity === 'medium').length,
     };
-  }, [branchAlerts, branchMetrics, dailyMetricsLast30Days]); // PART 3: Include dailyMetricsLast30Days for rolling 30-day calculation
-
-  // Get top 3 money drivers (by impact)
-  // FIX: Deduplicate by code and group by category, show only top 3
-  const topMoneyDrivers = useMemo(() => {
-    // Deduplicate by code first
-    const alertsByCode = new Map<string, AlertContract>();
-    branchAlerts.forEach(alert => {
-      const code = (alert as any).code || alert.id;
-      if (!alertsByCode.has(code)) {
-        alertsByCode.set(code, alert);
-      }
-    });
-    
-    // Filter alerts with impact and group by category
-    const alertsWithImpact = Array.from(alertsByCode.values())
-      .filter((alert): alert is ExtendedAlertContract => {
-        const extended = alert as ExtendedAlertContract;
-        return extended.revenueImpact !== undefined && extended.revenueImpact > 0;
-      });
-    
-    // Group by category (domain), take top from each category
-    const alertsByCategory = new Map<string, ExtendedAlertContract[]>();
-    alertsWithImpact.forEach(alert => {
-      const category = alert.domain || 'general';
-      const existing = alertsByCategory.get(category) || [];
-      existing.push(alert as ExtendedAlertContract);
-      alertsByCategory.set(category, existing);
-    });
-    
-    // Get top alert from each category, then sort by impact
-    const topFromEachCategory: ExtendedAlertContract[] = [];
-    alertsByCategory.forEach((alerts) => {
-      const top = alerts.sort((a, b) => (b.revenueImpact || 0) - (a.revenueImpact || 0))[0];
-      topFromEachCategory.push(top);
-    });
-    
-    // Sort all by impact and return top 3
-    return topFromEachCategory
-      .sort((a, b) => (b.revenueImpact || 0) - (a.revenueImpact || 0))
-      .slice(0, 3);
-  }, [branchAlerts]);
-
-  // Get resolved/improved alerts
-  const resolvedAlerts = useMemo(() => {
-    return history
-      .filter(item => item.outcome === 'Resolved')
-      .map(item => {
-        const alert = branchAlerts.find(a => a.id === item.alertId);
-        if (!alert) return null;
-        return {
-          id: item.id,
-          alertId: item.alertId,
-          name: item.title,
-          beforeSeverity: alert.severity, // Assume current severity is "after"
-          afterSeverity: 'informational' as const, // Resolved = informational
-        };
-      })
-      .filter((item): item is NonNullable<typeof item> => item !== null)
-      .slice(0, 10); // Last 10 resolved
-  }, [history, branchAlerts]);
+  }, [displayAlerts]);
 
   // Get category label
   const getCategoryLabel = (domain: string): string => {
@@ -486,7 +273,7 @@ export default function BranchAlertsPage() {
     );
   }
 
-  if (loading) {
+  if (alertsLoading) {
     return (
       <PageLayout title={locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}>
         <div style={{ padding: '4rem 2rem', textAlign: 'center' }}>
@@ -496,14 +283,14 @@ export default function BranchAlertsPage() {
     );
   }
 
-  if (error) {
+  if (alertsError) {
     return (
       <PageLayout title={locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}>
         <ErrorState
-          message={error instanceof Error ? error.message : String(error)}
+          message={alertsError.message}
           action={{
             label: locale === 'th' ? 'ลองอีกครั้ง' : 'Try Again',
-            onClick: refreshAlerts,
+            onClick: fetchAlerts,
           }}
         />
       </PageLayout>
@@ -598,15 +385,11 @@ export default function BranchAlertsPage() {
           )}
         </SectionCard>
 
-        {/* SECTION 1: Revenue Risk Summary (engine alerts; when no KPI alerts or in addition) */}
-        <SectionCard title={locale === 'th' ? 'ผลกระทบทางการเงิน (30 วันล่าสุด)' : 'Financial Impact (Last 30 Days)'}>
-          {displayAlerts.length > 0 && branchAlerts.length === 0 ? (
-            <div style={{ padding: '1.5rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
-              {locale === 'th' ? 'ใช้การแจ้งเตือนจากระบบวิเคราะห์ด้านบน' : 'Using alerts from analytics layer above.'}
-            </div>
-          ) : branchAlerts.length === 0 ? (
+        {/* Financial impact from branch_alerts_today + branch_intelligence_engine (estimated_revenue_impact) */}
+        <SectionCard title={locale === 'th' ? 'ผลกระทบทางการเงิน (โดยประมาณ)' : 'Estimated Financial Impact'}>
+          {displayAlerts.length === 0 ? (
             <div style={{ padding: '3rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
-              {locale === 'th' ? 'ไม่พบความเสี่ยงทางการเงิน' : 'No financial risks detected.'}
+              {locale === 'th' ? 'ไม่พบความเสี่ยงทางการเงิน' : 'No financial impact from current alerts.'}
             </div>
           ) : (
             <div style={{
@@ -653,80 +436,7 @@ export default function BranchAlertsPage() {
           )}
         </SectionCard>
 
-        {/* SECTION 2: Top 3 Money Drivers */}
-        {topMoneyDrivers.length > 0 && (
-          <SectionCard title={locale === 'th' ? 'พื้นที่ที่มีผลกระทบมากที่สุด' : 'Biggest Impact Areas'}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {topMoneyDrivers.map((alert, idx) => {
-                const severityColor = getSeverityColor(alert.severity);
-                return (
-                  <div
-                    key={alert.id}
-                    onClick={() => router.push(`/branch/alerts?alert=${alert.id}`)}
-                    style={{
-                      padding: '1rem',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      justifyContent: 'space-between',
-                      gap: '1rem',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#d1d5db';
-                      e.currentTarget.style.backgroundColor = '#f9fafb';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = '#e5e7eb';
-                      e.currentTarget.style.backgroundColor = '#ffffff';
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-                        <div style={{ fontSize: '16px', fontWeight: 600, color: '#0a0a0a' }}>
-                          {alert.revenueImpactTitle || alert.message.split('.')[0]}
-                        </div>
-                        <span style={{
-                          padding: '0.25rem 0.5rem',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          backgroundColor: severityColor + '20',
-                          color: severityColor,
-                        }}>
-                          {getSeverityLabel(alert.severity, locale)}
-                        </span>
-                        <span style={{
-                          padding: '0.25rem 0.5rem',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: 500,
-                          backgroundColor: '#e5e7eb',
-                          color: '#6b7280',
-                        }}>
-                          {getCategoryLabel(alert.domain || 'general')}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '14px', color: '#6b7280', lineHeight: '1.5' }}>
-                        {alert.revenueImpactDescription || alert.message}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right', minWidth: '140px' }}>
-                      <div style={{ fontSize: '20px', fontWeight: 700, color: alert.type === 'opportunity' ? '#10b981' : '#ef4444' }}>
-                        {hideFinancials ? '—' : `฿${formatCurrency(alert.revenueImpact || 0)}/mo`}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </SectionCard>
-        )}
-
-        {/* SECTION 3: All Active Alerts (branch_alerts_today + branch_active_alerts); System stable only when none */}
+        {/* All Active Alerts (branch_alerts_today + branch_active_alerts); System stable only when none */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือนที่ใช้งานอยู่ทั้งหมด' : 'All Active Alerts'}>
           {displayAlerts.length === 0 ? (
             <div style={{
@@ -809,92 +519,6 @@ export default function BranchAlertsPage() {
             </div>
           )}
         </SectionCard>
-
-        {/* SECTION 4: Resolved / Improved Alerts (Collapsible) */}
-        {resolvedAlerts.length > 0 && (
-          <SectionCard title={locale === 'th' ? 'ปัญหาที่แก้ไขล่าสุด' : 'Recently Improved Issues'}>
-            <button
-              onClick={() => setShowResolved(!showResolved)}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                backgroundColor: '#f9fafb',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                fontSize: '14px',
-                fontWeight: 500,
-                color: '#374151',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: showResolved ? '1rem' : 0,
-              }}
-            >
-              <span>
-                {locale === 'th' 
-                  ? `แสดง ${resolvedAlerts.length} รายการที่แก้ไขแล้ว`
-                  : `Show ${resolvedAlerts.length} resolved items`}
-              </span>
-              <span>{showResolved ? '▲' : '▼'}</span>
-            </button>
-            
-            {showResolved && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {resolvedAlerts.map((item) => (
-                  <div
-                    key={item.id}
-                    style={{
-                      padding: '0.75rem',
-                      backgroundColor: '#ffffff',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '6px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '1rem',
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '14px', fontWeight: 500, color: '#0a0a0a', marginBottom: '0.25rem' }}>
-                        {item.name}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span>
-                          {locale === 'th' ? 'ก่อน: ' : 'Before: '}
-                          <span style={{
-                            padding: '0.125rem 0.375rem',
-                            borderRadius: '3px',
-                            fontSize: '10px',
-                            fontWeight: 600,
-                            backgroundColor: getSeverityColor(item.beforeSeverity) + '20',
-                            color: getSeverityColor(item.beforeSeverity),
-                          }}>
-                            {getSeverityLabel(item.beforeSeverity, locale)}
-                          </span>
-                        </span>
-                        <span>→</span>
-                        <span>
-                          {locale === 'th' ? 'หลัง: ' : 'After: '}
-                          <span style={{
-                            padding: '0.125rem 0.375rem',
-                            borderRadius: '3px',
-                            fontSize: '10px',
-                            fontWeight: 600,
-                            backgroundColor: getSeverityColor(item.afterSeverity) + '20',
-                            color: getSeverityColor(item.afterSeverity),
-                          }}>
-                            {getSeverityLabel(item.afterSeverity, locale)}
-                          </span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </SectionCard>
-        )}
 
         {/* Dev-only: Alert Engine Validation */}
         {process.env.NODE_ENV === 'development' && branch && (

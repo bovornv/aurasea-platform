@@ -247,6 +247,42 @@ export async function getAlertsFromBranchAlertsEngine(
   }
 }
 
+/** Row from branch_intelligence_engine (alerts shape: alert_type, alert_message, recommendation, confidence_score, estimated_revenue_impact). */
+export interface BranchIntelligenceEngineRow {
+  branch_id: string;
+  metric_date?: string | null;
+  alert_type?: string | null;
+  alert_message?: string | null;
+  recommendation?: string | null;
+  confidence_score?: number | null;
+  estimated_revenue_impact?: number | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch alerts from branch_intelligence_engine for a branch.
+ * /rest/v1/branch_intelligence_engine
+ */
+export async function getAlertsFromBranchIntelligenceEngine(
+  branchId: string
+): Promise<BranchIntelligenceEngineRow[]> {
+  if (branchId == null || branchId === '') return [];
+  if (!isSupabaseAvailable()) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('branch_intelligence_engine')
+      .select('branch_id, metric_date, alert_type, alert_message, recommendation, confidence_score, estimated_revenue_impact')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false });
+    if (error) return [];
+    return (data ?? []) as BranchIntelligenceEngineRow[];
+  } catch {
+    return [];
+  }
+}
+
 /** Row from branch_alerts_today view. */
 export interface BranchAlertsTodayRow {
   branch_id: string;
