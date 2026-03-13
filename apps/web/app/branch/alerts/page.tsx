@@ -133,8 +133,10 @@ export default function BranchAlertsPage() {
     return uniqueByCode;
   }, [alertRows, branch?.moduleType]);
 
+  /** F&B: from fnb_financial_impact only. Accommodation: from displayAlerts (fallback). */
   const financialMetrics = useMemo(() => {
-    if (branch?.moduleType === 'fnb' && fnbFinancialImpact) {
+    if (branch?.moduleType === 'fnb') {
+      if (!fnbFinancialImpact) return null;
       return {
         totalRevenueAtRisk: Number(fnbFinancialImpact.total_revenue_at_risk) || 0,
         totalOpportunityGain: Number(fnbFinancialImpact.total_opportunity_gain) || 0,
@@ -142,6 +144,7 @@ export default function BranchAlertsPage() {
         warningCount: Number(fnbFinancialImpact.warnings) || 0,
       };
     }
+    if (displayAlerts.length === 0) return null;
     const dailyRisk = displayAlerts.reduce((sum, r) => {
       const v = Number(r.estimated_revenue_impact) || 0;
       return sum + (v < 0 ? Math.abs(v) : 0);
@@ -279,9 +282,9 @@ export default function BranchAlertsPage() {
           )}
         </SectionCard>
 
-        {/* Financial impact: F&B = fnb_financial_impact; accommodation = from displayAlerts */}
+        {/* Financial impact: F&B = fnb_financial_impact only; accommodation = from displayAlerts. Null → message. */}
         <SectionCard title={locale === 'th' ? 'ผลกระทบทางการเงิน (โดยประมาณ)' : 'Estimated Financial Impact'}>
-          {displayAlerts.length === 0 && branch?.moduleType !== 'fnb' ? (
+          {financialMetrics == null ? (
             <div style={{ padding: '3rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
               {locale === 'th' ? 'ไม่พบความเสี่ยงทางการเงิน' : 'No financial impact from current alerts.'}
             </div>
