@@ -22,9 +22,11 @@ import { runAppAlertValidation, runFullAlertValidation } from '../../lib/run-ale
 import {
   getAlertsFromBranchAlertsDisplay,
   getFnbFinancialImpact,
+  getAccommodationFinancialImpact,
   severityOrder,
   type BranchAlertsDisplayRow,
   type FnbFinancialImpactRow,
+  type AccommodationFinancialImpactRow,
 } from '../../services/db/kpi-analytics-service';
 
 /** Display confidence from DB: if value <= 1 treat as 0–1 fraction and show as %, else show as 0–100. */
@@ -65,6 +67,7 @@ export default function BranchAlertsPage() {
   const [alertsError, setAlertsError] = useState<Error | null>(null);
   const [alertRows, setAlertRows] = useState<AlertDisplayRow[]>([]);
   const [fnbFinancialImpact, setFnbFinancialImpact] = useState<FnbFinancialImpactRow | null>(null);
+  const [accommodationFinancialImpact, setAccommodationFinancialImpact] = useState<AccommodationFinancialImpactRow | null>(null);
   const [validationRunning, setValidationRunning] = useState(false);
   const [validationResult, setValidationResult] = useState<{
     branchType: 'accommodation' | 'fnb';
@@ -88,18 +91,23 @@ export default function BranchAlertsPage() {
     if (!branch?.id) return;
     setAlertsLoading(true);
     setAlertsError(null);
+    const isFnb = branch.moduleType === 'fnb';
+    const isAccommodation = branch.moduleType === 'accommodation';
     Promise.all([
       getAlertsFromBranchAlertsDisplay(branch.id),
-      branch.moduleType === 'fnb' ? getFnbFinancialImpact(branch.id) : Promise.resolve(null),
+      isFnb ? getFnbFinancialImpact(branch.id) : Promise.resolve(null),
+      isAccommodation ? getAccommodationFinancialImpact(branch.id) : Promise.resolve(null),
     ])
-      .then(([rows, impact]) => {
+      .then(([rows, fnbImpact, accImpact]) => {
         setAlertRows(rows);
-        setFnbFinancialImpact(impact ?? null);
+        setFnbFinancialImpact(fnbImpact ?? null);
+        setAccommodationFinancialImpact(accImpact ?? null);
       })
       .catch((e) => {
         setAlertsError(e instanceof Error ? e : new Error(String(e)));
         setAlertRows([]);
         setFnbFinancialImpact(null);
+        setAccommodationFinancialImpact(null);
       })
       .finally(() => setAlertsLoading(false));
   }, [branch?.id, branch?.moduleType]);
@@ -133,7 +141,7 @@ export default function BranchAlertsPage() {
     return uniqueByCode;
   }, [alertRows, branch?.moduleType]);
 
-  /** F&B: from fnb_financial_impact only. Accommodation: from displayAlerts (fallback). */
+  /** F&B: fnb_financial_impact. Accommodation: accommodation_financial_impact. Both from Supabase only. */
   const financialMetrics = useMemo(() => {
     if (branch?.moduleType === 'fnb') {
       if (!fnbFinancialImpact) return null;
@@ -144,22 +152,17 @@ export default function BranchAlertsPage() {
         warningCount: Number(fnbFinancialImpact.warnings) || 0,
       };
     }
-    if (displayAlerts.length === 0) return null;
-    const dailyRisk = displayAlerts.reduce((sum, r) => {
-      const v = Number(r.estimated_revenue_impact) || 0;
-      return sum + (v < 0 ? Math.abs(v) : 0);
-    }, 0);
-    const dailyGain = displayAlerts.reduce((sum, r) => {
-      const v = Number(r.estimated_revenue_impact) || 0;
-      return sum + (v > 0 ? v : 0);
-    }, 0);
-    return {
-      totalRevenueAtRisk: dailyRisk * 30,
-      totalOpportunityGain: dailyGain * 30,
-      criticalCount: displayAlerts.filter((r) => (r.alert_severity ?? '').toString().toLowerCase() === 'high').length,
-      warningCount: displayAlerts.filter((r) => (r.alert_severity ?? '').toString().toLowerCase() === 'medium').length,
-    };
-  }, [displayAlerts, branch?.moduleType, fnbFinancialImpact]);
+    if (branch?.moduleType === 'accommodation') {
+      if (!accommodationFinancialImpact) return null;
+      return {
+        totalRevenueAtRisk: Number(accommodationFinancialImpact.total_revenue_at_risk) || 0,
+        totalOpportunityGain: Number(accommodationFinancialImpact.total_opportunity_gain) || 0,
+        criticalCount: Number(accommodationFinancialImpact.critical_alerts) || 0,
+        warningCount: Number(accommodationFinancialImpact.warnings) || 0,
+      };
+    }
+    return null;
+  }, [branch?.moduleType, fnbFinancialImpact, accommodationFinancialImpact]);
 
   if (!mounted) {
     return (

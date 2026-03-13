@@ -422,6 +422,16 @@ export interface FnbFinancialImpactRow {
   [key: string]: unknown;
 }
 
+/** Row from accommodation_financial_impact. One row per branch. */
+export interface AccommodationFinancialImpactRow {
+  branch_id: string;
+  total_revenue_at_risk?: number | null;
+  total_opportunity_gain?: number | null;
+  critical_alerts?: number | null;
+  warnings?: number | null;
+  [key: string]: unknown;
+}
+
 /**
  * Fetch financial impact from fnb_financial_impact for an F&B branch.
  * Uses .single() as per view contract; returns null when no row or error.
@@ -441,6 +451,30 @@ export async function getFnbFinancialImpact(
       .single();
     if (error) return null;
     return data as FnbFinancialImpactRow | null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch financial impact from accommodation_financial_impact for an accommodation branch.
+ * Query: .from("accommodation_financial_impact").select("*").eq("branch_id", branchId).single()
+ */
+export async function getAccommodationFinancialImpact(
+  branchId: string
+): Promise<AccommodationFinancialImpactRow | null> {
+  if (branchId == null || branchId === '') return null;
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('accommodation_financial_impact')
+      .select('*')
+      .eq('branch_id', branchId)
+      .single();
+    if (error) return null;
+    return data as AccommodationFinancialImpactRow | null;
   } catch {
     return null;
   }

@@ -42,7 +42,7 @@ import { OperatingFooterTrust } from '../../components/operating-layer/operating
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, getFnbOperatingStatus, type OperatingStatusRow, type FnbOperatingStatusRow } from '../../services/db/latest-metrics-service';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
-import { getAccommodationConfidenceLevel, getAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
+import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { getHealthScoreFromAccommodationHealthToday, getHealthScoreFromFnbHealthToday } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
@@ -332,7 +332,7 @@ export default function BranchOverviewPage() {
       getOperatingStatusData(branch.id, 'accommodation').then(setOperatingStatusData);
       if (branch.moduleType === 'accommodation') {
         getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
-        getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
+        getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
         getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
       }
     }
@@ -355,7 +355,7 @@ export default function BranchOverviewPage() {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
           });
           getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
-          getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
+          getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
           getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
         }
         if (branch.moduleType === 'fnb') {
@@ -400,13 +400,13 @@ export default function BranchOverviewPage() {
     getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
   }, [branch?.id, branch?.moduleType]);
 
-  // Early Signal card: accommodation uses accommodation_anomaly_signals.early_signal
+  // Early Signal card: accommodation uses accommodation_early_signal view
   useEffect(() => {
     if (!branch?.id || branch.moduleType !== 'accommodation') {
       setAccommodationEarlySignal(null);
       return;
     }
-    getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
+    getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
   }, [branch?.id, branch?.moduleType]);
 
   // Learning status from branch_learning_phase

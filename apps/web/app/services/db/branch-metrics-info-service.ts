@@ -168,7 +168,7 @@ export async function getAccommodationConfidenceLevel(
 
 /**
  * Get latest early_signal from accommodation_anomaly_signals for the Early Signal card.
- * Returns the raw value (e.g. 'normal', 'demand_drop') or null.
+ * @deprecated Prefer getEarlySignalFromAccommodationEarlySignal (accommodation_early_signal view).
  */
 export async function getAccommodationEarlySignal(
   branchId: string
@@ -190,6 +190,33 @@ export async function getAccommodationEarlySignal(
   } catch (e) {
     if (process.env.NODE_ENV === 'development') {
       console.warn('[BranchMetricsInfo] getAccommodationEarlySignal error:', e);
+    }
+    return null;
+  }
+}
+
+/**
+ * Get early_signal from accommodation_early_signal view for Operating Status.
+ * Query: .from("accommodation_early_signal").select("early_signal").eq("branch_id", branchId).single()
+ */
+export async function getEarlySignalFromAccommodationEarlySignal(
+  branchId: string
+): Promise<string | null> {
+  try {
+    if (!isSupabaseAvailable() || !branchId) return null;
+    const supabase = getSupabaseClient();
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('accommodation_early_signal')
+      .select('early_signal')
+      .eq('branch_id', branchId)
+      .single();
+    if (error || data == null) return null;
+    const signal = (data as { early_signal?: string | null }).early_signal;
+    return signal != null ? String(signal).trim() : null;
+  } catch (e) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[BranchMetricsInfo] getEarlySignalFromAccommodationEarlySignal error:', e);
     }
     return null;
   }
