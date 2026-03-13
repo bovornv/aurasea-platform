@@ -375,6 +375,39 @@ export async function getAlertsFromFnbAlertsToday(
   }
 }
 
+/** Row from fnb_financial_impact (F&B only). One row per branch. */
+export interface FnbFinancialImpactRow {
+  branch_id: string;
+  total_revenue_at_risk?: number | null;
+  total_opportunity_gain?: number | null;
+  critical_count?: number | null;
+  warning_count?: number | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch financial impact from fnb_financial_impact for an F&B branch.
+ */
+export async function getFnbFinancialImpact(
+  branchId: string
+): Promise<FnbFinancialImpactRow | null> {
+  if (branchId == null || branchId === '') return null;
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('fnb_financial_impact')
+      .select('*')
+      .eq('branch_id', branchId)
+      .maybeSingle();
+    if (error) return null;
+    return data as FnbFinancialImpactRow | null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Get alerts for a branch from branch_alerts (intelligence engine).
  * Ordered by metric_date descending. Prefer alert_message; support legacy revenue_alert/customer_alert etc.

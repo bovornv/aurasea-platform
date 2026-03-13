@@ -23,10 +23,12 @@ import {
   getAlertsFromBranchAlertsToday,
   getAlertsFromBranchIntelligenceEngine,
   getAlertsFromFnbAlertsToday,
+  getFnbFinancialImpact,
   severityOrder,
   type BranchAlertsTodayRow,
   type BranchIntelligenceEngineRow,
   type FnbAlertsTodayRow,
+  type FnbFinancialImpactRow,
 } from '../../services/db/kpi-analytics-service';
 
 /** Normalize alert_type from DB to key (e.g. "Revenue Risk" → "revenue_risk"). */
@@ -149,6 +151,7 @@ export default function BranchAlertsPage() {
   const [alertsLoading, setAlertsLoading] = useState(true);
   const [alertsError, setAlertsError] = useState<Error | null>(null);
   const [alertRows, setAlertRows] = useState<AlertDisplayRow[]>([]);
+  const [fnbFinancialImpact, setFnbFinancialImpact] = useState<FnbFinancialImpactRow | null>(null);
   const [validationRunning, setValidationRunning] = useState(false);
   const [validationResult, setValidationResult] = useState<{
     branchType: 'accommodation' | 'fnb';
@@ -173,9 +176,12 @@ export default function BranchAlertsPage() {
     setAlertsLoading(true);
     setAlertsError(null);
     if (branch.moduleType === 'fnb') {
-      getAlertsFromFnbAlertsToday(branch.id)
-        .then((rows: FnbAlertsTodayRow[]) => {
-          const filtered = rows.filter((r) => r.alert_name != null && String(r.alert_name).trim() !== '');
+      Promise.all([
+        getAlertsFromFnbAlertsToday(branch.id),
+        getFnbFinancialImpact(branch.id),
+      ])
+        .then(([rows, impact]) => {
+          const filtered = (rows as FnbAlertsTodayRow[]).filter((r) => r.alert_name != null && String(r.alert_name).trim() !== '');
           const mapped: AlertDisplayRow[] = filtered.map((r) => ({
             branch_id: r.branch_id,
             metric_date: r.metric_date,
@@ -188,14 +194,17 @@ export default function BranchAlertsPage() {
             alert_name: r.alert_name ?? null,
           }));
           setAlertRows(mapped);
+          setFnbFinancialImpact(impact ?? null);
         })
         .catch((e) => {
           setAlertsError(e instanceof Error ? e : new Error(String(e)));
           setAlertRows([]);
+          setFnbFinancialImpact(null);
         })
         .finally(() => setAlertsLoading(false));
       return;
     }
+    setFnbFinancialImpact(null);
     Promise.all([
       getAlertsFromBranchAlertsToday(branch.id),
       getAlertsFromBranchIntelligenceEngine(branch.id),
@@ -265,11 +274,19 @@ export default function BranchAlertsPage() {
     return filtered;
   }, [alertRows, branch?.moduleType]);
 
-  /** alert_type categories: risk (revenue at risk) vs opportunity (opportunity gain). Daily impact × 30 = monthly. */
+  /** alert_type categories: risk (revenue at risk) vs opportunity (opportunity gain). Daily impact × 30 = monthly. Accommodation only. */
   const ALERT_TYPES_REVENUE_AT_RISK = ['Revenue Collapse', 'Revenue Risk', 'Low Occupancy', 'Demand Weakening'];
   const ALERT_TYPES_OPPORTUNITY_GAIN = ['Pricing Opportunity', 'Near Full Capacity', 'Strong Demand'];
 
   const financialMetrics = useMemo(() => {
+    if (branch?.moduleType === 'fnb' && fnbFinancialImpact) {
+      return {
+        totalRevenueAtRisk: Number(fnbFinancialImpact.total_revenue_at_risk) || 0,
+        totalOpportunityGain: Number(fnbFinancialImpact.total_opportunity_gain) || 0,
+        criticalCount: Number(fnbFinancialImpact.critical_count) || 0,
+        warningCount: Number(fnbFinancialImpact.warning_count) || 0,
+      };
+    }
     const norm = (t: string | null | undefined) => (t ?? '').toString().trim();
     const isRiskType = (type: string | null | undefined) =>
       ALERT_TYPES_REVENUE_AT_RISK.some((k) => norm(type).toLowerCase() === k.toLowerCase());
@@ -289,7 +306,7 @@ export default function BranchAlertsPage() {
       criticalCount: displayAlerts.filter((r) => (r as AlertDisplayRow).alert_severity === 'high').length,
       warningCount: displayAlerts.filter((r) => (r as AlertDisplayRow).alert_severity === 'medium').length,
     };
-  }, [displayAlerts]);
+  }, [displayAlerts, branch?.moduleType, fnbFinancialImpact]);
 
   // Get category label
   const getCategoryLabel = (domain: string): string => {
@@ -358,7 +375,7 @@ export default function BranchAlertsPage() {
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}>
           {displayAlerts.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
-              {locale === 'th' ? 'ไม่มีการแจ้งเตือนจากระบบวิเคราะห์ในขณะนี้' : 'No alerts from the intelligence engine at this time.'}
+              {locale === 'th' ? 'ระบบเสถียร — ไม่พบการแจ้งเตือน' : 'System stable — no alerts detected.'}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -428,9 +445,9 @@ export default function BranchAlertsPage() {
           )}
         </SectionCard>
 
-        {/* Financial impact from branch_alerts_today + branch_intelligence_engine (estimated_revenue_impact) */}
+        {/* Financial impact: F&B = fnb_financial_impact; accommodation = from displayAlerts */}
         <SectionCard title={locale === 'th' ? 'ผลกระทบทางการเงิน (โดยประมาณ)' : 'Estimated Financial Impact'}>
-          {displayAlerts.length === 0 ? (
+          {displayAlerts.length === 0 && branch?.moduleType !== 'fnb' ? (
             <div style={{ padding: '3rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
               {locale === 'th' ? 'ไม่พบความเสี่ยงทางการเงิน' : 'No financial impact from current alerts.'}
             </div>
@@ -479,7 +496,7 @@ export default function BranchAlertsPage() {
           )}
         </SectionCard>
 
-        {/* All Active Alerts (branch_alerts_today + branch_active_alerts); System stable only when none */}
+        {/* All Active Alerts: F&B = fnb_alerts_today only; accommodation = branch_alerts_today + engine */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือนที่ใช้งานอยู่ทั้งหมด' : 'All Active Alerts'}>
           {displayAlerts.length === 0 ? (
             <div style={{
@@ -490,12 +507,7 @@ export default function BranchAlertsPage() {
               borderRadius: '6px',
             }}>
               <div style={{ fontSize: '16px', fontWeight: 600, color: '#166534', marginBottom: '0.5rem' }}>
-                {locale === 'th' ? '✓ ระบบเสถียร' : '✓ System stable'}
-              </div>
-              <div style={{ fontSize: '14px', color: '#6b7280' }}>
-                {locale === 'th'
-                  ? 'ไม่พบการแจ้งเตือนที่ใช้งานอยู่ในขณะนี้'
-                  : 'No active alerts detected. System is operating normally.'}
+                {locale === 'th' ? '✓ ระบบเสถียร — ไม่พบการแจ้งเตือน' : '✓ System stable — no alerts detected.'}
               </div>
             </div>
           ) : (
