@@ -41,7 +41,7 @@ import { OperatingSection } from '../../components/operating-layer/operating-sec
 import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
-import { getOperatingStatusData, type OperatingStatusRow } from '../../services/db/latest-metrics-service';
+import { getOperatingStatusData, getFnbOperatingStatus, type OperatingStatusRow, type FnbOperatingStatusRow } from '../../services/db/latest-metrics-service';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
 import { getAccommodationConfidenceLevel, getAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
@@ -66,8 +66,9 @@ export default function BranchOverviewPage() {
   const [mounted, setMounted] = useState(false);
   // Auto-select first branch if none selected (fallback for timing issues)
   const [attemptingAutoSelect, setAttemptingAutoSelect] = useState(false);
-  // Operating Status: single source = fnb_latest_metrics or accommodation_latest_metrics (no anomaly/KPI/daily fallbacks)
+  // Operating Status: accommodation = accommodation_latest_metrics; F&B = fnb_operating_status only
   const [operatingStatusData, setOperatingStatusData] = useState<OperatingStatusRow | null>(null);
+  const [fnbOperatingStatus, setFnbOperatingStatus] = useState<FnbOperatingStatusRow | null>(null);
   // KPI layer: recommendations from branch_recommendations
   const [kpiRecommendations, setKpiRecommendations] = useState<{ recommendation: string; category?: string }[]>([]);
   // Owner dashboard: monthly fixed cost not configured (accommodation, owner/super_admin only)
@@ -449,17 +450,21 @@ export default function BranchOverviewPage() {
     fetchDailyMetrics();
   }, [branch?.id]);
 
-  // Operating Status: single source via loadOperatingStatus (fnb_latest_metrics / accommodation_latest_metrics)
+  // Operating Status: F&B = fnb_operating_status only; accommodation = accommodation_latest_metrics + confidence + early signal + branch_health_metrics
   const refreshOperatingStatus = useCallback(() => {
     if (!branch?.id) return;
-    getOperatingStatusData(branch.id, branch.moduleType ?? undefined).then((data) => {
-      setOperatingStatusData(data);
-    });
-    if (branch.moduleType === 'accommodation') {
-      getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
-      getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
+    if (branch.moduleType === 'fnb') {
+      setOperatingStatusData(null);
+      getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
+    } else {
+      setFnbOperatingStatus(null);
+      getOperatingStatusData(branch.id, 'accommodation').then(setOperatingStatusData);
+      if (branch.moduleType === 'accommodation') {
+        getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
+        getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
+        getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
+      }
     }
-    getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
     getBranchLearningPhase(branch.id).then(setLearningPhase);
   }, [branch?.id, branch?.moduleType]);
 
@@ -471,7 +476,7 @@ export default function BranchOverviewPage() {
     };
     const onMetricsSaved = (e: Event) => {
       const detail = (e as CustomEvent<{ branchId: string }>).detail;
-        if (detail?.branchId === branch?.id) {
+      if (detail?.branchId === branch?.id) {
         refreshOperatingStatus();
         getBranchLearningPhase(branch.id).then(setLearningPhase);
         if (branch.moduleType === 'accommodation') {
@@ -480,8 +485,11 @@ export default function BranchOverviewPage() {
           });
           getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
           getAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
+          getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
         }
-        getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
+        if (branch.moduleType === 'fnb') {
+          getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
+        }
       }
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -499,11 +507,14 @@ export default function BranchOverviewPage() {
     }).catch(() => setKpiRecommendations([]));
   }, [branch?.id]);
 
-  // Business Health Score card: load from branch_health_metrics only
+  // Business Health Score card: accommodation only (branch_health_metrics); F&B uses fnb_operating_status.health_score
   useEffect(() => {
-    if (!branch?.id) return;
+    if (!branch?.id || branch.moduleType !== 'accommodation') {
+      if (branch?.moduleType === 'fnb') setHealthScore(null);
+      return;
+    }
     getHealthScoreFromBranchHealthMetrics(branch.id).then(setHealthScore);
-  }, [branch?.id]);
+  }, [branch?.id, branch?.moduleType]);
 
   // Confidence card: accommodation uses accommodation_data_coverage.confidence_level
   useEffect(() => {
@@ -873,7 +884,7 @@ export default function BranchOverviewPage() {
     return sorted[0] ?? null;
   }, [dailyMetricsForTrends]);
 
-  // Early signal: accommodation = accommodation_anomaly_signals.early_signal; F&B = anomaly/trend/alert fallback
+  // Early signal: accommodation = accommodation_anomaly_signals.early_signal; F&B = fnb_operating_status.early_signal
   const earlySignalText = useMemo(() => {
     if (branch?.moduleType === 'accommodation') {
       if (accommodationEarlySignal) {
@@ -887,6 +898,16 @@ export default function BranchOverviewPage() {
         return accommodationEarlySignal;
       }
       return '—';
+    }
+    if (branch?.moduleType === 'fnb' && fnbOperatingStatus?.early_signal) {
+      const s = String(fnbOperatingStatus.early_signal).toLowerCase();
+      if (s === 'normal') return locale === 'th' ? 'ปกติ' : 'Normal';
+      if (s === 'demand_drop') return locale === 'th' ? 'ตรวจพบความต้องการลดลง' : 'Demand weakening detected';
+      if (s === 'demand_spike') return locale === 'th' ? 'ตรวจพบความต้องการพุ่งสูง' : 'Demand spike detected';
+      if (s === 'weak_midweek') return locale === 'th' ? 'วันกลางสัปดาห์อ่อนแอ' : 'Weak midweek';
+      if (s === 'strong_weekend') return locale === 'th' ? 'สุดสัปดาห์แข็งแรง' : 'Strong weekend';
+      if (s === 'seasonal_risk') return locale === 'th' ? 'ความเสี่ยงตามฤดูกาล' : 'Seasonal risk';
+      return String(fnbOperatingStatus.early_signal);
     }
     if (anomalySignal?.revenue_anomaly_score != null) {
       const score = Number(anomalySignal.revenue_anomaly_score);
@@ -907,7 +928,7 @@ export default function BranchOverviewPage() {
     }
     if (coverageDays < 7) return locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
     return '—';
-  }, [branch?.moduleType, accommodationEarlySignal, anomalySignal, performanceTrends, mergedBranchAlerts, coverageDays, locale]);
+  }, [branch?.moduleType, accommodationEarlySignal, fnbOperatingStatus?.early_signal, anomalySignal, performanceTrends, mergedBranchAlerts, coverageDays, locale]);
 
   if (!mounted || branchLoading) {
     return (
@@ -1000,10 +1021,16 @@ export default function BranchOverviewPage() {
           const branchType = branch?.moduleType;
           const isFnb = branchType === 'fnb';
           const isAccommodation = branchType === 'accommodation';
-          // Operating Status cards: single source only (operatingStatusData from fnb_latest_metrics or accommodation_latest_metrics)
-          const healthVal = healthScore ?? null;
-          const revenueVal = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? null;
-          const customersVal = operatingStatusData?.total_customers ?? null;
+          // F&B: all from fnb_operating_status; Accommodation: operatingStatusData + healthScore + confidenceLevelFromCoverage + accommodationEarlySignal
+          const healthVal = isFnb
+            ? (fnbOperatingStatus?.health_score ?? null)
+            : (healthScore ?? null);
+          const revenueVal = isFnb
+            ? (fnbOperatingStatus?.todays_revenue ?? null)
+            : (operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? null);
+          const customersVal = isFnb
+            ? (fnbOperatingStatus?.total_customers ?? null)
+            : (operatingStatusData?.total_customers ?? null);
           const roomsSoldVal = isAccommodation ? (operatingStatusData?.rooms_sold ?? null) : null;
 
           let occupancyRate: number | null = null;
@@ -1016,8 +1043,7 @@ export default function BranchOverviewPage() {
           }
 
           const collecting = locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
-          // Accommodation: use accommodation_data_coverage.confidence_level; F&B: use confidence_score
-          const confidenceVal = isAccommodation ? null : (operatingStatusData?.confidence_score ?? null);
+          const confidenceVal = isFnb ? (fnbOperatingStatus?.confidence ?? null) : (isAccommodation ? null : (operatingStatusData?.confidence_score ?? null));
           const confidenceLevel = isAccommodation ? confidenceLevelFromCoverage : null;
           const confidenceDisplayText =
             isAccommodation
@@ -1033,6 +1059,13 @@ export default function BranchOverviewPage() {
               : (confidenceVal != null
                   ? `${Math.round(Number(confidenceVal) <= 1 ? Number(confidenceVal) * 100 : Number(confidenceVal))}%`
                   : collecting);
+
+          const dataCoverageText = isFnb && fnbOperatingStatus != null && fnbOperatingStatus.data_days != null && fnbOperatingStatus.required_days != null
+            ? `${Number(fnbOperatingStatus.data_days)} / ${Number(fnbOperatingStatus.required_days)}`
+            : null;
+          const avgTicketVal = isFnb ? (fnbOperatingStatus?.avg_ticket ?? null) : null;
+          const latestMetricDate = isFnb ? (fnbOperatingStatus?.metric_date ?? null) : (operatingStatusData?.metric_date ?? null);
+
           return (
         <div style={{
           display: 'grid',
@@ -1100,6 +1133,36 @@ export default function BranchOverviewPage() {
               {confidenceDisplayText}
             </div>
           </div>
+          {isFnb && (
+            <>
+              <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
+                  {locale === 'th' ? 'ความครอบคลุมข้อมูล' : 'Data Coverage'}
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
+                  {dataCoverageText ?? collecting}
+                </div>
+              </div>
+              <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
+                  {locale === 'th' ? 'ค่าเฉลี่ยต่อบิล' : 'Average Ticket'}
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
+                  {avgTicketVal != null ? `฿${formatCurrency(avgTicketVal)}` : collecting}
+                </div>
+              </div>
+              {latestMetricDate && (
+                <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
+                    {locale === 'th' ? 'วันที่ข้อมูลล่าสุด' : 'Latest Metric Date'}
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#374151' }}>
+                    {String(latestMetricDate).slice(0, 10)}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
           );
         })()}

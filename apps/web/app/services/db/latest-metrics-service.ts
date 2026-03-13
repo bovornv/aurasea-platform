@@ -37,6 +37,55 @@ export interface FnbLatestMetricRow {
   [key: string]: unknown;
 }
 
+/** Row from fnb_operating_status view — single source for F&B Operating Status. */
+export interface FnbOperatingStatusRow {
+  branch_id: string;
+  metric_date?: string | null;
+  health_score?: number | null;
+  todays_revenue?: number | null;
+  total_customers?: number | null;
+  early_signal?: string | null;
+  confidence?: number | null;
+  data_days?: number | null;
+  required_days?: number | null;
+  avg_ticket?: number | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Load F&B Operating Status from fnb_operating_status view only.
+ * Use this for F&B branches instead of fnb_latest_metrics / branch_health_metrics / fnb_data_coverage / branch_anomaly_signals.
+ */
+export async function getFnbOperatingStatus(
+  branchId: string
+): Promise<FnbOperatingStatusRow | null> {
+  if (branchId == null || branchId === '') return null;
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return null;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('fnb_operating_status')
+    .select('*')
+    .eq('branch_id', branchId)
+    .maybeSingle();
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[LatestMetricsService] fnb_operating_status error:', error.message);
+    }
+    return null;
+  }
+
+  if (process.env.NODE_ENV === 'development' && data) {
+    console.log('F&B Operating Status data source: fnb_operating_status', data);
+  }
+
+  return data as FnbOperatingStatusRow | null;
+}
+
 /** Accommodation view row (accommodation_latest_metrics). Uses revenue column. */
 export interface AccommodationLatestMetricRow {
   branch_id: string;
