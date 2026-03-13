@@ -39,6 +39,7 @@ DROP TRIGGER IF EXISTS tr_anomaly_signals_accommodation ON accommodation_daily_m
 -- 3. F&B trigger: insert into fnb_anomaly_signals only
 -- ---------------------------------------------------------------------------
 
+-- F&B: use revenue (fnb_daily_metrics.revenue). If your table has total_revenue_thb instead, replace revenue with total_revenue_thb in this function and the trigger below.
 CREATE OR REPLACE FUNCTION fn_sync_fnb_anomaly_signals()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -46,8 +47,10 @@ DECLARE
   std_7d numeric;
   score numeric;
   conf numeric;
+  rev numeric;
 BEGIN
-  SELECT AVG(total_revenue_thb), STDDEV(total_revenue_thb)
+  rev := COALESCE(NEW.revenue, 0);
+  SELECT AVG(COALESCE(revenue, 0)), STDDEV(COALESCE(revenue, 0))
   INTO avg_7d, std_7d
   FROM fnb_daily_metrics
   WHERE branch_id = NEW.branch_id
@@ -58,7 +61,7 @@ BEGIN
     score := NULL;
     conf := NULL;
   ELSE
-    score := (NEW.total_revenue_thb - avg_7d) / NULLIF(std_7d, 0);
+    score := (rev - avg_7d) / NULLIF(std_7d, 0);
     conf := LEAST(100, GREATEST(0, 70));
   END IF;
 
@@ -72,7 +75,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER tr_sync_fnb_anomaly_signals
-  AFTER INSERT OR UPDATE OF total_revenue_thb, metric_date
+  AFTER INSERT OR UPDATE OF revenue, metric_date
   ON fnb_daily_metrics
   FOR EACH ROW
   EXECUTE FUNCTION fn_sync_fnb_anomaly_signals();
@@ -91,17 +94,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Fire on revenue (accommodation_daily_metrics uses revenue; if your schema has total_revenue_thb, use that instead)
 CREATE TRIGGER tr_sync_accommodation_anomaly_signals
-  AFTER INSERT OR UPDATE OF total_revenue_thb, metric_date
+  AFTER INSERT OR UPDATE OF revenue, metric_date
   ON accommodation_daily_metrics
   FOR EACH ROW
   EXECUTE FUNCTION fn_sync_accommodation_anomaly_signals();
 
 -- ---------------------------------------------------------------------------
 -- 5. Accommodation anomaly: read-only VIEW (computed from accommodation_daily_metrics)
--- Drop table if it was created by an earlier run; then create as view.
+-- Drop dependent view first, then accommodation_anomaly_signals.
 -- ---------------------------------------------------------------------------
 
+DROP VIEW IF EXISTS branch_anomaly_signals;
 DROP VIEW IF EXISTS accommodation_anomaly_signals;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'accommodation_anomaly_signals') THEN
@@ -109,16 +114,17 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Use revenue (accommodation_daily_metrics.revenue); if your table has total_revenue_thb instead, replace revenue with total_revenue_thb
 CREATE VIEW accommodation_anomaly_signals AS
 WITH base AS (
   SELECT
     branch_id,
     metric_date,
-    COALESCE(total_revenue_thb, 0) AS rev,
-    AVG(COALESCE(total_revenue_thb, 0)) OVER (
+    COALESCE(revenue, 0) AS rev,
+    AVG(COALESCE(revenue, 0)) OVER (
       PARTITION BY branch_id ORDER BY metric_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
     ) AS avg_7d,
-    STDDEV(COALESCE(total_revenue_thb, 0)) OVER (
+    STDDEV(COALESCE(revenue, 0)) OVER (
       PARTITION BY branch_id ORDER BY metric_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
     ) AS std_7d
   FROM accommodation_daily_metrics
