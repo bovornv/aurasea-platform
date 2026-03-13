@@ -252,7 +252,9 @@ export interface BranchAlertsTodayRow {
   alert_type?: string | null;
   alert_category?: string | null;
   alert_severity?: string | null;
+  recommendation?: string | null;
   confidence_score?: number | null;
+  estimated_revenue_impact?: number | null;
   alert_phase?: number | null;
   [key: string]: unknown;
 }

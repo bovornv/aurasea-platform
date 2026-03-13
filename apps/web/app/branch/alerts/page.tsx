@@ -501,7 +501,7 @@ export default function BranchAlertsPage() {
   return (
     <PageLayout title="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {/* Alerts: branch_alerts_today — no duplicates, hide if learning_phase < alert_phase; show alert_message, confidence_score */}
+        {/* Alerts: branch_alerts_today — title=alert_type, message=alert_message, recommendation, confidence_score, estimated_revenue_impact */}
         <SectionCard title={locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}>
           {displayAlerts.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
@@ -510,13 +510,14 @@ export default function BranchAlertsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {displayAlerts.map((row, idx) => {
-                const { title, description } = formatAlertCard(row, localeKey);
-                const msg = (row.alert_message ?? '').toString().trim();
+                const title = (row.alert_type ?? '').toString().trim() || '—';
+                const message = (row.alert_message ?? '').toString().trim();
+                const recommendation = (row.recommendation ?? '').toString().trim();
                 const confidencePct = formatConfidenceScore(row.confidence_score);
-                const recommendation = getActionRecommendation(row.alert_type);
+                const impact = row.estimated_revenue_impact != null && !Number.isNaN(Number(row.estimated_revenue_impact)) ? Number(row.estimated_revenue_impact) : null;
                 const severity = (row.alert_severity ?? 'low').toString().toLowerCase();
                 const severityColors = getSeverityBadgeColor(row.alert_severity);
-                const id = `engine-${row.branch_id}-${row.alert_category ?? ''}-${row.metric_date ?? idx}`;
+                const id = `engine-${row.branch_id}-${row.alert_type ?? ''}-${row.metric_date ?? idx}`;
                 return (
                   <div
                     key={id}
@@ -530,7 +531,7 @@ export default function BranchAlertsPage() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 600 }}>{title || '—'}</span>
+                      <span style={{ fontWeight: 600 }}>⚠ {title || '—'}</span>
                       <span
                         style={{
                           padding: '0.2rem 0.5rem',
@@ -545,10 +546,10 @@ export default function BranchAlertsPage() {
                         {severity || 'low'}
                       </span>
                     </div>
-                    <div style={{ color: '#374151', marginBottom: recommendation ? '0.5rem' : 0 }}>{description || msg}</div>
+                    {message && <div style={{ color: '#374151', marginBottom: '0.5rem' }}>{message}</div>}
                     {recommendation && (
                       <div style={{ fontSize: '13px', color: '#0369a1', marginBottom: '0.25rem' }}>
-                        {locale === 'th' ? 'แนะนำ: ' : 'Recommendation: '}
+                        {locale === 'th' ? 'แนะนำ: ' : 'Suggested action: '}
                         <strong>{recommendation}</strong>
                       </div>
                     )}
@@ -556,6 +557,12 @@ export default function BranchAlertsPage() {
                       <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
                         {localeKey === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
                         <strong>{confidencePct}%</strong>
+                      </div>
+                    )}
+                    {impact != null && (
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
+                        {localeKey === 'th' ? 'ผลกระทบโดยประมาณ: ' : 'Impact: '}
+                        <strong>{hideFinancials ? '—' : `฿${formatCurrency(impact)}`}</strong>
                       </div>
                     )}
                   </div>
@@ -715,13 +722,14 @@ export default function BranchAlertsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {displayAlerts.map((row, idx) => {
-                const { title, description } = formatAlertCard(row, localeKey);
-                const msg = (row.alert_message ?? '').toString().trim();
+                const title = (row.alert_type ?? '').toString().trim() || '—';
+                const message = (row.alert_message ?? '').toString().trim();
+                const recommendation = (row.recommendation ?? '').toString().trim();
                 const confidencePct = formatConfidenceScore(row.confidence_score);
-                const recommendation = getActionRecommendation(row.alert_type);
+                const impact = row.estimated_revenue_impact != null && !Number.isNaN(Number(row.estimated_revenue_impact)) ? Number(row.estimated_revenue_impact) : null;
                 const severity = (row.alert_severity ?? 'low').toString().toLowerCase();
                 const severityColors = getSeverityBadgeColor(row.alert_severity);
-                const id = `active-${row.branch_id}-${row.alert_category ?? ''}-${row.metric_date ?? idx}`;
+                const id = `active-${row.branch_id}-${row.alert_type ?? ''}-${row.metric_date ?? idx}`;
                 return (
                   <div
                     key={id}
@@ -735,7 +743,7 @@ export default function BranchAlertsPage() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 600 }}>{title || '—'}</span>
+                      <span style={{ fontWeight: 600 }}>⚠ {title || '—'}</span>
                       <span
                         style={{
                           padding: '0.2rem 0.5rem',
@@ -750,10 +758,10 @@ export default function BranchAlertsPage() {
                         {severity || 'low'}
                       </span>
                     </div>
-                    <div style={{ color: '#374151', marginBottom: recommendation ? '0.25rem' : 0 }}>{description || msg}</div>
+                    {message && <div style={{ color: '#374151', marginBottom: '0.5rem' }}>{message}</div>}
                     {recommendation && (
                       <div style={{ fontSize: '13px', color: '#0369a1', marginBottom: '0.25rem' }}>
-                        {locale === 'th' ? 'แนะนำ: ' : 'Recommendation: '}
+                        {locale === 'th' ? 'แนะนำ: ' : 'Suggested action: '}
                         <strong>{recommendation}</strong>
                       </div>
                     )}
@@ -761,6 +769,12 @@ export default function BranchAlertsPage() {
                       <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
                         {localeKey === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
                         <strong>{confidencePct}%</strong>
+                      </div>
+                    )}
+                    {impact != null && (
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
+                        {localeKey === 'th' ? 'ผลกระทบโดยประมาณ: ' : 'Impact: '}
+                        <strong>{hideFinancials ? '—' : `฿${formatCurrency(impact)}`}</strong>
                       </div>
                     )}
                   </div>
