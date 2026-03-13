@@ -251,14 +251,23 @@ export interface BranchAlertsTodayRow {
   alert_message?: string | null;
   alert_type?: string | null;
   alert_category?: string | null;
+  alert_severity?: string | null;
   confidence_score?: number | null;
   alert_phase?: number | null;
   [key: string]: unknown;
 }
 
+/** Severity sort order: high=1, medium=2, else=3 (for order by severity then metric_date desc). */
+export function severityOrder(severity: string | null | undefined): number {
+  const s = (severity ?? '').toString().toLowerCase();
+  if (s === 'high') return 1;
+  if (s === 'medium') return 2;
+  return 3;
+}
+
 /**
  * Fetch alerts from branch_alerts_today for a branch.
- * select * from branch_alerts_today where branch_id = ? order by metric_date desc
+ * Order: severity (high, medium, else) then metric_date desc (applied client-side).
  */
 export async function getAlertsFromBranchAlertsToday(
   branchId: string
@@ -274,7 +283,16 @@ export async function getAlertsFromBranchAlertsToday(
       .eq('branch_id', branchId)
       .order('metric_date', { ascending: false });
     if (error) return [];
-    return (data ?? []) as BranchAlertsTodayRow[];
+    const rows = (data ?? []) as BranchAlertsTodayRow[];
+    rows.sort((a, b) => {
+      const orderA = severityOrder(a.alert_severity);
+      const orderB = severityOrder(b.alert_severity);
+      if (orderA !== orderB) return orderA - orderB;
+      const dateA = a.metric_date ?? '';
+      const dateB = b.metric_date ?? '';
+      return dateB.localeCompare(dateA);
+    });
+    return rows;
   } catch {
     return [];
   }

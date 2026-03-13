@@ -32,6 +32,7 @@ import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts'
 import { runAppAlertValidation, runFullAlertValidation } from '../../lib/run-alert-validation-app';
 import {
   getAlertsFromBranchAlertsToday,
+  severityOrder,
   type BranchLatestAlertRow,
   type BranchActiveAlertRow,
   type BranchAlertsEngineRow,
@@ -127,6 +128,14 @@ function getActionRecommendation(alertType: string | null | undefined): string |
   return ACTION_RECOMMENDATIONS[key] ?? null;
 }
 
+/** Severity badge color: high → red, medium → orange, low → yellow. */
+function getSeverityBadgeColor(severity: string | null | undefined): { bg: string; text: string; border: string } {
+  const s = (severity ?? '').toString().toLowerCase();
+  if (s === 'high') return { bg: '#fef2f2', text: '#b91c1c', border: '#ef4444' };
+  if (s === 'medium') return { bg: '#fff7ed', text: '#c2410c', border: '#f97316' };
+  return { bg: '#fefce8', text: '#a16207', border: '#eab308' };
+}
+
 export default function BranchAlertsPage() {
   const { locale } = useI18n();
   const router = useRouter();
@@ -202,10 +211,10 @@ export default function BranchAlertsPage() {
     return 0;
   }, [learningPhase?.data_days, learningPhase?.learning_phase]);
 
-  /** No duplicates; hide if learning_phase < alert_phase; show alert_message and confidence_score. */
+  /** No duplicates; hide if learning_phase < alert_phase; order by severity (high, medium, else) then metric_date desc. */
   const displayAlerts = useMemo(() => {
     const seen = new Set<string>();
-    return todayAlerts.filter((row) => {
+    const filtered = todayAlerts.filter((row) => {
       const phase = row.alert_phase != null && !Number.isNaN(Number(row.alert_phase)) ? Number(row.alert_phase) : 1;
       if (currentLearningPhase < phase) return false;
       const key = `${row.alert_type ?? ''}|${row.alert_message ?? ''}|${row.alert_category ?? ''}`;
@@ -213,6 +222,15 @@ export default function BranchAlertsPage() {
       seen.add(key);
       return true;
     });
+    filtered.sort((a, b) => {
+      const orderA = severityOrder(a.alert_severity);
+      const orderB = severityOrder(b.alert_severity);
+      if (orderA !== orderB) return orderA - orderB;
+      const dateA = a.metric_date ?? '';
+      const dateB = b.metric_date ?? '';
+      return dateB.localeCompare(dateA);
+    });
+    return filtered;
   }, [todayAlerts, currentLearningPhase]);
 
   // Fallback: daily metrics for financial impact when using engine alerts
@@ -496,20 +514,37 @@ export default function BranchAlertsPage() {
                 const msg = (row.alert_message ?? '').toString().trim();
                 const confidencePct = formatConfidenceScore(row.confidence_score);
                 const recommendation = getActionRecommendation(row.alert_type);
+                const severity = (row.alert_severity ?? 'low').toString().toLowerCase();
+                const severityColors = getSeverityBadgeColor(row.alert_severity);
                 const id = `engine-${row.branch_id}-${row.alert_category ?? ''}-${row.metric_date ?? idx}`;
                 return (
                   <div
                     key={id}
                     style={{
                       padding: '1rem',
-                      backgroundColor: '#fefce8',
-                      border: '1px solid #eab308',
+                      backgroundColor: severityColors.bg,
+                      border: `1px solid ${severityColors.border}`,
                       borderRadius: '8px',
                       fontSize: '14px',
                       color: '#0a0a0a',
                     }}
                   >
-                    <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>⚠ {title}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600 }}>{title || '—'}</span>
+                      <span
+                        style={{
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          backgroundColor: severityColors.border,
+                          color: '#fff',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {severity || 'low'}
+                      </span>
+                    </div>
                     <div style={{ color: '#374151', marginBottom: recommendation ? '0.5rem' : 0 }}>{description || msg}</div>
                     {recommendation && (
                       <div style={{ fontSize: '13px', color: '#0369a1', marginBottom: '0.25rem' }}>
@@ -684,20 +719,37 @@ export default function BranchAlertsPage() {
                 const msg = (row.alert_message ?? '').toString().trim();
                 const confidencePct = formatConfidenceScore(row.confidence_score);
                 const recommendation = getActionRecommendation(row.alert_type);
+                const severity = (row.alert_severity ?? 'low').toString().toLowerCase();
+                const severityColors = getSeverityBadgeColor(row.alert_severity);
                 const id = `active-${row.branch_id}-${row.alert_category ?? ''}-${row.metric_date ?? idx}`;
                 return (
                   <div
                     key={id}
                     style={{
                       padding: '1rem',
-                      backgroundColor: '#fefce8',
-                      border: '1px solid #eab308',
+                      backgroundColor: severityColors.bg,
+                      border: `1px solid ${severityColors.border}`,
                       borderRadius: '8px',
                       fontSize: '14px',
                       color: '#0a0a0a',
                     }}
                   >
-                    <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>⚠ {title}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600 }}>{title || '—'}</span>
+                      <span
+                        style={{
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          backgroundColor: severityColors.border,
+                          color: '#fff',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {severity || 'low'}
+                      </span>
+                    </div>
                     <div style={{ color: '#374151', marginBottom: recommendation ? '0.25rem' : 0 }}>{description || msg}</div>
                     {recommendation && (
                       <div style={{ fontSize: '13px', color: '#0369a1', marginBottom: '0.25rem' }}>
