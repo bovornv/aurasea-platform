@@ -13,10 +13,10 @@ const DAILY_METRICS_READ = 'daily_metrics';
 const TABLE_FNB = 'fnb_daily_metrics';
 const TABLE_ACCOMMODATION = 'accommodation_daily_metrics';
 
-/** DB column names for fnb_daily_metrics (frontend "customers" -> total_customers, "revenue" -> total_revenue_thb). */
+/** DB column names for fnb_daily_metrics. Table uses revenue (not total_revenue_thb); avg_ticket is calculated in DB. */
 const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
-  'branch_id', 'metric_date', 'total_revenue_thb', 'total_customers', 'cost', 'cash_balance',
-  'additional_cost_today', 'top3_menu_revenue', 'avg_ticket', 'fnb_staff', 'promo_spend', 'monthly_fixed_cost',
+  'branch_id', 'metric_date', 'revenue', 'total_customers', 'top3_menu_revenue',
+  'additional_cost_today', 'staff_count', 'promo_spend', 'monthly_fixed_cost',
 ]);
 /** Columns allowed in accommodation_daily_metrics. Only these columns exist in the table. */
 const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
@@ -46,24 +46,20 @@ function buildPayloadForTable(
 
 /**
  * Build F&B payload for fnb_daily_metrics. Maps frontend names to DB columns:
- *   revenue -> total_revenue_thb, customers -> total_customers.
- * Includes Advanced Finance & Capacity: monthly_fixed_cost, fnb_staff.
+ *   Revenue -> revenue, Number of customers -> total_customers, F&B Staff Count -> staff_count.
+ * Do not send avg_ticket (calculated in database).
  */
 function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     branch_id: metric.branchId,
     metric_date: metric.date,
-    total_revenue_thb: metric.revenue ?? 0,
+    revenue: metric.revenue ?? 0,
     total_customers: metric.customers ?? 0,
     top3_menu_revenue: metric.top3MenuRevenue ?? null,
     additional_cost_today: metric.additionalCostToday ?? 0,
-    cost: metric.cost ?? 0,
-    avg_ticket: metric.avgTicket ?? null,
-    fnb_staff: metric.fnbStaff ?? null,
+    staff_count: metric.fnbStaff ?? null,
   };
-  // monthly_fixed_cost only when explicitly provided (Owner Settings); do not overwrite from Log Today
   if (metric.monthlyFixedCost !== undefined) payload.monthly_fixed_cost = metric.monthlyFixedCost;
-  if (metric.cashBalance != null) payload.cash_balance = metric.cashBalance;
   if (metric.promoSpend != null) payload.promo_spend = metric.promoSpend;
   return Object.fromEntries(
     Object.entries(payload).filter(([, v]) => v !== undefined)
