@@ -1121,8 +1121,8 @@ export default function BranchOverviewPage() {
           </div>
         )}
 
-        {/* Learning status from branch_learning_phase */}
-        {learningPhase && (
+        {/* Learning status: from branch_learning_phase when available, else from data coverage; always show message */}
+        {(learningPhase != null || dataCoverageDays >= 0) && (
           <div style={{
             padding: '1rem',
             backgroundColor: '#f0f9ff',
@@ -1135,22 +1135,48 @@ export default function BranchOverviewPage() {
               {locale === 'th' ? 'สถานะการเรียนรู้' : 'Learning status'}
             </div>
             <div style={{ marginBottom: '0.5rem' }}>
-              {locale === 'th' ? (learningPhase.message_th ?? learningPhase.message_en ?? '—') : (learningPhase.message_en ?? learningPhase.message_th ?? '—')}
+              {(() => {
+                const days = learningPhase?.data_days != null
+                  ? Number(learningPhase.data_days)
+                  : dataCoverageDays;
+                const msg = learningPhase
+                  ? (locale === 'th'
+                    ? (learningPhase.message_th ?? learningPhase.message_en)
+                    : (learningPhase.message_en ?? learningPhase.message_th))
+                  : null;
+                if (msg != null && String(msg).trim() !== '') return String(msg).trim();
+                if (days < 7) {
+                  return locale === 'th'
+                    ? 'กำลังรวบรวมข้อมูล สัญญาณเตือนจะเปิดใช้หลัง 7 วัน'
+                    : 'Collecting data. Early signals unlock after 7 days.';
+                }
+                if (days < 14) {
+                  return locale === 'th'
+                    ? 'สัญญาณเตือนเปิดใช้แล้ว การจดจำรูปแบบจะเปิดที่ 14 วัน'
+                    : 'Early signals are active. Pattern recognition unlocks at 14 days.';
+                }
+                if (days < 30) {
+                  return locale === 'th'
+                    ? 'การจดจำรูปแบบเปิดใช้แล้ว ข้อมูลเชิงลึกเต็มที่ที่ 30 วัน'
+                    : 'Pattern recognition active. Full insights at 30 days.';
+                }
+                return locale === 'th'
+                  ? 'เรียนรู้ครบแล้ว ข้อมูลเชิงลึกทั้งหมดพร้อมใช้'
+                  : 'Full learning complete. All insights available.';
+              })()}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', fontSize: '13px', color: '#0369a1' }}>
-              {learningPhase.data_days != null && (
-                <span>
-                  {locale === 'th' ? 'วันที่มีข้อมูล: ' : 'Data days: '}
-                  <strong>{Number(learningPhase.data_days)}</strong>
-                </span>
-              )}
-              {learningPhase.confidence_score != null && (
+              <span>
+                {locale === 'th' ? 'วันที่มีข้อมูล: ' : 'Data days: '}
+                <strong>{learningPhase?.data_days != null ? Number(learningPhase.data_days) : dataCoverageDays}</strong>
+              </span>
+              {learningPhase?.confidence_score != null && (
                 <span>
                   {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
                   <strong>{Math.round(Number(learningPhase.confidence_score))}%</strong>
                 </span>
               )}
-              {learningPhase.learning_phase != null && (
+              {learningPhase?.learning_phase != null && (
                 <span>
                   {locale === 'th' ? 'ระยะการเรียนรู้: ' : 'Learning phase: '}
                   <strong>{String(learningPhase.learning_phase)}</strong>
