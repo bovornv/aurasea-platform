@@ -238,14 +238,27 @@ export default function BranchAlertsPage() {
     return filtered;
   }, [alertRows]);
 
-  // (Removed: daily metrics, financialMetrics, topMoneyDrivers, resolvedAlerts — only branch_alerts_today + branch_intelligence_engine used)
+  /** alert_type categories: risk (revenue at risk) vs opportunity (opportunity gain). Daily impact × 30 = monthly. */
+  const ALERT_TYPES_REVENUE_AT_RISK = ['Revenue Collapse', 'Revenue Risk', 'Low Occupancy', 'Demand Weakening'];
+  const ALERT_TYPES_OPPORTUNITY_GAIN = ['Pricing Opportunity', 'Near Full Capacity', 'Strong Demand'];
 
   const financialMetrics = useMemo(() => {
-    const risk = displayAlerts.reduce((sum, r) => sum + (Number(r.estimated_revenue_impact) < 0 ? Math.abs(Number(r.estimated_revenue_impact)) : 0), 0);
-    const gain = displayAlerts.reduce((sum, r) => sum + (Number(r.estimated_revenue_impact) > 0 ? Number(r.estimated_revenue_impact) : 0), 0);
+    const norm = (t: string | null | undefined) => (t ?? '').toString().trim();
+    const isRiskType = (type: string | null | undefined) =>
+      ALERT_TYPES_REVENUE_AT_RISK.some((k) => norm(type).toLowerCase() === k.toLowerCase());
+    const isOpportunityType = (type: string | null | undefined) =>
+      ALERT_TYPES_OPPORTUNITY_GAIN.some((k) => norm(type).toLowerCase() === k.toLowerCase());
+
+    const dailyRisk = displayAlerts
+      .filter((r) => isRiskType(r.alert_type))
+      .reduce((sum, r) => sum + Math.abs(Number(r.estimated_revenue_impact) || 0), 0);
+    const dailyGain = displayAlerts
+      .filter((r) => isOpportunityType(r.alert_type))
+      .reduce((sum, r) => sum + Math.max(0, Number(r.estimated_revenue_impact) || 0), 0);
+
     return {
-      totalRevenueAtRisk: risk,
-      totalOpportunityGain: gain,
+      totalRevenueAtRisk: dailyRisk * 30,
+      totalOpportunityGain: dailyGain * 30,
       criticalCount: displayAlerts.filter((r) => (r as AlertDisplayRow).alert_severity === 'high').length,
       warningCount: displayAlerts.filter((r) => (r as AlertDisplayRow).alert_severity === 'medium').length,
     };
