@@ -207,6 +207,79 @@ export async function getActiveAlertsFromBranchActiveAlerts(
   }
 }
 
+/** Row from branch_alerts_engine view. Includes alert_phase (1, 2, 3) for learning-phase filtering. */
+export interface BranchAlertsEngineRow {
+  branch_id: string;
+  metric_date?: string | null;
+  alert_message?: string | null;
+  alert_type?: string | null;
+  alert_category?: string | null;
+  confidence_score?: number | null;
+  alert_phase?: number | null;
+  data_days?: number | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch alerts from branch_alerts_engine for a branch.
+ * Ordered by metric_date descending. Caller should filter by category not null, dedupe by category, and apply phase rules.
+ */
+export async function getAlertsFromBranchAlertsEngine(
+  branchId: string
+): Promise<BranchAlertsEngineRow[]> {
+  if (branchId == null || branchId === '') return [];
+  if (!isSupabaseAvailable()) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('branch_alerts_engine')
+      .select('*')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false });
+    if (error) return [];
+    return (data ?? []) as BranchAlertsEngineRow[];
+  } catch {
+    return [];
+  }
+}
+
+/** Row from branch_alerts_today view. */
+export interface BranchAlertsTodayRow {
+  branch_id: string;
+  metric_date?: string | null;
+  alert_message?: string | null;
+  alert_type?: string | null;
+  alert_category?: string | null;
+  confidence_score?: number | null;
+  alert_phase?: number | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch alerts from branch_alerts_today for a branch.
+ * select * from branch_alerts_today where branch_id = ? order by metric_date desc
+ */
+export async function getAlertsFromBranchAlertsToday(
+  branchId: string
+): Promise<BranchAlertsTodayRow[]> {
+  if (branchId == null || branchId === '') return [];
+  if (!isSupabaseAvailable()) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('branch_alerts_today')
+      .select('*')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false });
+    if (error) return [];
+    return (data ?? []) as BranchAlertsTodayRow[];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Get alerts for a branch from branch_alerts (intelligence engine).
  * Ordered by metric_date descending. Prefer alert_message; support legacy revenue_alert/customer_alert etc.
