@@ -269,7 +269,7 @@ export default function BranchAlertsPage() {
                     {impact != null && (
                       <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
                         {localeKey === 'th' ? 'ผลกระทบโดยประมาณ: ' : 'Estimated impact: '}
-                        <strong>{hideFinancials ? '—' : `฿${formatCurrency(impact)}`}</strong>
+                        <strong>{hideFinancials ? '—' : `฿${Number(impact).toLocaleString()}`}</strong>
                       </div>
                     )}
                   </div>
@@ -398,7 +398,7 @@ export default function BranchAlertsPage() {
                     {impact != null && (
                       <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
                         {localeKey === 'th' ? 'ผลกระทบโดยประมาณ: ' : 'Estimated impact: '}
-                        <strong>{hideFinancials ? '—' : `฿${formatCurrency(impact)}`}</strong>
+                        <strong>{hideFinancials ? '—' : `฿${Number(impact).toLocaleString()}`}</strong>
                       </div>
                     )}
                   </div>
