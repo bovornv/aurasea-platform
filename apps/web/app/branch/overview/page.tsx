@@ -1060,8 +1060,10 @@ export default function BranchOverviewPage() {
                   ? `${Math.round(Number(confidenceVal) <= 1 ? Number(confidenceVal) * 100 : Number(confidenceVal))}%`
                   : collecting);
 
-          const dataCoverageText = isFnb && fnbOperatingStatus != null && fnbOperatingStatus.data_days != null && fnbOperatingStatus.required_days != null
-            ? `${Number(fnbOperatingStatus.data_days)} / ${Number(fnbOperatingStatus.required_days)}`
+          const dataCoverageText = isFnb && fnbOperatingStatus != null
+            ? (fnbOperatingStatus.data_days != null && fnbOperatingStatus.required_days != null
+                ? `${Number(fnbOperatingStatus.data_days)} / ${Number(fnbOperatingStatus.required_days)}`
+                : (coverageDays != null ? `${coverageDays} / 30` : null))
             : null;
           const avgTicketVal = isFnb ? (fnbOperatingStatus?.avg_ticket ?? null) : null;
           const latestMetricDate = isFnb ? (fnbOperatingStatus?.metric_date ?? null) : (operatingStatusData?.metric_date ?? null);
