@@ -22,9 +22,11 @@ import { runAppAlertValidation, runFullAlertValidation } from '../../lib/run-ale
 import {
   getAlertsFromBranchAlertsToday,
   getAlertsFromBranchIntelligenceEngine,
+  getAlertsFromFnbAlertsToday,
   severityOrder,
   type BranchAlertsTodayRow,
   type BranchIntelligenceEngineRow,
+  type FnbAlertsTodayRow,
 } from '../../services/db/kpi-analytics-service';
 
 /** Normalize alert_type from DB to key (e.g. "Revenue Risk" → "revenue_risk"). */
@@ -130,11 +132,11 @@ function getSeverityBadgeColor(severity: string | null | undefined): { bg: strin
   return { bg: '#fefce8', text: '#a16207', border: '#eab308' };
 }
 
-/** Unified alert row from branch_alerts_today or branch_intelligence_engine (display fields only). */
+/** Unified alert row: accommodation = branch_alerts_today + engine; F&B = fnb_alerts_today (alert_name as title, confidence as confidence_score). */
 type AlertDisplayRow = Pick<
   BranchAlertsTodayRow,
   'branch_id' | 'metric_date' | 'alert_type' | 'alert_message' | 'recommendation' | 'confidence_score' | 'estimated_revenue_impact'
-> & { alert_severity?: string | null };
+> & { alert_severity?: string | null; alert_name?: string | null };
 
 export default function BranchAlertsPage() {
   const { locale } = useI18n();
@@ -170,6 +172,30 @@ export default function BranchAlertsPage() {
     if (!branch?.id) return;
     setAlertsLoading(true);
     setAlertsError(null);
+    if (branch.moduleType === 'fnb') {
+      getAlertsFromFnbAlertsToday(branch.id)
+        .then((rows: FnbAlertsTodayRow[]) => {
+          const filtered = rows.filter((r) => r.alert_name != null && String(r.alert_name).trim() !== '');
+          const mapped: AlertDisplayRow[] = filtered.map((r) => ({
+            branch_id: r.branch_id,
+            metric_date: r.metric_date,
+            alert_type: r.alert_name ?? null,
+            alert_message: r.alert_message ?? null,
+            recommendation: r.recommendation ?? null,
+            confidence_score: r.confidence ?? null,
+            estimated_revenue_impact: r.estimated_revenue_impact ?? null,
+            alert_severity: null,
+            alert_name: r.alert_name ?? null,
+          }));
+          setAlertRows(mapped);
+        })
+        .catch((e) => {
+          setAlertsError(e instanceof Error ? e : new Error(String(e)));
+          setAlertRows([]);
+        })
+        .finally(() => setAlertsLoading(false));
+      return;
+    }
     Promise.all([
       getAlertsFromBranchAlertsToday(branch.id),
       getAlertsFromBranchIntelligenceEngine(branch.id),
@@ -211,18 +237,19 @@ export default function BranchAlertsPage() {
         setAlertRows([]);
       })
       .finally(() => setAlertsLoading(false));
-  }, [branch?.id]);
+  }, [branch?.id, branch?.moduleType]);
 
   useEffect(() => {
     fetchAlerts();
   }, [fetchAlerts]);
 
-  /** displayAlerts: confidence >= 10, dedupe, sort by severity then metric_date desc. */
+  /** displayAlerts: F&B = no confidence filter, no dedupe (single source); accommodation = confidence >= 10, dedupe, sort by severity then metric_date desc. */
   const displayAlerts = useMemo(() => {
+    const isFnb = branch?.moduleType === 'fnb';
     const seen = new Set<string>();
     const filtered = alertRows.filter((row) => {
-      if (effectiveConfidencePct(row.confidence_score) < 10) return false;
-      const key = `${row.alert_type ?? ''}|${row.alert_message ?? ''}|${row.metric_date ?? ''}`;
+      if (!isFnb && effectiveConfidencePct(row.confidence_score) < 10) return false;
+      const key = `${row.alert_name ?? row.alert_type ?? ''}|${row.alert_message ?? ''}|${row.metric_date ?? ''}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -236,7 +263,7 @@ export default function BranchAlertsPage() {
       return dateB.localeCompare(dateA);
     });
     return filtered;
-  }, [alertRows]);
+  }, [alertRows, branch?.moduleType]);
 
   /** alert_type categories: risk (revenue at risk) vs opportunity (opportunity gain). Daily impact × 30 = monthly. */
   const ALERT_TYPES_REVENUE_AT_RISK = ['Revenue Collapse', 'Revenue Risk', 'Low Occupancy', 'Demand Weakening'];
@@ -336,14 +363,15 @@ export default function BranchAlertsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {displayAlerts.map((row, idx) => {
-                const title = (row.alert_type ?? '').toString().trim() || '—';
+                const title = (row.alert_name ?? row.alert_type ?? '').toString().trim() || '—';
                 const message = (row.alert_message ?? '').toString().trim();
                 const recommendation = (row.recommendation ?? '').toString().trim();
                 const confidencePct = formatConfidenceScore(row.confidence_score);
                 const impact = row.estimated_revenue_impact != null && !Number.isNaN(Number(row.estimated_revenue_impact)) ? Number(row.estimated_revenue_impact) : null;
                 const severity = (row.alert_severity ?? 'low').toString().toLowerCase();
                 const severityColors = getSeverityBadgeColor(row.alert_severity);
-                const id = `engine-${row.branch_id}-${row.alert_type ?? ''}-${row.metric_date ?? idx}`;
+                const id = `engine-${row.branch_id}-${row.alert_name ?? row.alert_type ?? ''}-${row.metric_date ?? idx}`;
+                const isFnb = branch?.moduleType === 'fnb';
                 return (
                   <div
                     key={id}
@@ -358,6 +386,7 @@ export default function BranchAlertsPage() {
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 600 }}>⚠ {title || '—'}</span>
+                      {!isFnb && (
                       <span
                         style={{
                           padding: '0.2rem 0.5rem',
@@ -371,6 +400,7 @@ export default function BranchAlertsPage() {
                       >
                         {severity || 'low'}
                       </span>
+                      )}
                     </div>
                     {message && <div style={{ color: '#374151', marginBottom: '0.5rem' }}>{message}</div>}
                     {recommendation && (
@@ -471,14 +501,15 @@ export default function BranchAlertsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {displayAlerts.map((row, idx) => {
-                const title = (row.alert_type ?? '').toString().trim() || '—';
+                const title = (row.alert_name ?? row.alert_type ?? '').toString().trim() || '—';
                 const message = (row.alert_message ?? '').toString().trim();
                 const recommendation = (row.recommendation ?? '').toString().trim();
                 const confidencePct = formatConfidenceScore(row.confidence_score);
                 const impact = row.estimated_revenue_impact != null && !Number.isNaN(Number(row.estimated_revenue_impact)) ? Number(row.estimated_revenue_impact) : null;
                 const severity = (row.alert_severity ?? 'low').toString().toLowerCase();
                 const severityColors = getSeverityBadgeColor(row.alert_severity);
-                const id = `active-${row.branch_id}-${row.alert_type ?? ''}-${row.metric_date ?? idx}`;
+                const id = `active-${row.branch_id}-${row.alert_name ?? row.alert_type ?? ''}-${row.metric_date ?? idx}`;
+                const isFnbActive = branch?.moduleType === 'fnb';
                 return (
                   <div
                     key={id}
@@ -493,6 +524,7 @@ export default function BranchAlertsPage() {
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 600 }}>⚠ {title || '—'}</span>
+                      {!isFnbActive && (
                       <span
                         style={{
                           padding: '0.2rem 0.5rem',
@@ -506,6 +538,7 @@ export default function BranchAlertsPage() {
                       >
                         {severity || 'low'}
                       </span>
+                      )}
                     </div>
                     {message && <div style={{ color: '#374151', marginBottom: '0.5rem' }}>{message}</div>}
                     {recommendation && (

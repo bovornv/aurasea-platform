@@ -339,6 +339,42 @@ export async function getAlertsFromBranchAlertsToday(
   }
 }
 
+/** Row from fnb_alerts_today view (F&B only). Display: alert_name, alert_message, recommendation, confidence, estimated_revenue_impact. */
+export interface FnbAlertsTodayRow {
+  branch_id: string;
+  metric_date?: string | null;
+  alert_name?: string | null;
+  alert_message?: string | null;
+  recommendation?: string | null;
+  confidence?: number | null;
+  estimated_revenue_impact?: number | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch alerts from fnb_alerts_today for an F&B branch. Do not use branch_alerts_today or accommodation tables.
+ * Caller should filter out rows where alert_name is null.
+ */
+export async function getAlertsFromFnbAlertsToday(
+  branchId: string
+): Promise<FnbAlertsTodayRow[]> {
+  if (branchId == null || branchId === '') return [];
+  if (!isSupabaseAvailable()) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('fnb_alerts_today')
+      .select('*')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false });
+    if (error) return [];
+    return (data ?? []) as FnbAlertsTodayRow[];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Get alerts for a branch from branch_alerts (intelligence engine).
  * Ordered by metric_date descending. Prefer alert_message; support legacy revenue_alert/customer_alert etc.
