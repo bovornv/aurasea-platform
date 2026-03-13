@@ -100,14 +100,12 @@ const ACTION_RECOMMENDATIONS: Record<string, string> = {
 /** Row shape shared by latest, active, engine, and today alerts. */
 type AlertRowLike = BranchLatestAlertRow | BranchActiveAlertRow | BranchAlertsEngineRow | BranchAlertsTodayRow;
 
-/** Derive display title (category label) and description (localized message) from a row. */
+/** Card title = alert_category (localized); message = alert_message; never use "Alert" as title. */
 function formatAlertCard(
   row: AlertRowLike,
   locale: 'th' | 'en' = 'en'
 ): { title: string; description: string } {
   const msg = (row.alert_message ?? (row as any).revenue_alert ?? (row as any).customer_alert ?? (row as any).occupancy_alert ?? '').toString().trim();
-  const typeRaw = (row.alert_type ?? '').toString().trim();
-  const typeKey = normalizeAlertType(typeRaw);
   const categoryRaw = (row.alert_category ?? '').toString().trim().toLowerCase();
   const isTh = locale === 'th';
 
@@ -115,17 +113,12 @@ function formatAlertCard(
     ? (isTh ? ALERT_CATEGORY_LABEL[categoryRaw].th : ALERT_CATEGORY_LABEL[categoryRaw].en)
     : '';
 
-  const messageMap = typeKey && ALERT_MESSAGE[typeKey]
-    ? (isTh ? ALERT_MESSAGE[typeKey].th : ALERT_MESSAGE[typeKey].en)
-    : '';
+  let title = categoryLabel || (categoryRaw || (row.alert_type ?? '').toString().trim() || msg.split('.')[0]?.trim() || msg.slice(0, 50) || '—');
+  if (title === 'Alert' || /^alert$/i.test(title)) title = '—';
+  title = title.length > 60 ? title.slice(0, 57) + '...' : title;
 
-  const title = categoryLabel || (typeRaw || (msg.split('.')[0]?.trim() || msg.slice(0, 50) || 'Alert'));
-  const description = messageMap || msg;
-
-  return {
-    title: title.length > 60 ? title.slice(0, 57) + '...' : title,
-    description: description.length > 60 ? description.slice(0, 97) + '...' : description,
-  };
+  const description = msg.length > 60 ? msg.slice(0, 97) + '...' : msg;
+  return { title, description };
 }
 
 function getActionRecommendation(alertType: string | null | undefined): string | null {
