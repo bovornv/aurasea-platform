@@ -299,7 +299,7 @@ export default function BranchAlertsPage() {
                   {locale === 'th' ? 'รายได้ที่เสี่ยง' : 'Total Revenue at Risk'}
                 </div>
                 <div style={{ fontSize: '32px', fontWeight: 700, color: '#ef4444' }}>
-                  {hideFinancials ? '—' : `฿${formatCurrency(financialMetrics.totalRevenueAtRisk)}/mo`}
+                  {hideFinancials ? '—' : `฿${(financialMetrics.totalRevenueAtRisk ?? 0).toLocaleString()}/mo`}
                 </div>
               </div>
               <div>
@@ -307,7 +307,7 @@ export default function BranchAlertsPage() {
                   {locale === 'th' ? 'โอกาสเพิ่มรายได้' : 'Total Opportunity Gain'}
                 </div>
                 <div style={{ fontSize: '32px', fontWeight: 700, color: '#10b981' }}>
-                  {hideFinancials ? '—' : `฿${formatCurrency(financialMetrics.totalOpportunityGain)}/mo`}
+                  {hideFinancials ? '—' : `฿${(financialMetrics.totalOpportunityGain ?? 0).toLocaleString()}/mo`}
                 </div>
               </div>
               <div>
