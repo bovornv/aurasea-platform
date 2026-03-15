@@ -1,4 +1,4 @@
--- F&B views used by the web app: fnb_operating_status, fnb_alerts_today, fnb_financial_impact
+-- F&B views used by the web app: fnb_operating_status, fnb_alerts_today. Financial impact: fnb_daily_metrics (branch_id, metric_date, revenue).
 -- Requires fnb_daily_metrics with: metric_date, revenue, total_customers.
 
 -- 1) fnb_latest_metrics: one row per branch, latest metric_date (used as fallback when fnb_operating_status is empty)
@@ -62,17 +62,4 @@ SELECT
 FROM branches b
 WHERE 1 = 0;
 
--- 4) fnb_financial_impact: one row per F&B branch for Estimated Financial Impact
--- Expected columns: branch_id, total_revenue_at_risk, total_opportunity_gain, critical_alerts, warnings
-DROP VIEW IF EXISTS fnb_financial_impact;
-CREATE VIEW fnb_financial_impact AS
-SELECT
-  b.id AS branch_id,
-  0::numeric AS total_revenue_at_risk,
-  0::numeric AS total_opportunity_gain,
-  0::integer AS critical_alerts,
-  0::integer AS warnings
-FROM branches b
-WHERE EXISTS (
-  SELECT 1 FROM fnb_daily_metrics m WHERE m.branch_id = b.id LIMIT 1
-);
+-- 4) F&B Estimated Financial Impact: app reads from fnb_daily_metrics (branch_id, metric_date, revenue), not fnb_financial_impact.

@@ -412,9 +412,18 @@ export async function getAlertsFromFnbAlertsToday(
   }
 }
 
-/** Row from fnb_financial_impact (F&B only). One row per branch. */
+/** Shape returned by fnb_financial_impact view select(branch_id, metric_date, revenue). */
+export interface FnbFinancialImpactSelectRow {
+  branch_id: string;
+  metric_date?: string | null;
+  revenue?: number | null;
+}
+
+/** Row from fnb_financial_impact view. Select: branch_id, metric_date, revenue. Impact fields default to 0 for UI. */
 export interface FnbFinancialImpactRow {
   branch_id: string;
+  metric_date?: string | null;
+  revenue?: number | null;
   total_revenue_at_risk?: number | null;
   total_opportunity_gain?: number | null;
   critical_alerts?: number | null;
@@ -433,8 +442,9 @@ export interface AccommodationFinancialImpactRow {
 }
 
 /**
- * Fetch financial impact from fnb_financial_impact for an F&B branch.
- * Uses .single() as per view contract; returns null when no row or error.
+ * Fetch F&B financial impact from fnb_financial_impact view.
+ * Query: .from("fnb_financial_impact").select("branch_id, metric_date, revenue").eq("branch_id", branchId).maybeSingle()
+ * Returns null if view is missing (404), no row, or error. Safe for missing view/table.
  */
 export async function getFnbFinancialImpact(
   branchId: string
@@ -446,11 +456,29 @@ export async function getFnbFinancialImpact(
   try {
     const { data, error } = await supabase
       .from('fnb_financial_impact')
-      .select('*')
+      .select('branch_id, metric_date, revenue')
       .eq('branch_id', branchId)
-      .single();
-    if (error) return null;
-    return data as FnbFinancialImpactRow | null;
+      .maybeSingle();
+    if (error) {
+      const msg = (error.message ?? '').toLowerCase();
+      const code = String(error.code ?? '');
+      const isNotFound =
+        code === 'PGRST116' || code === '404' ||
+        msg.includes('404') || msg.includes('relation') || msg.includes('does not exist');
+      if (isNotFound) return null;
+      return null;
+    }
+    if (data == null) return null;
+    const row = data as FnbFinancialImpactSelectRow;
+    return {
+      branch_id: row.branch_id,
+      metric_date: row.metric_date ?? null,
+      revenue: row.revenue ?? null,
+      total_revenue_at_risk: 0,
+      total_opportunity_gain: 0,
+      critical_alerts: 0,
+      warnings: 0,
+    };
   } catch {
     return null;
   }

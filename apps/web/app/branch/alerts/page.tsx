@@ -141,7 +141,7 @@ export default function BranchAlertsPage() {
     return uniqueByCode;
   }, [alertRows, branch?.moduleType]);
 
-  /** F&B: fnb_financial_impact. Accommodation: accommodation_financial_impact. Both from Supabase only. */
+  /** F&B: fnb_daily_metrics (branch_id, metric_date, revenue). Accommodation: accommodation_financial_impact. Both from Supabase only. */
   const financialMetrics = useMemo(() => {
     if (branch?.moduleType === 'fnb') {
       if (!fnbFinancialImpact) return null;
@@ -285,7 +285,7 @@ export default function BranchAlertsPage() {
           )}
         </SectionCard>
 
-        {/* Financial impact: F&B = fnb_financial_impact only; accommodation = from displayAlerts. Null → message. */}
+        {/* Financial impact: F&B = fnb_daily_metrics; accommodation = accommodation_financial_impact. Null → message. */}
         <SectionCard title={locale === 'th' ? 'ผลกระทบทางการเงิน (โดยประมาณ)' : 'Estimated Financial Impact'}>
           {financialMetrics == null ? (
             <div style={{ padding: '3rem', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
