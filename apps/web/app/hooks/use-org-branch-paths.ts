@@ -63,11 +63,11 @@ export function useOrgBranchPaths(): {
       companySettings: `${base}/settings`,
       branchOverview: branchBase ? `${branchBase}/overview` : null,
       branchLog: branchBase ? `${branchBase}/log` : null,
-      branchAlerts: branchBase ? `${branchBase}/alerts` : null,
+      branchAlerts: branchBase ? `${branchBase}/overview` : null,
       branchTrends: branchBase ? `${branchBase}/trends` : null,
       branchSettings: branchBase ? `${branchBase}/settings` : null,
       branchAlertsWithQuery: (alertId?: string) =>
-        branchBase ? `${branchBase}/alerts${alertId ? `?alert=${alertId}` : ''}` : null,
+        branchBase ? `${branchBase}/overview${alertId ? `?alert=${alertId}` : ''}` : null,
     };
   }, [orgId, branchId, permissions]);
 }

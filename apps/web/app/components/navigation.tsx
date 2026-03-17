@@ -11,7 +11,6 @@ import { useMemo } from 'react';
 
 const LABELS: Record<string, { en: string; th: string }> = {
   overview: { en: 'Today', th: 'วันนี้' },
-  alerts: { en: 'Alerts', th: 'การแจ้งเตือน' },
   trends: { en: 'Trends', th: 'เทรนด์' },
   settings: { en: 'Settings', th: 'การตั้งค่า' },
   log: { en: 'Enter Data', th: 'กรอกข้อมูล' },
@@ -36,7 +35,6 @@ export function Navigation() {
       const items: Array<{ href: string; labelKey: keyof typeof LABELS }> = [
         { href: `/org/${orgId}/branch/${branchId}/overview`, labelKey: 'overview' },
         ...(canLogData ? [{ href: `/org/${orgId}/branch/${branchId}/log`, labelKey: 'log' as const }] : []),
-        { href: `/org/${orgId}/branch/${branchId}/alerts`, labelKey: 'alerts' },
         { href: `/org/${orgId}/branch/${branchId}/trends`, labelKey: 'trends' },
       ];
       if (canAccessBranchSettings) {

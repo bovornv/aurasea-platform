@@ -194,6 +194,19 @@ export default function BranchOverviewPage() {
     };
   }, [mergedBranchAlerts]);
 
+  // Top 5 alerts for "Alerts & Recommendations" section (severity DESC, then confidence DESC)
+  const topAlertsForToday = useMemo(() => {
+    const order: Record<string, number> = { critical: 0, warning: 1, informational: 2 };
+    return [...mergedBranchAlerts]
+      .sort((a, b) => {
+        const sa = order[a.severity] ?? 3;
+        const sb = order[b.severity] ?? 3;
+        if (sa !== sb) return sa - sb;
+        return (b.confidence ?? 0) - (a.confidence ?? 0);
+      })
+      .slice(0, 5);
+  }, [mergedBranchAlerts]);
+
   // STABILITY: Guard revenueImpact everywhere
   const safeRevenueImpact = (alert: AlertContract): number => {
     const extended = alert as ExtendedAlertContract;
@@ -1070,6 +1083,61 @@ export default function BranchOverviewPage() {
           </div>
         )}
 
+        {/* Alerts & Recommendations — compact list, top 5 */}
+        <div style={{ marginTop: '0.5rem' }}>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
+            {locale === 'th' ? 'การแจ้งเตือนและคำแนะนำ' : 'Alerts & Recommendations'}
+          </div>
+          {alertsInitializing ? (
+            <div style={{ fontSize: '13px', color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
+          ) : topAlertsForToday.length === 0 ? (
+            <div style={{ fontSize: '13px', color: '#6b7280', lineHeight: 1.5 }}>
+              <div>{locale === 'th' ? 'ไม่พบประเด็นสำคัญวันนี้' : 'No major issues detected today'}</div>
+              <div style={{ marginTop: '0.25rem' }}>{locale === 'th' ? 'ระบบทำงานปกติ' : 'System operating normally'}</div>
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {topAlertsForToday.map((alert) => {
+                const extended = alert as ExtendedAlertContract;
+                const severityColor = getSeverityColor(alert.severity);
+                const title = extended?.revenueImpactTitle ?? (locale === 'th' && extended?.revenueImpactTitleTh ? extended.revenueImpactTitleTh : null) ?? (alert.message?.split('.')[0]?.trim() || alert.id);
+                const insight = extended?.revenueImpactDescription ?? alert.message ?? '';
+                const recommendation = insight.length > 80 ? `${insight.slice(0, 80)}…` : insight;
+                return (
+                  <li
+                    key={alert.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.5rem',
+                      fontSize: '13px',
+                      lineHeight: 1.45,
+                      color: '#1f2937',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: severityColor,
+                        flexShrink: 0,
+                        marginTop: '0.4rem',
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 500 }}>{title}</div>
+                      {recommendation ? (
+                        <div style={{ marginTop: '0.2rem', color: '#6b7280' }}>→ {recommendation}</div>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
         {fullyActive && (
           <>
         <OperatingHeader />
@@ -1383,7 +1451,7 @@ export default function BranchOverviewPage() {
                 return (
                   <div
                     key={alert.id}
-                    onClick={() => router.push(`/branch/alerts?alert=${alert.id}`)}
+                    onClick={() => router.push(paths.branchAlertsWithQuery?.(alert.id) ?? paths.branchOverview ?? '/')}
                     style={{
                       padding: '1rem',
                       backgroundColor: '#ffffff',
@@ -1446,7 +1514,7 @@ export default function BranchOverviewPage() {
               {mergedBranchAlerts.length > 5 && (
                 <div style={{ textAlign: 'center', marginTop: '0.5rem' }}>
                   <button
-                    onClick={() => router.push(paths.branchAlerts || '/branch/alerts')}
+                    onClick={() => router.push(paths.branchAlerts ?? paths.branchOverview ?? '/')}
                     style={{
                       padding: '0.5rem 1rem',
                       backgroundColor: 'transparent',
@@ -1572,7 +1640,7 @@ export default function BranchOverviewPage() {
                       
                       {/* Take Action Button */}
                       <button
-                        onClick={() => router.push(`/branch/alerts?alert=${action.alertId}`)}
+                        onClick={() => router.push(paths.branchAlertsWithQuery?.(action.alertId) ?? paths.branchOverview ?? '/')}
                         style={{
                           marginTop: '0.5rem',
                           padding: '0.5rem 1rem',

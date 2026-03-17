@@ -12,7 +12,7 @@ import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
 
 const GROUP_TO_ORG: Record<string, string> = {
   overview: 'overview',
-  alerts: 'alerts',
+  alerts: 'overview',
   trends: 'trends',
   settings: 'settings',
 };

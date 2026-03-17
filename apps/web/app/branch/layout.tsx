@@ -12,7 +12,7 @@ import { getAccessibleBranches } from '../services/permissions-service';
 const BRANCH_TO_PATH: Record<string, string> = {
   overview: 'overview',
   'log-today': 'log',
-  alerts: 'alerts',
+  alerts: 'overview',
   trends: 'trends',
   scenario: 'overview',
   settings: 'settings',
