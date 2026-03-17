@@ -1,9 +1,8 @@
 /**
  * Branch Anomaly Signals Service
  *
- * Read-only: queries backend view branch_anomaly_signals (UNION of fnb_anomaly_signals
- * and accommodation_anomaly_signals). Do not INSERT/UPSERT into branch_anomaly_signals.
- * Enables early intelligent alerts after ~7 days (no need to wait for 30).
+ * Read-only: uses core view today_summary_clean for latest revenue/confidence.
+ * Anomaly-style alerts can also come from alerts_final (alert_type, severity).
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
@@ -24,10 +23,8 @@ export interface AnomalyAlert {
   severity: 'critical' | 'warning' | 'informational';
 }
 
-const VIEW_NAME = 'branch_anomaly_signals';
-
 /**
- * Fetch latest row from branch_anomaly_signals for a branch.
+ * Fetch latest row from today_summary_clean for a branch (revenue, health as confidence proxy).
  */
 export async function getLatestAnomalySignal(
   branchId: string
@@ -37,8 +34,8 @@ export async function getLatestAnomalySignal(
   if (!supabase) return null;
 
   const { data, error } = await supabase
-    .from(VIEW_NAME)
-    .select('*')
+    .from('today_summary_clean')
+    .select('branch_id, metric_date, revenue, health_score')
     .eq('branch_id', branchId)
     .order('metric_date', { ascending: false })
     .limit(1)
@@ -46,11 +43,20 @@ export async function getLatestAnomalySignal(
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[AnomalySignals] Failed to fetch:', error.message);
+      console.warn('[AnomalySignals] today_summary_clean error:', error.message);
     }
     return null;
   }
-  return data as BranchAnomalySignalRow | null;
+  if (!data) return null;
+  const row = data as { branch_id: string; metric_date?: string | null; revenue?: number | null; health_score?: number | null };
+  return {
+    branch_id: row.branch_id,
+    metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : '',
+    total_revenue_thb: row.revenue != null ? Number(row.revenue) : null,
+    revenue_avg_7d: null,
+    revenue_anomaly_score: null,
+    confidence_score: row.health_score != null ? Number(row.health_score) / 100 : null,
+  };
 }
 
 /**

@@ -553,8 +553,8 @@ export async function getBranchAlertsFromKpi(branchId: string): Promise<BranchAl
 }
 
 /**
- * Get recommendations for a branch from branch_recommendations.
- * Returns rows with non-null recommendation.
+ * Get recommendations for a branch from alerts_final (core view).
+ * Maps alert_type to recommendation; returns rows with non-null recommendation.
  */
 export async function getBranchRecommendationsFromKpi(
   branchId: string
@@ -568,19 +568,27 @@ export async function getBranchRecommendationsFromKpi(
 
   try {
     const { data, error } = await supabase
-      .from('branch_recommendations')
-      .select('*')
+      .from('alerts_final')
+      .select('branch_id, metric_date, alert_type')
       .eq('branch_id', branchId);
 
     if (error) {
       if (process.env.NODE_ENV === 'development') {
-        console.warn('[KpiAnalytics] branch_recommendations error:', error.message);
+        console.warn('[KpiAnalytics] alerts_final error:', error.message);
       }
       return [];
     }
 
-    const rows = (data ?? []) as BranchRecommendationRow[];
-    return rows.filter((r) => r.recommendation != null && String(r.recommendation).trim() !== '');
+    const rows = (data ?? []) as Array<{ branch_id: string; metric_date?: string | null; alert_type?: string | null }>;
+    return rows
+      .filter((r) => r.alert_type != null && String(r.alert_type).trim() !== '')
+      .map((r) => ({
+        branch_id: r.branch_id,
+        metric_date: r.metric_date ?? null,
+        recommendation: r.alert_type ?? null,
+        category: null,
+        priority: null,
+      } as BranchRecommendationRow));
   } catch (e) {
     if (process.env.NODE_ENV === 'development') {
       console.error('[KpiAnalytics] getBranchRecommendationsFromKpi error:', e);

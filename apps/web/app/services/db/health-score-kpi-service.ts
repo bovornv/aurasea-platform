@@ -230,8 +230,8 @@ export async function getHealthScoreFromBranchHealthMetrics(
 }
 
 /**
- * Get health_score from accommodation_health_today for the Operating Status Business Health Score card.
- * Do not calculate in frontend; always from Supabase.
+ * Get health_score from today_summary_clean (core view) for the Operating Status / Today page.
+ * Used for both accommodation and F&B branches.
  */
 export async function getHealthScoreFromAccommodationHealthToday(
   branchId: string
@@ -243,10 +243,12 @@ export async function getHealthScoreFromAccommodationHealthToday(
 
   try {
     const { data, error } = await supabase
-      .from('accommodation_health_today')
+      .from('today_summary_clean')
       .select('health_score')
       .eq('branch_id', branchId)
-      .single();
+      .order('metric_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (error || data == null) return null;
     const row = data as { health_score?: number | null };
@@ -257,28 +259,10 @@ export async function getHealthScoreFromAccommodationHealthToday(
 }
 
 /**
- * Get health_score from fnb_health_today for the Operating Status Business Health Score card.
- * Do not calculate in frontend; always from Supabase.
+ * Get health_score from today_summary_clean (core view) for F&B branches.
  */
 export async function getHealthScoreFromFnbHealthToday(
   branchId: string
 ): Promise<number | null> {
-  if (branchId == null || branchId === '') return null;
-  if (!isSupabaseAvailable()) return null;
-  const supabase = getSupabaseClient();
-  if (!supabase) return null;
-
-  try {
-    const { data, error } = await supabase
-      .from('fnb_health_today')
-      .select('health_score')
-      .eq('branch_id', branchId)
-      .maybeSingle();
-
-    if (error || data == null) return null;
-    const row = data as { health_score?: number | null };
-    return row.health_score != null ? Number(row.health_score) : null;
-  } catch {
-    return null;
-  }
+  return getHealthScoreFromAccommodationHealthToday(branchId);
 }

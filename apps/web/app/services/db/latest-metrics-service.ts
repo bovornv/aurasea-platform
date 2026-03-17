@@ -217,8 +217,8 @@ export async function getOperatingStatusData(
 }
 
 /**
- * Row from today_summary view (date-based joins for reliable deltas).
- * Use for Today page Latest Performance: revenue_delta_day, occupancy_delta_week.
+ * Row from today_summary_clean (core view for Today page).
+ * Use for Latest Performance: revenue_delta_day, occupancy_delta_week, health_score.
  */
 export interface TodaySummaryRow {
   branch_id: string;
@@ -237,10 +237,12 @@ export interface TodaySummaryRow {
   health_score: number | null;
 }
 
+const TODAY_SUMMARY_SELECT =
+  'branch_id, metric_date, revenue, occupancy_rate, adr, revpar, health_score, revenue_delta_day, occupancy_delta_week';
+
 /**
- * Fetch latest row from today_summary view for a branch.
- * Deltas are computed in DB via date-based joins (not lag), so they are correct when
- * at least 2 days (revenue_delta_day) or 8 days (occupancy_delta_week) exist.
+ * Fetch latest row from today_summary_clean for a branch.
+ * Core view: revenue, occupancy_rate, adr, revpar, health_score, revenue_delta_day, occupancy_delta_week.
  * Returns null if view missing or error (caller can fall back to client-side deltas).
  */
 export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow | null> {
@@ -252,8 +254,8 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
   if (!supabase) return null;
 
   const { data, error } = await supabase
-    .from('today_summary')
-    .select('branch_id, metric_date, revenue, revenue_yesterday, revenue_delta_day, occupancy_rate, occupancy_delta_week, rooms_sold, rooms_available, adr, revpar, customers, avg_ticket, health_score')
+    .from('today_summary_clean')
+    .select(TODAY_SUMMARY_SELECT)
     .eq('branch_id', branchId)
     .order('metric_date', { ascending: false })
     .limit(1)
@@ -261,7 +263,7 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[LatestMetricsService] today_summary error:', error.message);
+      console.warn('[LatestMetricsService] today_summary_clean error:', error.message);
     }
     return null;
   }

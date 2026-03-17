@@ -20,10 +20,10 @@ WITH base AS (
     NULL::integer AS customers
   FROM accommodation_daily_metrics
   UNION ALL
-  -- F&B: metric_date or date, revenue or total_sales, total_customers
+  -- F&B: metric_date (or date if column exists), revenue or total_sales, total_customers
   SELECT
     branch_id,
-    (COALESCE(metric_date, date))::date AS metric_date,
+    (metric_date)::date AS metric_date,
     COALESCE(revenue, total_sales, 0)::numeric AS revenue,
     NULL::integer AS rooms_sold,
     NULL::integer AS rooms_available,
