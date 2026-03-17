@@ -986,11 +986,16 @@ export default function BranchOverviewPage() {
             )}
           </div>
         )}
-        {/* Latest Performance (Yesterday): 2-row inline summary — no cards */}
+        {/* Latest Performance (Last updated: …): 2-row inline summary — no cards */}
         {branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb' ? (
           <BranchTodaySummary
             branchType={branch.moduleType}
             locale={locale === 'th' ? 'th' : 'en'}
+            lastUpdatedDate={
+              (branch.moduleType === 'fnb' ? fnbOperatingStatus?.metric_date : operatingStatusData?.metric_date) ??
+              latestDailyMetric?.date ??
+              (lastUpdated ? new Date(lastUpdated).toISOString().slice(0, 10) : null)
+            }
             accommodation={todaySummary.accommodation}
             fnb={todaySummary.fnb}
             collectingLabel={locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...'}

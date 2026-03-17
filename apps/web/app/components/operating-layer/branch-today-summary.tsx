@@ -51,6 +51,8 @@ export interface BranchTodaySummaryFnb {
 export interface BranchTodaySummaryProps {
   branchType: 'accommodation' | 'fnb';
   locale: 'en' | 'th';
+  /** Metric date (YYYY-MM-DD) or lastUpdated ISO string for "Last updated: Mar 16" in title */
+  lastUpdatedDate?: string | null;
   accommodation?: BranchTodaySummaryAccommodation | null;
   fnb?: BranchTodaySummaryFnb | null;
   collectingLabel?: string;
@@ -61,15 +63,34 @@ function formatRevenue(n: number | null | undefined): string {
   return `฿${Math.round(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+function formatLastUpdated(dateStr: string | null | undefined, locale: 'en' | 'th'): string {
+  if (!dateStr) return '';
+  const d = dateStr.length === 10 ? new Date(dateStr + 'T12:00:00Z') : new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', { month: 'short', day: 'numeric' });
+}
+
 export function BranchTodaySummary({
   branchType,
   locale: loc,
+  lastUpdatedDate,
   accommodation,
   fnb,
   collectingLabel = 'Collecting data...',
 }: BranchTodaySummaryProps) {
-  const vsLastWeek = loc === 'th' ? 'vs last week' : 'vs last week';
-  const vsYesterday = loc === 'th' ? 'vs yesterday' : 'vs yesterday';
+  const isTh = loc === 'th';
+  const vsLastWeek = isTh ? 'เทียบสัปดาห์ก่อน' : 'vs last week';
+  const vsYesterday = isTh ? 'เทียบเมื่อวาน' : 'vs yesterday';
+  const labelOccupancy = isTh ? 'อัตราการเข้าพัก' : 'Occupancy';
+  const labelRooms = isTh ? 'ห้อง' : 'Rooms';
+  const labelRevenue = isTh ? 'รายได้' : 'Revenue';
+  const labelHealth = isTh ? 'สุขภาพ' : 'Health';
+  const labelCustomers = isTh ? 'ลูกค้า' : 'Customers';
+  const labelAvgTicket = isTh ? 'ค่าเฉลี่ยต่อบิล' : 'Avg Ticket';
+  const titleSuffix = lastUpdatedDate
+    ? (isTh ? `อัปเดตล่าสุด: ${formatLastUpdated(lastUpdatedDate, loc)}` : `Last updated: ${formatLastUpdated(lastUpdatedDate, loc)}`)
+    : (isTh ? 'อัปเดตล่าสุด' : 'Yesterday');
+  const sectionTitle = isTh ? `ประสิทธิภาพล่าสุด (${titleSuffix})` : `Latest Performance (${titleSuffix})`;
 
   const sectionTitleStyle: React.CSSProperties = {
     fontSize: '12px',
@@ -113,7 +134,7 @@ export function BranchTodaySummary({
 
     return (
       <div style={{ padding: '0.5rem 0' }}>
-        <div style={sectionTitleStyle}>Latest Performance (Yesterday)</div>
+        <div style={sectionTitleStyle}>{sectionTitle}</div>
         <div
           style={{
             display: 'flex',
@@ -121,10 +142,10 @@ export function BranchTodaySummary({
             gap: '0.25rem',
           }}
         >
-          {/* Row 1: Occupancy | Rooms — on mobile stack occupancy + rooms */}
-          <div style={rowStyle} className="branch-today-row-1">
+          {/* Row 1: Occupancy (% vs last week) | Rooms */}
+          <div style={rowStyle}>
             <span style={segmentStyle}>
-              <span style={labelStyle}>Occupancy</span>
+              <span style={labelStyle}>{labelOccupancy}</span>
               <span style={valueStyle}>{occ != null ? `${occ}%` : collectingLabel}</span>
               {occDelta != null && Number.isFinite(occDelta) && (
                 <span style={occDelta >= 0 ? deltaPos : deltaNeg}>
@@ -134,14 +155,14 @@ export function BranchTodaySummary({
             </span>
             <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
             <span style={segmentStyle}>
-              <span style={labelStyle}>Rooms</span>
+              <span style={labelStyle}>{labelRooms}</span>
               <span style={valueStyle}>{roomsStr}</span>
             </span>
           </div>
-          {/* Row 2: Revenue | ADR | RevPAR | Health */}
+          {/* Row 2: Revenue (% vs yesterday) | ADR | RevPAR | Health */}
           <div style={rowStyle}>
             <span style={segmentStyle}>
-              <span style={labelStyle}>Revenue</span>
+              <span style={labelStyle}>{labelRevenue}</span>
               <span style={valueStyle}>{revStr}</span>
               {revDelta != null && Number.isFinite(revDelta) && (
                 <span style={revDelta >= 0 ? deltaPos : deltaNeg}>
@@ -161,7 +182,7 @@ export function BranchTodaySummary({
             </span>
             <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
             <span style={segmentStyle}>
-              <span style={labelStyle}>Health</span>
+              <span style={labelStyle}>{labelHealth}</span>
               <span style={healthColor(a.healthScore)}>{health} {healthIcon}</span>
             </span>
           </div>
@@ -179,10 +200,10 @@ export function BranchTodaySummary({
     const healthIcon = getHealthIcon(f.healthScore);
     return (
       <div style={{ padding: '0.5rem 0' }}>
-        <div style={sectionTitleStyle}>Latest Performance (Yesterday)</div>
+        <div style={sectionTitleStyle}>{sectionTitle}</div>
         <div style={rowStyle}>
           <span style={segmentStyle}>
-            <span style={labelStyle}>Revenue</span>
+            <span style={labelStyle}>{labelRevenue}</span>
             <span style={valueStyle}>{revStr}</span>
             {f.revenueDeltaPct != null && Number.isFinite(f.revenueDeltaPct) && (
               <span style={f.revenueDeltaPct >= 0 ? deltaPos : deltaNeg}>
@@ -192,7 +213,7 @@ export function BranchTodaySummary({
           </span>
           <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
           <span style={segmentStyle}>
-            <span style={labelStyle}>Customers</span>
+            <span style={labelStyle}>{labelCustomers}</span>
             <span style={valueStyle}>{cust}</span>
             {f.customersDeltaPct != null && Number.isFinite(f.customersDeltaPct) && (
               <span style={f.customersDeltaPct >= 0 ? deltaPos : deltaNeg}>
@@ -202,12 +223,12 @@ export function BranchTodaySummary({
           </span>
           <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
           <span style={segmentStyle}>
-            <span style={labelStyle}>Avg Ticket</span>
+            <span style={labelStyle}>{labelAvgTicket}</span>
             <span style={valueStyle}>{avgStr}</span>
           </span>
           <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
           <span style={segmentStyle}>
-            <span style={labelStyle}>Health</span>
+            <span style={labelStyle}>{labelHealth}</span>
             <span style={healthColor(f.healthScore)}>{health} {healthIcon}</span>
           </span>
         </div>
@@ -217,7 +238,7 @@ export function BranchTodaySummary({
 
   return (
     <div style={{ padding: '0.5rem 0' }}>
-      <div style={sectionTitleStyle}>Latest Performance (Yesterday)</div>
+      <div style={sectionTitleStyle}>{sectionTitle}</div>
       <div style={{ fontSize: '14px', color: '#6b7280' }}>{collectingLabel}</div>
     </div>
   );
