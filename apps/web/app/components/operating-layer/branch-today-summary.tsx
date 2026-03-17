@@ -1,23 +1,23 @@
 'use client';
 
 /**
- * BranchTodaySummary — compact 2-row "Latest Performance (Yesterday)" section.
- * Replaces card-based Operating Status. Inline text, | separators, no cards.
- * Accommodation: Row 1 = Occupancy | Rooms; Row 2 = Revenue | ADR | RevPAR | Health.
- * Delta: occupancy vs last week, revenue vs yesterday. Positive green, negative red.
- * Health: >=80 green, 60-79 yellow, <60 red.
+ * BranchTodaySummary — Top Metrics only (premium, Stripe/Linear-style).
+ * Single row: Revenue | ADR | RevPAR | Health (accommodation) or Revenue | Customers | Avg Ticket | Health (F&B).
+ * No learning/progress bar; system status lives in a separate strip below.
  */
 
 import { getHealthIcon } from '../../utils/today-summary-utils';
 
 const sep = ' | ';
-const labelStyle: React.CSSProperties = { fontSize: '12px', color: '#6b7280', marginRight: '0.35rem' };
-const valueStyle: React.CSSProperties = { fontWeight: 500, color: '#0a0a0a' };
-const deltaPos: React.CSSProperties = { color: '#059669', fontWeight: 500 };
-const deltaNeg: React.CSSProperties = { color: '#dc2626', fontWeight: 500 };
-const healthGreen: React.CSSProperties = { color: '#059669', fontWeight: 600 };
-const healthYellow: React.CSSProperties = { color: '#ca8a04', fontWeight: 600 };
-const healthRed: React.CSSProperties = { color: '#dc2626', fontWeight: 600 };
+const sepStyle: React.CSSProperties = { color: '#9ca3af', fontSize: '16px', fontWeight: 400, margin: '0 8px' };
+const valueStyle: React.CSSProperties = { fontWeight: 600, color: '#111827', fontSize: '17px' };
+const labelStyle: React.CSSProperties = { fontSize: '14px', color: '#6b7280', fontWeight: 500, marginRight: '4px' };
+const deltaPos: React.CSSProperties = { color: '#059669', fontWeight: 500, fontSize: '16px' };
+const deltaNeg: React.CSSProperties = { color: '#dc2626', fontWeight: 500, fontSize: '16px' };
+const healthGreen: React.CSSProperties = { color: '#059669', fontWeight: 600, fontSize: '17px' };
+const healthYellow: React.CSSProperties = { color: '#ca8a04', fontWeight: 600, fontSize: '17px' };
+const healthRed: React.CSSProperties = { color: '#dc2626', fontWeight: 600, fontSize: '17px' };
+const itemGap = 20;
 
 function healthColor(score: number | null | undefined): React.CSSProperties {
   if (score == null || Number.isNaN(score)) return valueStyle;
@@ -56,79 +56,11 @@ export interface BranchTodaySummaryProps {
   accommodation?: BranchTodaySummaryAccommodation | null;
   fnb?: BranchTodaySummaryFnb | null;
   collectingLabel?: string;
-  /** From branch_learning_phase.data_days — if provided, shows inline "System: Learning (X/30)" or "System: High Confidence ✅" at end of row */
-  systemDataDays?: number | null;
 }
 
 function formatRevenue(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '—';
   return `฿${Math.round(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
-
-function formatLastUpdated(dateStr: string | null | undefined, locale: 'en' | 'th'): string {
-  if (!dateStr) return '';
-  const d = dateStr.length === 10 ? new Date(dateStr + 'T12:00:00Z') : new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', { month: 'short', day: 'numeric' });
-}
-
-const systemLearningLabel = (days: number, isTh: boolean) =>
-  isTh ? `ระบบ: กำลังเรียนรู้ (${days}/30 วัน)` : `System: Learning (${days}/30 days)`;
-const systemHighConfidence = (isTh: boolean) =>
-  isTh ? 'ระบบ: ความมั่นใจสูง ✅' : 'System: High Confidence ✅';
-
-function SystemStatusSegment({
-  dataDays,
-  locale: loc,
-}: { dataDays: number; locale: 'en' | 'th' }) {
-  const isTh = loc === 'th';
-  const styleWrap: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '0.35rem',
-    marginLeft: '0.5rem',
-    fontSize: '12px',
-    color: '#6b7280',
-  };
-  const barWidth = 72;
-  const barHeight = 5;
-  const progress = Math.min(1, dataDays / 30);
-
-  if (dataDays >= 30) {
-    return (
-      <span style={styleWrap}>
-        <span style={{ color: '#9ca3af', fontWeight: 500 }}>{sep}</span>
-        <span style={{ fontWeight: 500, color: '#374151' }}>{systemHighConfidence(isTh)}</span>
-      </span>
-    );
-  }
-  return (
-    <span style={styleWrap}>
-      <span style={{ color: '#9ca3af', fontWeight: 500 }}>{sep}</span>
-      <span style={{ fontWeight: 500, color: '#374151' }}>{systemLearningLabel(dataDays, isTh)}</span>
-      <span
-        style={{
-          display: 'inline-flex',
-          width: barWidth,
-          height: barHeight,
-          borderRadius: 2,
-          backgroundColor: '#e5e7eb',
-          overflow: 'hidden',
-          flexShrink: 0,
-        }}
-        title={`${dataDays}/30`}
-      >
-        <span
-          style={{
-            width: `${progress * 100}%`,
-            height: '100%',
-            backgroundColor: '#4b5563',
-            transition: 'width 0.2s ease',
-          }}
-        />
-      </span>
-    </span>
-  );
 }
 
 export function BranchTodaySummary({
@@ -138,57 +70,29 @@ export function BranchTodaySummary({
   accommodation,
   fnb,
   collectingLabel = 'Collecting data...',
-  systemDataDays,
 }: BranchTodaySummaryProps) {
   const isTh = loc === 'th';
-  const vsLastWeek = isTh ? 'เทียบสัปดาห์ก่อน' : 'vs last week';
   const vsYesterday = isTh ? 'เทียบเมื่อวาน' : 'vs yesterday';
-  const labelOccupancy = isTh ? 'อัตราการเข้าพัก' : 'Occupancy';
-  const labelRooms = isTh ? 'ห้อง' : 'Rooms';
   const labelRevenue = isTh ? 'รายได้' : 'Revenue';
   const labelHealth = isTh ? 'สุขภาพ' : 'Health';
   const labelCustomers = isTh ? 'ลูกค้า' : 'Customers';
   const labelAvgTicket = isTh ? 'ค่าเฉลี่ยต่อบิล' : 'Avg Ticket';
-  const dataDays = systemDataDays ?? 0;
-  const showSystem = systemDataDays != null;
-  const titleSuffix = lastUpdatedDate
-    ? (isTh ? `อัปเดตล่าสุด: ${formatLastUpdated(lastUpdatedDate, loc)}` : `Last updated: ${formatLastUpdated(lastUpdatedDate, loc)}`)
-    : (isTh ? 'อัปเดตล่าสุด' : 'Yesterday');
-  const sectionTitle = isTh ? `ประสิทธิภาพล่าสุด (${titleSuffix})` : `Latest Performance (${titleSuffix})`;
-
-  const sectionTitleStyle: React.CSSProperties = {
-    fontSize: '12px',
-    fontWeight: 500,
-    color: '#6b7280',
-    marginBottom: '0.5rem',
-    letterSpacing: '0.01em',
-  };
 
   const rowStyle: React.CSSProperties = {
     display: 'flex',
     flexWrap: 'wrap',
     alignItems: 'baseline',
-    gap: '0.25rem 0',
-    fontSize: '14px',
-    marginBottom: '0.35rem',
+    gap: `0 ${itemGap}px`,
+    fontSize: '17px',
   };
 
   const segmentStyle: React.CSSProperties = {
     display: 'inline-flex',
     alignItems: 'baseline',
-    marginRight: '0.75rem',
   };
 
   if (branchType === 'accommodation' && accommodation) {
     const a = accommodation;
-    const occ = a.occupancyRate != null ? Math.round(a.occupancyRate) : null;
-    const occDelta = a.occupancyDeltaPct;
-    const roomsStr =
-      a.roomsSold != null && a.totalRooms != null
-        ? `${a.roomsSold} / ${a.totalRooms}`
-        : a.roomsSold != null
-          ? String(a.roomsSold)
-          : '—';
     const revStr = a.revenue != null ? formatRevenue(a.revenue) : collectingLabel;
     const revDelta = a.revenueDeltaPct;
     const adrStr = a.adr != null ? formatRevenue(a.adr) : '—';
@@ -197,60 +101,32 @@ export function BranchTodaySummary({
     const healthIcon = getHealthIcon(a.healthScore);
 
     return (
-      <div style={{ padding: '0.5rem 0' }}>
-        <div style={sectionTitleStyle}>{sectionTitle}</div>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.25rem',
-          }}
-        >
-          {/* Row 1: Occupancy (% vs last week) | Rooms */}
-          <div style={rowStyle}>
-            <span style={segmentStyle}>
-              <span style={labelStyle}>{labelOccupancy}</span>
-              <span style={valueStyle}>{occ != null ? `${occ}%` : collectingLabel}</span>
-              {occDelta != null && Number.isFinite(occDelta) && (
-                <span style={occDelta >= 0 ? deltaPos : deltaNeg}>
-                  {' '}({occDelta >= 0 ? '+' : ''}{occDelta.toFixed(0)}% {vsLastWeek})
-                </span>
-              )}
-            </span>
-            <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
-            <span style={segmentStyle}>
-              <span style={labelStyle}>{labelRooms}</span>
-              <span style={valueStyle}>{roomsStr}</span>
-            </span>
-          </div>
-          {/* Row 2: Revenue (% vs yesterday) | ADR | RevPAR | Health */}
-          <div style={rowStyle}>
-            <span style={segmentStyle}>
-              <span style={labelStyle}>{labelRevenue}</span>
-              <span style={valueStyle}>{revStr}</span>
-              {revDelta != null && Number.isFinite(revDelta) && (
-                <span style={revDelta >= 0 ? deltaPos : deltaNeg}>
-                  {' '}({revDelta >= 0 ? '+' : ''}{revDelta.toFixed(0)}% {vsYesterday})
-                </span>
-              )}
-            </span>
-            <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
-            <span style={segmentStyle}>
-              <span style={labelStyle}>ADR</span>
-              <span style={valueStyle}>{adrStr}</span>
-            </span>
-            <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
-            <span style={segmentStyle}>
-              <span style={labelStyle}>RevPAR</span>
-              <span style={valueStyle}>{revparStr}</span>
-            </span>
-            <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
-            <span style={segmentStyle}>
-              <span style={labelStyle}>{labelHealth}</span>
-              <span style={healthColor(a.healthScore)}>{health} {healthIcon}</span>
-            </span>
-            {showSystem && <SystemStatusSegment dataDays={dataDays} locale={loc} />}
-          </div>
+      <div style={{ padding: 0 }}>
+        <div style={rowStyle}>
+          <span style={segmentStyle}>
+            <span style={labelStyle}>{labelRevenue}</span>
+            <span style={valueStyle}>{revStr}</span>
+            {revDelta != null && Number.isFinite(revDelta) && (
+              <span style={revDelta >= 0 ? deltaPos : deltaNeg}>
+                {' '}({revDelta >= 0 ? '+' : ''}{revDelta.toFixed(0)}% {vsYesterday})
+              </span>
+            )}
+          </span>
+          <span style={sepStyle}>{sep}</span>
+          <span style={segmentStyle}>
+            <span style={labelStyle}>ADR</span>
+            <span style={valueStyle}>{adrStr}</span>
+          </span>
+          <span style={sepStyle}>{sep}</span>
+          <span style={segmentStyle}>
+            <span style={labelStyle}>RevPAR</span>
+            <span style={valueStyle}>{revparStr}</span>
+          </span>
+          <span style={sepStyle}>{sep}</span>
+          <span style={segmentStyle}>
+            <span style={labelStyle}>{labelHealth}</span>
+            <span style={healthColor(a.healthScore)}>{health} {healthIcon}</span>
+          </span>
         </div>
       </div>
     );
@@ -264,8 +140,7 @@ export function BranchTodaySummary({
     const health = f.healthScore != null ? Math.round(f.healthScore) : '—';
     const healthIcon = getHealthIcon(f.healthScore);
     return (
-      <div style={{ padding: '0.5rem 0' }}>
-        <div style={sectionTitleStyle}>{sectionTitle}</div>
+      <div style={{ padding: 0 }}>
         <div style={rowStyle}>
           <span style={segmentStyle}>
             <span style={labelStyle}>{labelRevenue}</span>
@@ -276,7 +151,7 @@ export function BranchTodaySummary({
               </span>
             )}
           </span>
-          <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
+          <span style={sepStyle}>{sep}</span>
           <span style={segmentStyle}>
             <span style={labelStyle}>{labelCustomers}</span>
             <span style={valueStyle}>{cust}</span>
@@ -286,26 +161,24 @@ export function BranchTodaySummary({
               </span>
             )}
           </span>
-          <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
+          <span style={sepStyle}>{sep}</span>
           <span style={segmentStyle}>
             <span style={labelStyle}>{labelAvgTicket}</span>
             <span style={valueStyle}>{avgStr}</span>
           </span>
-          <span style={{ ...segmentStyle, color: '#9ca3af', fontSize: '12px' }}>{sep}</span>
+          <span style={sepStyle}>{sep}</span>
           <span style={segmentStyle}>
             <span style={labelStyle}>{labelHealth}</span>
             <span style={healthColor(f.healthScore)}>{health} {healthIcon}</span>
           </span>
-          {showSystem && <SystemStatusSegment dataDays={dataDays} locale={loc} />}
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '0.5rem 0' }}>
-      <div style={sectionTitleStyle}>{sectionTitle}</div>
-      <div style={{ fontSize: '14px', color: '#6b7280' }}>{collectingLabel}</div>
+    <div style={{ padding: 0 }}>
+      <div style={{ fontSize: '16px', color: '#6b7280', fontWeight: 500 }}>{collectingLabel}</div>
     </div>
   );
 }

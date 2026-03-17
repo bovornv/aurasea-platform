@@ -25,7 +25,7 @@ import { CriticalAlertsSnapshot } from '../../components/alerts/critical-alerts-
 import { MonitoringErrorBoundary } from '../../components/monitoring-error-boundary';
 import { AlertsFallback } from '../../components/alerts-fallback';
 import { formatCurrency } from '../../utils/formatting';
-import { getSeverityColor, getSeverityLabel } from '../../utils/alert-utils';
+import { getSeverityColor, getSeverityLabel, getAlertTopDisplay } from '../../utils/alert-utils';
 import { safeNumber } from '../../utils/safe-number';
 import { calculateRevenueExposure } from '../../utils/revenue-exposure-calculator';
 import { runPlatformAudit } from '../../services/platform-audit-service';
@@ -1059,7 +1059,7 @@ export default function BranchOverviewPage() {
             )}
           </div>
         )}
-        {/* Latest Performance (Last updated: …): 2-row inline summary — no cards */}
+        {/* 1. Top Metrics (primary) — single row only */}
         {branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb' ? (
           <BranchTodaySummary
             branchType={branch.moduleType}
@@ -1072,58 +1072,105 @@ export default function BranchOverviewPage() {
             accommodation={todaySummary.accommodation}
             fnb={todaySummary.fnb}
             collectingLabel={locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...'}
-            systemDataDays={learningPhase?.data_days ?? undefined}
           />
         ) : null}
 
-        {/* Alerts & Recommendations — from alerts_top (max 3), structured with cause + recommendation + expected recovery */}
-        <div style={{ marginTop: '0.5rem' }}>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
-            {locale === 'th' ? 'การแจ้งเตือนและคำแนะนำ' : 'Alerts & Recommendations'}
+        {/* 2. System Status Strip — thin, muted, below metrics */}
+        {learningPhase?.data_days != null && (branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb') ? (
+          <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>
+              {locale === 'th' ? `กำลังเรียนรู้ (${learningPhase.data_days}/30 วัน)` : `Learning (${learningPhase.data_days}/30 days)`}
+            </span>
+            <span style={{ color: '#9ca3af', fontSize: 10 }}>●</span>
+            <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>
+              {learningPhase.data_days < 14
+                ? (locale === 'th' ? 'ความน่าเชื่อถือต่ำ ⚠' : 'Low ⚠')
+                : learningPhase.data_days < 30
+                  ? (locale === 'th' ? 'ความน่าเชื่อถือปานกลาง ⚠' : 'Medium ⚠')
+                  : (locale === 'th' ? 'ความน่าเชื่อถือสูง ✅' : 'High ✅')}
+            </span>
+            {learningPhase.data_days < 30 && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  width: 80,
+                  height: 4,
+                  borderRadius: 2,
+                  backgroundColor: '#e5e7eb',
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                }}
+              >
+                <span
+                  style={{
+                    width: `${Math.min(100, (learningPhase.data_days / 30) * 100)}%`,
+                    height: '100%',
+                    backgroundColor: '#9ca3af',
+                  }}
+                />
+              </span>
+            )}
+          </div>
+        ) : null}
+
+        {/* 3. Alerts & Recommendations (action layer) */}
+        <div style={{ marginTop: learningPhase?.data_days != null ? 0 : 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: '#111827', margin: 0 }}>
+              {locale === 'th' ? 'การแจ้งเตือนและคำแนะนำ' : 'Alerts & Recommendations'}
+            </h2>
+            {learningPhase?.data_days != null && (
+              <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 400 }}>
+                {learningPhase.data_days < 14
+                  ? (locale === 'th' ? 'ความน่าเชื่อถือต่ำ ⚠' : 'Low ⚠')
+                  : learningPhase.data_days < 30
+                    ? (locale === 'th' ? 'ความน่าเชื่อถือปานกลาง ⚠' : 'Medium ⚠')
+                    : (locale === 'th' ? 'ความน่าเชื่อถือสูง ✅' : 'High ✅')}
+              </span>
+            )}
           </div>
           {alertsTopLoading ? (
-            <div style={{ fontSize: '13px', color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
+            <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
           ) : alertsTop.length === 0 ? (
-            <div style={{ fontSize: '13px', color: '#6b7280', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
               <div>{locale === 'th' ? 'ไม่พบประเด็นสำคัญวันนี้' : 'No major issues detected today'}</div>
-              <div style={{ marginTop: '0.25rem' }}>{locale === 'th' ? 'ระบบทำงานปกติ' : 'System operating normally'}</div>
+              <div style={{ marginTop: 6 }}>{locale === 'th' ? 'ระบบทำงานปกติ' : 'System operating normally'}</div>
             </div>
           ) : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {alertsTop.slice(0, 3).map((alert, idx) => {
                 const isOpportunity = alert.severity === 1 && (alert.alert_type === 'High Demand Opportunity' || (alert.alert_message ?? '').toLowerCase().includes('growing'));
                 const accentColor = isOpportunity ? '#059669' : '#dc2626';
+                const d = getAlertTopDisplay(alert, locale === 'th' ? 'th' : 'en');
                 return (
                   <li
                     key={`${alert.branch_id}-${alert.metric_date}-${alert.alert_type}-${idx}`}
                     style={{
-                      padding: '0.5rem 0',
-                      borderLeft: `3px solid ${accentColor}`,
-                      paddingLeft: '0.5rem',
-                      fontSize: '13px',
+                      padding: '12px 16px',
+                      borderLeft: `4px solid ${accentColor}`,
                       lineHeight: 1.5,
                       color: '#1f2937',
                     }}
                   >
-                    <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
-                      {alert.alert_type ?? 'Alert'}: {alert.alert_message ?? ''}
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
+                      {d.type}: {d.message}
                     </div>
-                    {alert.cause ? (
-                      <div style={{ color: '#6b7280', marginBottom: '0.2rem' }}>
+                    {d.cause ? (
+                      <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
                         <span style={{ fontWeight: 500 }}>{locale === 'th' ? 'สาเหตุ: ' : 'Cause: '}</span>
-                        {alert.cause}
+                        {d.cause}
                       </div>
                     ) : null}
-                    {alert.recommendation ? (
-                      <div style={{ color: '#374151', marginBottom: '0.2rem' }}>
+                    {d.recommendation ? (
+                      <div style={{ fontSize: 14, color: '#374151', fontWeight: 500, marginBottom: 4 }}>
                         <span style={{ fontWeight: 500 }}>{locale === 'th' ? 'คำแนะนำ: ' : 'Recommendation: '}</span>
-                        {alert.recommendation}
+                        {d.recommendation}
                       </div>
                     ) : null}
-                    {alert.expected_recovery ? (
-                      <div style={{ color: accentColor, fontWeight: 500 }}>
+                    {d.expected_recovery ? (
+                      <div style={{ fontSize: 13, color: accentColor, fontWeight: 500 }}>
                         {locale === 'th' ? 'ผลลัพธ์ที่คาดหวัง: ' : 'Expected recovery: '}
-                        {alert.expected_recovery}
+                        {d.expected_recovery}
                       </div>
                     ) : null}
                   </li>
