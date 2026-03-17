@@ -218,12 +218,13 @@ export async function getOperatingStatusData(
 
 /**
  * Row from today_summary_clean (core view for Today page).
- * Use for Latest Performance: revenue_delta_day, occupancy_delta_week, health_score.
+ * total_revenue = main revenue; accommodation_revenue, fnb_revenue = split when available.
  */
 export interface TodaySummaryRow {
   branch_id: string;
   metric_date: string | null;
-  revenue: number | null;
+  /** Total revenue (renamed from revenue). */
+  total_revenue: number | null;
   revenue_yesterday: number | null;
   revenue_delta_day: number | null;
   occupancy_rate: number | null;
@@ -235,10 +236,12 @@ export interface TodaySummaryRow {
   customers: number | null;
   avg_ticket: number | null;
   health_score: number | null;
+  accommodation_revenue?: number | null;
+  fnb_revenue?: number | null;
 }
 
 const TODAY_SUMMARY_SELECT =
-  'branch_id, metric_date, revenue, occupancy_rate, adr, revpar, health_score, revenue_delta_day, occupancy_delta_week';
+  'branch_id, metric_date, total_revenue, occupancy_rate, adr, revpar, health_score, revenue_delta_day, occupancy_delta_week, accommodation_revenue, fnb_revenue';
 
 /**
  * Fetch latest row from today_summary_clean for a branch.
@@ -273,7 +276,7 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
   return {
     branch_id: branchId,
     metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
-    revenue: row.revenue != null ? Number(row.revenue) : null,
+    total_revenue: row.total_revenue != null ? Number(row.total_revenue) : (row.revenue != null ? Number(row.revenue) : null),
     revenue_yesterday: row.revenue_yesterday != null ? Number(row.revenue_yesterday) : null,
     revenue_delta_day: row.revenue_delta_day != null ? Number(row.revenue_delta_day) : null,
     occupancy_rate: row.occupancy_rate != null ? Number(row.occupancy_rate) : null,
@@ -285,6 +288,8 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
     customers: row.customers != null ? Number(row.customers) : null,
     avg_ticket: row.avg_ticket != null ? Number(row.avg_ticket) : null,
     health_score: row.health_score != null ? Number(row.health_score) : null,
+    accommodation_revenue: row.accommodation_revenue != null ? Number(row.accommodation_revenue) : null,
+    fnb_revenue: row.fnb_revenue != null ? Number(row.fnb_revenue) : null,
   };
 }
 

@@ -1,6 +1,43 @@
--- Alerts pipeline: problems (alerts_today) + actions + opportunities → alerts_top (max 3 per branch).
--- Prerequisite: today_summary_clean must exist (revenue_delta_day, occupancy_delta_week).
--- DROP first so column names can change (PostgreSQL REPLACE cannot rename columns).
+-- Upgrade today_summary_clean: revenue → total_revenue, add accommodation_revenue, fnb_revenue.
+-- Strategy: create v3 → drop dependents → drop old view → rename v3 → recreate dependents.
+-- Prerequisite: accommodation_daily_metrics and fnb_daily_metrics must exist.
+
+-- Step 1: Create new version (explicit total_revenue, split revenue). Include NULL deltas for alert views.
+CREATE VIEW today_summary_clean_v3 AS
+SELECT
+    a.branch_id,
+    a.metric_date,
+
+    (COALESCE(a.revenue, 0) + COALESCE(f.revenue, 0)) AS total_revenue,
+    a.revenue AS accommodation_revenue,
+    f.revenue AS fnb_revenue,
+
+    f.total_customers AS customers,
+    f.total_customers AS transactions,
+
+    a.rooms_available AS capacity,
+    a.rooms_sold AS utilized,
+
+    CASE
+        WHEN a.rooms_available > 0
+        THEN (a.rooms_sold::numeric / a.rooms_available) * 100
+        ELSE NULL
+    END AS occupancy_rate,
+
+    NULL::numeric AS adr,
+    NULL::numeric AS revpar,
+
+    70 AS health_score,
+
+    NULL::numeric AS revenue_delta_day,
+    NULL::numeric AS occupancy_delta_week
+
+FROM accommodation_daily_metrics a
+INNER JOIN fnb_daily_metrics f
+    ON a.branch_id = f.branch_id
+    AND a.metric_date = f.metric_date;
+
+-- Step 2: Drop all views that depend on today_summary_clean (reverse dependency order).
 DROP VIEW IF EXISTS alerts_top CASCADE;
 DROP VIEW IF EXISTS alerts_ranked CASCADE;
 DROP VIEW IF EXISTS alerts_all CASCADE;
@@ -9,8 +46,23 @@ DROP VIEW IF EXISTS alerts_revenue_split CASCADE;
 DROP VIEW IF EXISTS alerts_with_actions CASCADE;
 DROP VIEW IF EXISTS alerts_today CASCADE;
 DROP VIEW IF EXISTS alerts_opportunities CASCADE;
+DROP VIEW IF EXISTS accommodation_health_today CASCADE;
+DROP VIEW IF EXISTS branch_anomaly_signals CASCADE;
+DROP VIEW IF EXISTS today_summary_clean CASCADE;
 
--- Step 1: Problems only (rule-based)
+-- Step 3: Swap v3 to today_summary_clean.
+ALTER VIEW today_summary_clean_v3 RENAME TO today_summary_clean;
+
+-- Step 4: Recreate compatibility views (use total_revenue).
+CREATE VIEW accommodation_health_today AS
+SELECT branch_id, metric_date, health_score
+FROM today_summary_clean;
+
+CREATE VIEW branch_anomaly_signals AS
+SELECT branch_id, metric_date, total_revenue AS revenue, 0 AS confidence_score
+FROM today_summary_clean;
+
+-- Step 5: Recreate alerts pipeline (unchanged logic; today_summary_clean now has total_revenue, revenue_delta_day, occupancy_delta_week).
 CREATE VIEW alerts_today AS
 SELECT
     branch_id,
@@ -45,7 +97,6 @@ WHERE revenue_delta_day <= -10
    OR occupancy_delta_week <= -10
    OR COALESCE(customers_delta_day, 0) <= -10;
 
--- Step 2: Add recommendations and expected recovery
 CREATE VIEW alerts_with_actions AS
 SELECT
     *,
@@ -63,7 +114,6 @@ SELECT
     END AS expected_recovery
 FROM alerts_today;
 
--- Step 3: Opportunity alerts (revenue growing)
 CREATE VIEW alerts_opportunities AS
 SELECT
     branch_id,
@@ -77,7 +127,6 @@ SELECT
 FROM today_summary_clean
 WHERE revenue_delta_day >= 10;
 
--- Step 3b: Revenue split (Accommodation vs F&B). Requires today_summary_clean.accommodation_revenue, fnb_revenue.
 CREATE VIEW alerts_revenue_split AS
 SELECT
     branch_id,
@@ -128,7 +177,6 @@ WHERE fnb_revenue IS NOT NULL
 CREATE VIEW alerts_revenue_split_filtered AS
 SELECT * FROM alerts_revenue_split WHERE alert_type IS NOT NULL;
 
--- Step 4: Combine (problems first, then opportunities, then revenue split)
 CREATE VIEW alerts_all AS
 SELECT * FROM alerts_with_actions
 UNION ALL
@@ -136,7 +184,6 @@ SELECT * FROM alerts_opportunities
 UNION ALL
 SELECT * FROM alerts_revenue_split_filtered;
 
--- Step 5: Rank by severity desc, then metric_date desc (max 3 per branch)
 CREATE VIEW alerts_ranked AS
 SELECT
     *,
@@ -150,6 +197,9 @@ CREATE VIEW alerts_top AS
 SELECT * FROM alerts_ranked WHERE rank <= 3;
 
 -- Grants
+GRANT SELECT ON today_summary_clean TO anon, authenticated;
+GRANT SELECT ON accommodation_health_today TO anon, authenticated;
+GRANT SELECT ON branch_anomaly_signals TO anon, authenticated;
 GRANT SELECT ON alerts_today TO anon, authenticated;
 GRANT SELECT ON alerts_with_actions TO anon, authenticated;
 GRANT SELECT ON alerts_opportunities TO anon, authenticated;

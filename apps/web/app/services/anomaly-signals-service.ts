@@ -35,7 +35,7 @@ export async function getLatestAnomalySignal(
 
   const { data, error } = await supabase
     .from('today_summary_clean')
-    .select('branch_id, metric_date, revenue, health_score')
+    .select('branch_id, metric_date, total_revenue, health_score')
     .eq('branch_id', branchId)
     .order('metric_date', { ascending: false })
     .limit(1)
@@ -48,11 +48,12 @@ export async function getLatestAnomalySignal(
     return null;
   }
   if (!data) return null;
-  const row = data as { branch_id: string; metric_date?: string | null; revenue?: number | null; health_score?: number | null };
+  const row = data as { branch_id: string; metric_date?: string | null; total_revenue?: number | null; revenue?: number | null; health_score?: number | null };
+  const rev = row.total_revenue ?? row.revenue;
   return {
     branch_id: row.branch_id,
     metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : '',
-    total_revenue_thb: row.revenue != null ? Number(row.revenue) : null,
+    total_revenue_thb: rev != null ? Number(rev) : null,
     revenue_avg_7d: null,
     revenue_anomaly_score: null,
     confidence_score: row.health_score != null ? Number(row.health_score) / 100 : null,

@@ -837,7 +837,7 @@ export default function BranchOverviewPage() {
         : null;
 
     if (isAccommodation) {
-      const rev = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? latestDailyMetric?.revenue ?? null;
+      const rev = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? latestDailyMetric?.revenue ?? todaySummaryRow?.total_revenue ?? null;
       const roomsSold = operatingStatusData?.rooms_sold ?? latestDailyMetric?.roomsSold ?? null;
       const totalRooms = branch?.totalRooms ?? latestDailyMetric?.roomsAvailable ?? null;
       const occ =
@@ -891,7 +891,7 @@ export default function BranchOverviewPage() {
     }
 
     if (isFnb) {
-      const rev = fnbOperatingStatus?.todays_revenue ?? latestDailyMetric?.revenue ?? null;
+      const rev = fnbOperatingStatus?.todays_revenue ?? latestDailyMetric?.revenue ?? todaySummaryRow?.total_revenue ?? null;
       const customers = fnbOperatingStatus?.total_customers ?? latestDailyMetric?.customers ?? null;
       const avgTicket = fnbOperatingStatus?.avg_ticket ?? latestDailyMetric?.avgTicket ?? null;
       const prevRev = prevMetric?.revenue ?? null;
