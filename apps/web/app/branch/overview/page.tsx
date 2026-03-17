@@ -764,18 +764,47 @@ export default function BranchOverviewPage() {
   const todaySummary = useMemo(() => {
     const isFnb = branch?.moduleType === 'fnb';
     const isAccommodation = branch?.moduleType === 'accommodation';
-    const latestDate =
+    const latestDateRaw =
       (isFnb ? fnbOperatingStatus?.metric_date : operatingStatusData?.metric_date) ??
       latestDailyMetric?.date ??
       null;
+    // Normalize to YYYY-MM-DD so addDays() and metricsByDate lookup match (Supabase may return ISO string)
+    const latestDate =
+      latestDateRaw && typeof latestDateRaw === 'string'
+        ? latestDateRaw.slice(0, 10)
+        : latestDateRaw;
     const metricsByDate = new Map<string, DailyMetric>();
-    (dailyMetricsForTrends ?? []).forEach((m) => metricsByDate.set(m.date, m));
+    (dailyMetricsForTrends ?? []).forEach((m) => {
+      const key = m.date && typeof m.date === 'string' ? m.date.slice(0, 10) : m.date;
+      if (key) metricsByDate.set(key, m);
+    });
+    const datesDesc = [...metricsByDate.keys()].sort((a, b) => b.localeCompare(a));
     const prevWeekDate = latestDate && isAccommodation ? addDays(latestDate, -7) : null;
     const prevDayDate = latestDate ? addDays(latestDate, -1) : null;
-    const prevMetric = (isAccommodation ? prevWeekDate : prevDayDate)
-      ? metricsByDate.get(isAccommodation ? prevWeekDate! : prevDayDate!) ?? null
-      : null;
-    const prevDayMetric = prevDayDate ? metricsByDate.get(prevDayDate) ?? null : null;
+    // Resolve previous-week metric: exact date first, else most recent date <= prevWeekDate so deltas show
+    const prevMetric =
+      isAccommodation && prevWeekDate
+        ? metricsByDate.get(prevWeekDate) ??
+          (() => {
+            const fallback = datesDesc.find((d) => d <= prevWeekDate);
+            return fallback ? metricsByDate.get(fallback) ?? null : null;
+          })()
+        : prevDayDate
+          ? metricsByDate.get(prevDayDate) ??
+            (() => {
+              const fallback = datesDesc.find((d) => d < (latestDate ?? ''));
+              return fallback ? metricsByDate.get(fallback) ?? null : null;
+            })()
+          : null;
+    // Resolve previous-day metric: exact yesterday first, else most recent date before latestDate
+    const prevDayMetric =
+      prevDayDate && latestDate
+        ? metricsByDate.get(prevDayDate) ??
+          (() => {
+            const fallback = datesDesc.find((d) => d < latestDate);
+            return fallback ? metricsByDate.get(fallback) ?? null : null;
+          })()
+        : null;
 
     if (isAccommodation) {
       const rev = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? latestDailyMetric?.revenue ?? null;
@@ -795,10 +824,23 @@ export default function BranchOverviewPage() {
       const prevRevDay = prevDayMetric?.revenue ?? null;
       const revenueDeltaPctWeek =
         rev != null && prevRevWeek != null && prevRevWeek > 0 ? ((rev - prevRevWeek) / prevRevWeek) * 100 : null;
+      // Allow delta when we have both values; if prev is 0 and current > 0, treat as +100% for display
       const revenueDeltaPctDay =
-        rev != null && prevRevDay != null && prevRevDay > 0 ? ((rev - prevRevDay) / prevRevDay) * 100 : null;
+        rev != null && prevRevDay != null
+          ? prevRevDay > 0
+            ? ((rev - prevRevDay) / prevRevDay) * 100
+            : rev > 0
+              ? 100
+              : 0
+          : null;
       const occupancyDeltaPct =
-        occ != null && prevOcc != null && prevOcc > 0 ? ((occ - prevOcc) / prevOcc) * 100 : null;
+        occ != null && prevOcc != null
+          ? prevOcc > 0
+            ? ((occ - prevOcc) / prevOcc) * 100
+            : occ > 0
+              ? 100
+              : 0
+          : null;
       const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
       const revpar = totalRooms != null && totalRooms > 0 && rev != null ? rev / totalRooms : null;
       return {
