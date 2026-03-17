@@ -23,7 +23,6 @@ import { SectionCard } from '../../components/section-card';
 import { MonitoringStatusCard } from '../../components/monitoring-status-card';
 import { CriticalAlertsSnapshot } from '../../components/alerts/critical-alerts-snapshot';
 import { MonitoringErrorBoundary } from '../../components/monitoring-error-boundary';
-import { HealthScoreFallback } from '../../components/health-score-fallback';
 import { AlertsFallback } from '../../components/alerts-fallback';
 import { formatCurrency } from '../../utils/formatting';
 import { getSeverityColor, getSeverityLabel } from '../../utils/alert-utils';
@@ -38,7 +37,8 @@ import { useUserRole } from '../../contexts/user-role-context';
 import { OperatingHeader } from '../../components/operating-layer/operating-header';
 import { OperatingSection } from '../../components/operating-layer/operating-section';
 import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
-import { SummaryLine } from '../../components/operating-layer/summary-line';
+import { TodaySummaryLine } from '../../components/operating-layer/today-summary-line';
+import { addDays } from '../../utils/today-summary-utils';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, getFnbOperatingStatus, type OperatingStatusRow, type FnbOperatingStatusRow } from '../../services/db/latest-metrics-service';
@@ -751,7 +751,7 @@ export default function BranchOverviewPage() {
 
   const hospitalityLabels = getHospitalityLabels(branch ?? null, locale === 'th' ? 'th' : 'en');
 
-  // Latest daily metric (most recent by date) for Today's Revenue / Customers cards
+  // Latest daily metric (most recent by date)
   const latestDailyMetric = useMemo(() => {
     if (!dailyMetricsForTrends?.length) return null;
     const sorted = [...dailyMetricsForTrends].sort(
@@ -759,6 +759,96 @@ export default function BranchOverviewPage() {
     );
     return sorted[0] ?? null;
   }, [dailyMetricsForTrends]);
+
+  // Today summary for compact one-line (accommodation: vs last week same weekday; F&B: vs yesterday)
+  const todaySummary = useMemo(() => {
+    const isFnb = branch?.moduleType === 'fnb';
+    const isAccommodation = branch?.moduleType === 'accommodation';
+    const latestDate =
+      (isFnb ? fnbOperatingStatus?.metric_date : operatingStatusData?.metric_date) ??
+      latestDailyMetric?.date ??
+      null;
+    const metricsByDate = new Map<string, DailyMetric>();
+    (dailyMetricsForTrends ?? []).forEach((m) => metricsByDate.set(m.date, m));
+    const prevDate = latestDate
+      ? isAccommodation
+        ? addDays(latestDate, -7)
+        : addDays(latestDate, -1)
+      : null;
+    const prevMetric = prevDate ? metricsByDate.get(prevDate) ?? null : null;
+
+    if (isAccommodation) {
+      const rev = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? latestDailyMetric?.revenue ?? null;
+      const roomsSold = operatingStatusData?.rooms_sold ?? latestDailyMetric?.roomsSold ?? null;
+      const totalRooms = branch?.totalRooms ?? latestDailyMetric?.roomsAvailable ?? null;
+      const occ =
+        operatingStatusData?.occupancy_rate != null
+          ? Number(operatingStatusData.occupancy_rate)
+          : totalRooms != null && totalRooms > 0 && roomsSold != null
+            ? (roomsSold / totalRooms) * 100
+            : null;
+      const prevRev = prevMetric?.revenue ?? null;
+      const prevRooms = prevMetric?.roomsSold ?? null;
+      const prevTotal = prevMetric?.roomsAvailable ?? totalRooms;
+      const prevOcc =
+        prevTotal != null && prevTotal > 0 && prevRooms != null ? (prevRooms / prevTotal) * 100 : null;
+      const revenueDeltaPct =
+        rev != null && prevRev != null && prevRev > 0 ? ((rev - prevRev) / prevRev) * 100 : null;
+      const occupancyDeltaPct =
+        occ != null && prevOcc != null && prevOcc > 0 ? ((occ - prevOcc) / prevOcc) * 100 : null;
+      const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
+      const revpar = totalRooms != null && totalRooms > 0 && rev != null ? rev / totalRooms : null;
+      return {
+        accommodation: {
+          occupancyRate: occ,
+          occupancyDeltaPct,
+          roomsSold: roomsSold ?? null,
+          totalRooms: totalRooms ?? null,
+          revenue: rev,
+          revenueDeltaPct,
+          adr,
+          revpar,
+          healthScore: healthScore ?? null,
+        },
+        fnb: null,
+      };
+    }
+
+    if (isFnb) {
+      const rev = fnbOperatingStatus?.todays_revenue ?? latestDailyMetric?.revenue ?? null;
+      const customers = fnbOperatingStatus?.total_customers ?? latestDailyMetric?.customers ?? null;
+      const avgTicket = fnbOperatingStatus?.avg_ticket ?? latestDailyMetric?.avgTicket ?? null;
+      const prevRev = prevMetric?.revenue ?? null;
+      const prevCust = prevMetric?.customers ?? null;
+      const revenueDeltaPct =
+        rev != null && prevRev != null && prevRev > 0 ? ((rev - prevRev) / prevRev) * 100 : null;
+      const customersDeltaPct =
+        customers != null && prevCust != null && prevCust > 0
+          ? ((customers - prevCust) / prevCust) * 100
+          : null;
+      return {
+        accommodation: null,
+        fnb: {
+          revenue: rev,
+          revenueDeltaPct,
+          customers,
+          customersDeltaPct,
+          avgTicket,
+          healthScore: healthScore ?? null,
+        },
+      };
+    }
+
+    return { accommodation: null, fnb: null };
+  }, [
+    branch?.moduleType,
+    branch?.totalRooms,
+    operatingStatusData,
+    fnbOperatingStatus,
+    healthScore,
+    latestDailyMetric,
+    dailyMetricsForTrends,
+  ]);
 
   // Early signal: accommodation = accommodation_anomaly_signals.early_signal; F&B = fnb_operating_status.early_signal
   const earlySignalText = useMemo(() => {
@@ -892,137 +982,16 @@ export default function BranchOverviewPage() {
             )}
           </div>
         )}
-        {/* Mission Control: business intelligence cards (from latest-metrics views when possible) */}
-        {(() => {
-          const branchType = branch?.moduleType;
-          const isFnb = branchType === 'fnb';
-          const isAccommodation = branchType === 'accommodation';
-          // Business Health Score: always from Supabase (accommodation_health_today or fnb_health_today)
-          const healthVal = healthScore ?? null;
-          const revenueVal = isFnb
-            ? (fnbOperatingStatus?.todays_revenue ?? null)
-            : (operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? null);
-          const customersVal = isFnb
-            ? (fnbOperatingStatus?.total_customers ?? null)
-            : (operatingStatusData?.total_customers ?? null);
-          const roomsSoldVal = isAccommodation ? (operatingStatusData?.rooms_sold ?? null) : null;
-
-          let occupancyRate: number | null = null;
-          if (isAccommodation) {
-            if (operatingStatusData?.occupancy_rate != null) {
-              occupancyRate = Number(operatingStatusData.occupancy_rate);
-            } else if (roomsSoldVal != null && (branch?.totalRooms ?? 0) > 0) {
-              occupancyRate = (roomsSoldVal / (branch?.totalRooms ?? 0)) * 100;
-            }
-          }
-
-          const collecting = locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...';
-          const confidenceVal = isFnb ? (fnbOperatingStatus?.confidence ?? null) : (isAccommodation ? null : (operatingStatusData?.confidence_score ?? null));
-          const confidenceLevel = isAccommodation ? confidenceLevelFromCoverage : null;
-          const confidenceDisplayText =
-            isAccommodation
-              ? (confidenceLevel == null || confidenceLevel === '' || confidenceLevel === 'collecting'
-                  ? collecting
-                  : confidenceLevel === 'low'
-                    ? (locale === 'th' ? 'ความมั่นใจต่ำ' : 'Low confidence')
-                    : confidenceLevel === 'medium'
-                      ? (locale === 'th' ? 'ความมั่นใจปานกลาง' : 'Medium confidence')
-                      : confidenceLevel === 'high'
-                        ? (locale === 'th' ? 'ความมั่นใจสูง' : 'High confidence')
-                        : collecting)
-              : (confidenceVal != null
-                  ? `${Math.round(Number(confidenceVal) <= 1 ? Number(confidenceVal) * 100 : Number(confidenceVal))}%`
-                  : collecting);
-
-          const dataCoverageText = isFnb && fnbOperatingStatus != null
-            ? (fnbOperatingStatus.data_days != null && fnbOperatingStatus.required_days != null
-                ? `${Number(fnbOperatingStatus.data_days)} / ${Number(fnbOperatingStatus.required_days)}`
-                : (coverageDays != null ? `${coverageDays} / 30` : null))
-            : null;
-          const avgTicketVal = isFnb ? (fnbOperatingStatus?.avg_ticket ?? null) : null;
-          const latestMetricDate = isFnb ? (fnbOperatingStatus?.metric_date ?? null) : (operatingStatusData?.metric_date ?? null);
-
-          const summaryLabels = {
-            businessHealthScore: locale === 'th' ? 'คะแนนสุขภาพธุรกิจ' : 'Business Health Score',
-            todayRevenue: locale === 'th' ? 'รายได้วันนี้' : "Today's Revenue",
-            roomsSold: locale === 'th' ? 'จำนวนห้องขายได้วันนี้' : 'No. of Rooms Sold Today',
-            customers: locale === 'th' ? 'ลูกค้า' : 'Customers',
-            earlySignal: locale === 'th' ? 'สัญญาณเบื้องต้น' : 'Early Signal',
-            confidence: locale === 'th' ? 'ความมั่นใจ' : 'Confidence',
-            dataCoverage: locale === 'th' ? 'ความครอบคลุมข้อมูล' : 'Data Coverage',
-            averageTicket: locale === 'th' ? 'ค่าเฉลี่ยต่อบิล' : 'Average Ticket',
-            latestMetricDate: locale === 'th' ? 'วันที่ข้อมูลล่าสุด' : 'Latest Metric Date',
-            occupancy: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy',
-            configureCapacity: locale === 'th' ? 'โปรดตั้งค่าจำนวนห้องพัก' : 'Please configure hotel capacity',
-          };
-
-          return (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-          gap: '1rem',
-        }}>
-          <SummaryLine
-            label={summaryLabels.businessHealthScore}
-            value={healthVal != null ? `${Math.round(healthVal)}` : collecting}
-            subLabel="/ 100"
-            valueStyle={healthVal != null ? { color: healthVal >= 80 ? '#10b981' : healthVal >= 60 ? '#f59e0b' : '#ef4444', fontSize: '24px', fontWeight: 700 } : { fontSize: '13px', fontWeight: 400, color: '#374151' }}
+        {/* Today: compact one-line summary (replaces Business Health Score, Revenue, Rooms, Early Signal, Confidence cards) */}
+        {branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb' ? (
+          <TodaySummaryLine
+            branchType={branch.moduleType}
+            locale={locale === 'th' ? 'th' : 'en'}
+            accommodation={todaySummary.accommodation}
+            fnb={todaySummary.fnb}
+            collectingLabel={locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...'}
           />
-          <SummaryLine
-            label={summaryLabels.todayRevenue}
-            value={revenueVal != null ? `฿${formatCurrency(revenueVal)}` : collecting}
-          />
-          <SummaryLine
-            label={isAccommodation ? summaryLabels.roomsSold : summaryLabels.customers}
-            value={isAccommodation
-              ? (roomsSoldVal != null ? Math.round(roomsSoldVal) : collecting)
-              : (customersVal != null ? Math.round(customersVal) : collecting)}
-            subLabel={
-              isAccommodation && branch?.totalRooms == null ? (
-                <button
-                  type="button"
-                  onClick={() => router.push(`${paths.branchLog ?? `/org/${branch.businessGroupId}/branch/${branch.id}/log`}?expand=finance`)}
-                  style={{ color: '#ef4444', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit', fontSize: '11px' }}
-                >
-                  {summaryLabels.configureCapacity}
-                </button>
-              ) : isAccommodation && occupancyRate != null && branch?.totalRooms != null
-                ? `${summaryLabels.occupancy} ${Math.round(occupancyRate)}%`
-                : undefined
-            }
-          />
-          <SummaryLine
-            label={summaryLabels.earlySignal}
-            value={earlySignalText}
-            title={earlySignalText}
-            valueStyle={{ fontSize: '13px', lineHeight: 1.3 }}
-          />
-          <SummaryLine
-            label={summaryLabels.confidence}
-            value={confidenceDisplayText}
-          />
-          {isFnb && (
-            <>
-              <SummaryLine
-                label={summaryLabels.dataCoverage}
-                value={dataCoverageText ?? collecting}
-              />
-              <SummaryLine
-                label={summaryLabels.averageTicket}
-                value={avgTicketVal != null ? `฿${formatCurrency(avgTicketVal)}` : collecting}
-              />
-              {latestMetricDate && (
-                <SummaryLine
-                  label={summaryLabels.latestMetricDate}
-                  value={String(latestMetricDate).slice(0, 10)}
-                  valueStyle={{ fontSize: '13px' }}
-                />
-              )}
-            </>
-          )}
-        </div>
-          );
-        })()}
+        ) : null}
 
         {/* System Learning / Data coverage — below intelligence cards */}
         {!fullyActive ? (
@@ -1113,7 +1082,7 @@ export default function BranchOverviewPage() {
           lastUpdated={lastUpdated ? new Date(lastUpdated).toISOString() : null}
           logTodayHref={paths.branchLog}
         />
-        {/* Section A — Today's business status */}
+        {/* Section A — Monitoring only; one-line summary is above (TodaySummaryLine) for instant business understanding */}
         <OperatingSection title={locale === 'th' ? 'สถานะธุรกิจวันนี้' : "Today's business status"}>
         <MonitoringErrorBoundary componentName="Monitoring Status">
           {monitoringStatus && (
@@ -1124,109 +1093,6 @@ export default function BranchOverviewPage() {
               showReminder={false}
               onDismissReminder={() => {}}
             />
-          )}
-        </MonitoringErrorBoundary>
-
-        {/* BLOCK 1: Branch Health Snapshot */}
-        <MonitoringErrorBoundary
-          componentName="Branch Health Snapshot"
-          fallback={
-            <SectionCard title={locale === 'th' ? 'ภาพรวมสุขภาพสาขา' : 'Branch Health Snapshot'}>
-              <HealthScoreFallback />
-            </SectionCard>
-          }
-        >
-          {healthScore != null ? (
-            <SectionCard title={locale === 'th' ? 'ภาพรวมสุขภาพสาขา' : 'Branch Health Snapshot'}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '1.5rem',
-              backgroundColor: '#f9fafb',
-              borderRadius: '8px',
-            }}>
-              {/* Left: Health Score (from Supabase only) */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                <div>
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
-                    {locale === 'th' ? 'คะแนนสุขภาพ' : 'Health Score'}
-                  </div>
-                  <div style={{
-                    fontSize: '48px',
-                    fontWeight: 700,
-                    color: healthScore >= 80 ? '#10b981' : healthScore >= 60 ? '#f59e0b' : '#ef4444',
-                    lineHeight: '1',
-                  }}>
-                    {Math.round(healthScore)}
-                  </div>
-                </div>
-                <div>
-                  <div style={{
-                    display: 'inline-block',
-                    padding: '0.25rem 0.75rem',
-                    borderRadius: '12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    backgroundColor: healthStatus?.color + '20',
-                    color: healthStatus?.color,
-                  }}>
-                    {healthStatus?.label}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.5rem' }}>
-                    {locale === 'th' ? `ความมั่นใจ: ${anomalyConfidenceScore != null ? `${Math.round(anomalyConfidenceScore)}%` : '—'}` : `Confidence: ${anomalyConfidenceScore != null ? `${Math.round(anomalyConfidenceScore)}%` : '—'}`}
-                  </div>
-                </div>
-              </div>
-
-              {/* Right: Metrics */}
-              <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
-                    {locale === 'th' ? 'การแจ้งเตือน' : 'Alerts'}
-                  </div>
-                  <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-                    {alertCounts.critical > 0 && <span style={{ color: '#ef4444' }}>{alertCounts.critical}</span>}
-                    {alertCounts.warning > 0 && <span style={{ color: '#f59e0b', marginLeft: '0.5rem' }}>{alertCounts.warning}</span>}
-                    {alertCounts.informational > 0 && <span style={{ color: '#3b82f6', marginLeft: '0.5rem' }}>{alertCounts.informational}</span>}
-                    {alertCounts.total === 0 && <span style={{ color: '#6b7280' }}>0</span>}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
-                    {locale === 'th' ? 'รายได้ที่เสี่ยง' : 'Revenue at Risk'}
-                  </div>
-                  <div style={{ fontSize: '20px', fontWeight: 600, color: totalRevenueAtRisk > 0 ? '#ef4444' : '#10b981' }}>
-                    {hideFinancials ? '—' : `฿${formatCurrency(totalRevenueAtRisk)}/mo`}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
-                    {locale === 'th' ? 'ความสดของข้อมูล' : 'Data Freshness'}
-                  </div>
-                  <div style={{ fontSize: '14px', fontWeight: 500, color: '#0a0a0a' }}>
-                    {lastUpdated ? new Date(lastUpdated).toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', { month: 'short', day: 'numeric' }) : '—'}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </SectionCard>
-          ) : anomalyConfidenceScore != null ? (
-            <SectionCard title={locale === 'th' ? 'ภาพรวมสุขภาพสาขา' : 'Branch Health Snapshot'}>
-              <div style={{ padding: '1.5rem', backgroundColor: '#f9fafb', borderRadius: '8px' }}>
-                <div style={{ fontSize: '14px', color: '#6b7280' }}>
-                  {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
-                  <strong>{anomalyConfidenceScore}%</strong>
-                </div>
-                <p style={{ fontSize: '13px', color: '#9ca3af', marginTop: '0.5rem', marginBottom: 0 }}>
-                  {locale === 'th' ? 'สัญญาณจากข้อมูลล่าสุด (รอข้อมูลเพิ่มสำหรับคะแนนสุขภาพ)' : 'Early signals from latest data (more data needed for full health score)'}
-                </p>
-              </div>
-            </SectionCard>
-          ) : (
-            <SectionCard title={locale === 'th' ? 'ภาพรวมสุขภาพสาขา' : 'Branch Health Snapshot'}>
-              <HealthScoreFallback />
-            </SectionCard>
           )}
         </MonitoringErrorBoundary>
         </OperatingSection>

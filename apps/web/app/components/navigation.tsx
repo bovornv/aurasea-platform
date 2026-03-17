@@ -10,7 +10,7 @@ import { GlobalHeader } from './navigation/global-header';
 import { useMemo } from 'react';
 
 const LABELS: Record<string, { en: string; th: string }> = {
-  overview: { en: 'Operating Status', th: 'สถานะธุรกิจ' },
+  overview: { en: 'Today', th: 'วันนี้' },
   alerts: { en: 'Alerts', th: 'การแจ้งเตือน' },
   trends: { en: 'Trends', th: 'เทรนด์' },
   settings: { en: 'Settings', th: 'การตั้งค่า' },
