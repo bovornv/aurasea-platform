@@ -775,28 +775,24 @@ export default function BranchOverviewPage() {
         : latestDateRaw;
     const metricsByDate = new Map<string, DailyMetric>();
     (dailyMetricsForTrends ?? []).forEach((m) => {
-      const key = m.date && typeof m.date === 'string' ? m.date.slice(0, 10) : m.date;
+      const key = m.date != null ? String(m.date).slice(0, 10) : '';
       if (key) metricsByDate.set(key, m);
     });
     const datesDesc = [...metricsByDate.keys()].sort((a, b) => b.localeCompare(a));
-    const prevWeekDate = latestDate && isAccommodation ? addDays(latestDate, -7) : null;
-    const prevDayDate = latestDate ? addDays(latestDate, -1) : null;
-    // Resolve previous-week metric: exact date first, else most recent date <= prevWeekDate so deltas show
+    // Use the latest date that exists in the feed so prev-day/prev-week lookups always hit the map (fixes invisible deltas)
+    const referenceDate = datesDesc[0] ?? latestDate ?? null;
+    const prevWeekDate = referenceDate && isAccommodation ? addDays(referenceDate, -7) : null;
+    const prevDayDate = referenceDate ? addDays(referenceDate, -1) : null;
+    // F&B: previous day metric (with fallback so delta can show)
     const prevMetric =
-      isAccommodation && prevWeekDate
-        ? metricsByDate.get(prevWeekDate) ??
+      !isAccommodation && prevDayDate
+        ? metricsByDate.get(prevDayDate) ??
           (() => {
-            const fallback = datesDesc.find((d) => d <= prevWeekDate);
+            const fallback = datesDesc.find((d) => d < (referenceDate ?? ''));
             return fallback ? metricsByDate.get(fallback) ?? null : null;
           })()
-        : prevDayDate
-          ? metricsByDate.get(prevDayDate) ??
-            (() => {
-              const fallback = datesDesc.find((d) => d < (latestDate ?? ''));
-              return fallback ? metricsByDate.get(fallback) ?? null : null;
-            })()
-          : null;
-    // Previous-day metric: exact yesterday only (for revenue delta — avoids wrong +100% from fallback/zero)
+        : null;
+    // Previous-day metric for revenue (exact date so we don't show wrong +100%)
     const prevDayMetricExact = prevDayDate ? metricsByDate.get(prevDayDate) ?? null : null;
 
     if (isAccommodation) {
@@ -1048,71 +1044,6 @@ export default function BranchOverviewPage() {
           }}>
             {locale === 'th' ? 'ความครอบคลุมข้อมูล: ' : 'Data coverage: '}
             <strong>{dataCoverageDays}</strong> / 30 {locale === 'th' ? 'วัน' : 'days'}
-          </div>
-        )}
-
-        {/* Learning status: from branch_learning_phase when available, else from data coverage; always show message */}
-        {(learningPhase != null || dataCoverageDays >= 0) && (
-          <div style={{
-            padding: '1rem',
-            backgroundColor: '#f0f9ff',
-            border: '1px solid #bae6fd',
-            borderRadius: '8px',
-            fontSize: '14px',
-            color: '#0c4a6e',
-          }}>
-            <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>
-              {locale === 'th' ? 'สถานะการเรียนรู้' : 'Learning status'}
-            </div>
-            <div style={{ marginBottom: '0.5rem' }}>
-              {(() => {
-                const days = learningPhase?.data_days != null
-                  ? Number(learningPhase.data_days)
-                  : dataCoverageDays;
-                const msg = learningPhase
-                  ? (locale === 'th'
-                    ? (learningPhase.message_th ?? learningPhase.message_en)
-                    : (learningPhase.message_en ?? learningPhase.message_th))
-                  : null;
-                if (msg != null && String(msg).trim() !== '') return String(msg).trim();
-                if (days < 7) {
-                  return locale === 'th'
-                    ? 'กำลังรวบรวมข้อมูล สัญญาณเตือนจะเปิดใช้หลัง 7 วัน'
-                    : 'Collecting data. Early signals unlock after 7 days.';
-                }
-                if (days < 14) {
-                  return locale === 'th'
-                    ? 'สัญญาณเตือนเปิดใช้แล้ว การจดจำรูปแบบจะเปิดที่ 14 วัน'
-                    : 'Early signals are active. Pattern recognition unlocks at 14 days.';
-                }
-                if (days < 30) {
-                  return locale === 'th'
-                    ? 'การจดจำรูปแบบเปิดใช้แล้ว ข้อมูลเชิงลึกเต็มที่ที่ 30 วัน'
-                    : 'Pattern recognition active. Full insights at 30 days.';
-                }
-                return locale === 'th'
-                  ? 'เรียนรู้ครบแล้ว ข้อมูลเชิงลึกทั้งหมดพร้อมใช้'
-                  : 'Full learning complete. All insights available.';
-              })()}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', fontSize: '13px', color: '#0369a1' }}>
-              <span>
-                {locale === 'th' ? 'วันที่มีข้อมูล: ' : 'Data days: '}
-                <strong>{learningPhase?.data_days != null ? Number(learningPhase.data_days) : dataCoverageDays}</strong>
-              </span>
-              {learningPhase?.confidence_score != null && (
-                <span>
-                  {locale === 'th' ? 'ความมั่นใจ: ' : 'Confidence: '}
-                  <strong>{Math.round(Number(learningPhase.confidence_score))}%</strong>
-                </span>
-              )}
-              {learningPhase?.learning_phase != null && (
-                <span>
-                  {locale === 'th' ? 'ระยะการเรียนรู้: ' : 'Learning phase: '}
-                  <strong>{String(learningPhase.learning_phase)}</strong>
-                </span>
-              )}
-            </div>
           </div>
         )}
 
