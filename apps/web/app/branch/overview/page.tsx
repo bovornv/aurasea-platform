@@ -40,7 +40,7 @@ import { BranchTodaySummary } from '../../components/operating-layer/branch-toda
 import { addDays } from '../../utils/today-summary-utils';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
-import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow } from '../../services/db/latest-metrics-service';
+import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAlertsTop, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow, type AlertTopRow } from '../../services/db/latest-metrics-service';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
 import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
@@ -82,6 +82,9 @@ export default function BranchOverviewPage() {
   const [learningPhase, setLearningPhase] = useState<BranchLearningPhaseRow | null>(null);
   // Today summary view (date-based joins): revenue_delta_day, occupancy_delta_week for Latest Performance
   const [todaySummaryRow, setTodaySummaryRow] = useState<TodaySummaryRow | null>(null);
+  // Alerts & Recommendations: top 3 from alerts_top view (problems + opportunities)
+  const [alertsTop, setAlertsTop] = useState<AlertTopRow[]>([]);
+  const [alertsTopLoading, setAlertsTopLoading] = useState(true);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -338,6 +341,7 @@ export default function BranchOverviewPage() {
   // Operating Status: F&B = fnb_operating_status + fnb_health_today; accommodation = accommodation_latest_metrics + confidence + early signal + accommodation_health_today
   const refreshOperatingStatus = useCallback(() => {
     if (!branch?.id) return;
+    setAlertsTopLoading(true);
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
@@ -353,10 +357,15 @@ export default function BranchOverviewPage() {
     }
     getBranchLearningPhase(branch.id).then(setLearningPhase);
     getTodaySummary(branch.id).then(setTodaySummaryRow);
+    getAlertsTop(branch.id).then((rows) => { setAlertsTop(rows); setAlertsTopLoading(false); }).catch(() => { setAlertsTop([]); setAlertsTopLoading(false); });
   }, [branch?.id, branch?.moduleType]);
 
   useEffect(() => {
-    if (!branch?.id) return;
+    if (!branch?.id) {
+      setAlertsTop([]);
+      setAlertsTopLoading(false);
+      return;
+    }
     refreshOperatingStatus();
     const onVisible = () => {
       if (document.visibilityState === 'visible') refreshOperatingStatus();
@@ -366,6 +375,7 @@ export default function BranchOverviewPage() {
       if (detail?.branchId === branch?.id) {
         refreshOperatingStatus();
         getBranchLearningPhase(branch.id).then(setLearningPhase);
+        getAlertsTop(branch.id).then(setAlertsTop);
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
@@ -1066,54 +1076,56 @@ export default function BranchOverviewPage() {
           />
         ) : null}
 
-        {/* Alerts & Recommendations — compact list, top 5 */}
+        {/* Alerts & Recommendations — from alerts_top (max 3), structured with cause + recommendation + expected recovery */}
         <div style={{ marginTop: '0.5rem' }}>
           <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>
             {locale === 'th' ? 'การแจ้งเตือนและคำแนะนำ' : 'Alerts & Recommendations'}
           </div>
-          {alertsInitializing ? (
+          {alertsTopLoading ? (
             <div style={{ fontSize: '13px', color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
-          ) : topAlertsForToday.length === 0 ? (
+          ) : alertsTop.length === 0 ? (
             <div style={{ fontSize: '13px', color: '#6b7280', lineHeight: 1.5 }}>
               <div>{locale === 'th' ? 'ไม่พบประเด็นสำคัญวันนี้' : 'No major issues detected today'}</div>
               <div style={{ marginTop: '0.25rem' }}>{locale === 'th' ? 'ระบบทำงานปกติ' : 'System operating normally'}</div>
             </div>
           ) : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {topAlertsForToday.map((alert) => {
-                const extended = alert as ExtendedAlertContract;
-                const severityColor = getSeverityColor(alert.severity);
-                const title = extended?.revenueImpactTitle ?? (locale === 'th' && extended?.revenueImpactTitleTh ? extended.revenueImpactTitleTh : null) ?? (alert.message?.split('.')[0]?.trim() || alert.id);
-                const insight = extended?.revenueImpactDescription ?? alert.message ?? '';
-                const recommendation = insight.length > 80 ? `${insight.slice(0, 80)}…` : insight;
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {alertsTop.slice(0, 3).map((alert, idx) => {
+                const isOpportunity = alert.severity === 1 && (alert.alert_type === 'High Demand Opportunity' || (alert.alert_message ?? '').toLowerCase().includes('growing'));
+                const accentColor = isOpportunity ? '#059669' : '#dc2626';
                 return (
                   <li
-                    key={alert.id}
+                    key={`${alert.branch_id}-${alert.metric_date}-${alert.alert_type}-${idx}`}
                     style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '0.5rem',
+                      padding: '0.5rem 0',
+                      borderLeft: `3px solid ${accentColor}`,
+                      paddingLeft: '0.5rem',
                       fontSize: '13px',
-                      lineHeight: 1.45,
+                      lineHeight: 1.5,
                       color: '#1f2937',
                     }}
                   >
-                    <span
-                      style={{
-                        width: '6px',
-                        height: '6px',
-                        borderRadius: '50%',
-                        backgroundColor: severityColor,
-                        flexShrink: 0,
-                        marginTop: '0.4rem',
-                      }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 500 }}>{title}</div>
-                      {recommendation ? (
-                        <div style={{ marginTop: '0.2rem', color: '#6b7280' }}>→ {recommendation}</div>
-                      ) : null}
+                    <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
+                      {alert.alert_type ?? 'Alert'}: {alert.alert_message ?? ''}
                     </div>
+                    {alert.cause ? (
+                      <div style={{ color: '#6b7280', marginBottom: '0.2rem' }}>
+                        <span style={{ fontWeight: 500 }}>{locale === 'th' ? 'สาเหตุ: ' : 'Cause: '}</span>
+                        {alert.cause}
+                      </div>
+                    ) : null}
+                    {alert.recommendation ? (
+                      <div style={{ color: '#374151', marginBottom: '0.2rem' }}>
+                        <span style={{ fontWeight: 500 }}>{locale === 'th' ? 'คำแนะนำ: ' : 'Recommendation: '}</span>
+                        {alert.recommendation}
+                      </div>
+                    ) : null}
+                    {alert.expected_recovery ? (
+                      <div style={{ color: accentColor, fontWeight: 500 }}>
+                        {locale === 'th' ? 'ผลลัพธ์ที่คาดหวัง: ' : 'Expected recovery: '}
+                        {alert.expected_recovery}
+                      </div>
+                    ) : null}
                   </li>
                 );
               })}

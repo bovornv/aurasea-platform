@@ -305,3 +305,41 @@ export async function getLatestMetricForDashboard(
     metricDate: row.metric_date ?? null,
   };
 }
+
+/** Row from alerts_top view (max 3 per branch: problems + opportunities). */
+export interface AlertTopRow {
+  branch_id: string;
+  metric_date: string | null;
+  alert_type: string | null;
+  severity: number;
+  alert_message: string | null;
+  cause: string | null;
+  recommendation: string | null;
+  expected_recovery: string | null;
+  rank: number;
+}
+
+/**
+ * Fetch top alerts for a branch from alerts_top view (max 3, problems first).
+ */
+export async function getAlertsTop(branchId: string): Promise<AlertTopRow[]> {
+  if (branchId == null || branchId === '') return [];
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from('alerts_top')
+    .select('branch_id, metric_date, alert_type, severity, alert_message, cause, recommendation, expected_recovery, rank')
+    .eq('branch_id', branchId)
+    .order('rank', { ascending: true });
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[LatestMetricsService] alerts_top error:', error.message);
+    }
+    return [];
+  }
+  return (data ?? []) as AlertTopRow[];
+}
