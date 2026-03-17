@@ -14,7 +14,7 @@ const LABELS: Record<string, { en: string; th: string }> = {
   alerts: { en: 'Alerts', th: 'การแจ้งเตือน' },
   trends: { en: 'Trends', th: 'เทรนด์' },
   settings: { en: 'Settings', th: 'การตั้งค่า' },
-  log: { en: 'Log Today', th: 'บันทึกวันนี้' },
+  log: { en: 'Enter Data', th: 'กรอกข้อมูล' },
 };
 
 export function Navigation() {

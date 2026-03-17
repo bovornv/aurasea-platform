@@ -720,7 +720,7 @@ export default function LogTodayPage() {
   
   return (
     <PageLayout
-      title=""
+      title={locale === 'th' ? 'กรอกข้อมูล' : 'Enter Data'}
       subtitle={locale === 'th' ? 'ใช้เวลาน้อยกว่า 30 วินาที' : 'Takes less than 30 seconds.'}
     >
       <div style={{ maxWidth: '800px', margin: '0 auto', paddingBottom: '2rem', position: 'relative' }}>

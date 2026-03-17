@@ -85,7 +85,7 @@ export function ActivationBlock() {
           href="/branch/log-today"
           style={{ fontSize: '13px', fontWeight: 500, color: '#0a0a0a', textDecoration: 'underline' }}
         >
-          {locale === 'th' ? 'ไปที่ Log Today' : 'Go to Log Today'}
+          {locale === 'th' ? 'ไปที่กรอกข้อมูล' : 'Go to Enter Data'}
         </Link>
       </div>
     </div>

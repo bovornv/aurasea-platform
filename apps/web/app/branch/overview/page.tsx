@@ -796,15 +796,8 @@ export default function BranchOverviewPage() {
               return fallback ? metricsByDate.get(fallback) ?? null : null;
             })()
           : null;
-    // Resolve previous-day metric: exact yesterday first, else most recent date before latestDate
-    const prevDayMetric =
-      prevDayDate && latestDate
-        ? metricsByDate.get(prevDayDate) ??
-          (() => {
-            const fallback = datesDesc.find((d) => d < latestDate);
-            return fallback ? metricsByDate.get(fallback) ?? null : null;
-          })()
-        : null;
+    // Previous-day metric: exact yesterday only (for revenue delta — avoids wrong +100% from fallback/zero)
+    const prevDayMetricExact = prevDayDate ? metricsByDate.get(prevDayDate) ?? null : null;
 
     if (isAccommodation) {
       const rev = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? latestDailyMetric?.revenue ?? null;
@@ -816,30 +809,27 @@ export default function BranchOverviewPage() {
           : totalRooms != null && totalRooms > 0 && roomsSold != null
             ? (roomsSold / totalRooms) * 100
             : null;
-      const prevRevWeek = prevMetric?.revenue ?? null;
-      const prevRooms = prevMetric?.roomsSold ?? null;
-      const prevTotal = prevMetric?.roomsAvailable ?? totalRooms;
+      // Occupancy vs same weekday last week: use exact prevWeekDate only so we compare like-for-like
+      const prevMetricWeek = prevWeekDate ? metricsByDate.get(prevWeekDate) ?? null : null;
+      const prevRevWeek = prevMetricWeek?.revenue ?? null;
+      const prevRooms = prevMetricWeek?.roomsSold ?? null;
+      const prevTotal = prevMetricWeek?.roomsAvailable ?? totalRooms;
       const prevOcc =
-        prevTotal != null && prevTotal > 0 && prevRooms != null ? (prevRooms / prevTotal) * 100 : null;
-      const prevRevDay = prevDayMetric?.revenue ?? null;
+        prevTotal != null && prevTotal > 0
+          ? ((prevRooms ?? 0) / prevTotal) * 100
+          : null;
+      const prevRevDay = prevDayMetricExact?.revenue ?? null;
       const revenueDeltaPctWeek =
         rev != null && prevRevWeek != null && prevRevWeek > 0 ? ((rev - prevRevWeek) / prevRevWeek) * 100 : null;
-      // Allow delta when we have both values; if prev is 0 and current > 0, treat as +100% for display
+      // Revenue vs yesterday: exact yesterday only; do not show delta when prev is 0 (avoids wrong +100%)
       const revenueDeltaPctDay =
-        rev != null && prevRevDay != null
-          ? prevRevDay > 0
-            ? ((rev - prevRevDay) / prevRevDay) * 100
-            : rev > 0
-              ? 100
-              : 0
+        rev != null && prevRevDay != null && prevRevDay > 0
+          ? ((rev - prevRevDay) / prevRevDay) * 100
           : null;
+      // Occupancy vs last week: show only when we have valid prev (prevOcc > 0 avoids misleading +100%)
       const occupancyDeltaPct =
-        occ != null && prevOcc != null
-          ? prevOcc > 0
-            ? ((occ - prevOcc) / prevOcc) * 100
-            : occ > 0
-              ? 100
-              : 0
+        occ != null && prevOcc != null && prevOcc > 0
+          ? ((occ - prevOcc) / prevOcc) * 100
           : null;
       const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
       const revpar = totalRooms != null && totalRooms > 0 && rev != null ? rev / totalRooms : null;
