@@ -38,6 +38,7 @@ import { useUserRole } from '../../contexts/user-role-context';
 import { OperatingHeader } from '../../components/operating-layer/operating-header';
 import { OperatingSection } from '../../components/operating-layer/operating-section';
 import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
+import { SummaryLine } from '../../components/operating-layer/summary-line';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, getFnbOperatingStatus, type OperatingStatusRow, type FnbOperatingStatusRow } from '../../services/db/latest-metrics-service';
@@ -941,100 +942,81 @@ export default function BranchOverviewPage() {
           const avgTicketVal = isFnb ? (fnbOperatingStatus?.avg_ticket ?? null) : null;
           const latestMetricDate = isFnb ? (fnbOperatingStatus?.metric_date ?? null) : (operatingStatusData?.metric_date ?? null);
 
+          const summaryLabels = {
+            businessHealthScore: locale === 'th' ? 'คะแนนสุขภาพธุรกิจ' : 'Business Health Score',
+            todayRevenue: locale === 'th' ? 'รายได้วันนี้' : "Today's Revenue",
+            roomsSold: locale === 'th' ? 'จำนวนห้องขายได้วันนี้' : 'No. of Rooms Sold Today',
+            customers: locale === 'th' ? 'ลูกค้า' : 'Customers',
+            earlySignal: locale === 'th' ? 'สัญญาณเบื้องต้น' : 'Early Signal',
+            confidence: locale === 'th' ? 'ความมั่นใจ' : 'Confidence',
+            dataCoverage: locale === 'th' ? 'ความครอบคลุมข้อมูล' : 'Data Coverage',
+            averageTicket: locale === 'th' ? 'ค่าเฉลี่ยต่อบิล' : 'Average Ticket',
+            latestMetricDate: locale === 'th' ? 'วันที่ข้อมูลล่าสุด' : 'Latest Metric Date',
+            occupancy: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy',
+            configureCapacity: locale === 'th' ? 'โปรดตั้งค่าจำนวนห้องพัก' : 'Please configure hotel capacity',
+          };
+
           return (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
           gap: '1rem',
         }}>
-          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
-              {locale === 'th' ? 'คะแนนสุขภาพธุรกิจ' : 'Business Health Score'}
-            </div>
-            <div style={{ fontSize: healthVal != null ? '24px' : '13px', fontWeight: healthVal != null ? 700 : 400, color: healthVal != null ? (healthVal >= 80 ? '#10b981' : healthVal >= 60 ? '#f59e0b' : '#ef4444') : '#374151' }}>
-              {healthVal != null ? `${Math.round(healthVal)}` : collecting}
-            </div>
-            <div style={{ fontSize: '12px', color: '#9ca3af' }}>/ 100</div>
-          </div>
-          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
-              {locale === 'th' ? 'รายได้วันนี้' : "Today's Revenue"}
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-              {revenueVal != null ? `฿${formatCurrency(revenueVal)}` : collecting}
-            </div>
-          </div>
-          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
-              {isAccommodation
-                ? (locale === 'th' ? 'จำนวนห้องขายได้วันนี้' : 'No. of Rooms Sold Today')
-                : (locale === 'th' ? 'ลูกค้า' : 'Customers')}
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-              {isAccommodation
-                ? (roomsSoldVal != null ? Math.round(roomsSoldVal) : collecting)
-                : (customersVal != null ? Math.round(customersVal) : collecting)}
-            </div>
-            {isAccommodation && branch?.totalRooms == null && (
-              <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '0.25rem' }}>
+          <SummaryLine
+            label={summaryLabels.businessHealthScore}
+            value={healthVal != null ? `${Math.round(healthVal)}` : collecting}
+            subLabel="/ 100"
+            valueStyle={healthVal != null ? { color: healthVal >= 80 ? '#10b981' : healthVal >= 60 ? '#f59e0b' : '#ef4444', fontSize: '24px', fontWeight: 700 } : { fontSize: '13px', fontWeight: 400, color: '#374151' }}
+          />
+          <SummaryLine
+            label={summaryLabels.todayRevenue}
+            value={revenueVal != null ? `฿${formatCurrency(revenueVal)}` : collecting}
+          />
+          <SummaryLine
+            label={isAccommodation ? summaryLabels.roomsSold : summaryLabels.customers}
+            value={isAccommodation
+              ? (roomsSoldVal != null ? Math.round(roomsSoldVal) : collecting)
+              : (customersVal != null ? Math.round(customersVal) : collecting)}
+            subLabel={
+              isAccommodation && branch?.totalRooms == null ? (
                 <button
                   type="button"
                   onClick={() => router.push(`${paths.branchLog ?? `/org/${branch.businessGroupId}/branch/${branch.id}/log`}?expand=finance`)}
-                  style={{ color: '#ef4444', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit' }}
+                  style={{ color: '#ef4444', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit', fontSize: '11px' }}
                 >
-                  {locale === 'th' ? 'โปรดตั้งค่าจำนวนห้องพัก' : 'Please configure hotel capacity'}
+                  {summaryLabels.configureCapacity}
                 </button>
-              </div>
-            )}
-            {isAccommodation && occupancyRate != null && branch?.totalRooms != null && (
-              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
-                {locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy'} {Math.round(occupancyRate)}%
-              </div>
-            )}
-          </div>
-          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', minWidth: 0 }}>
-            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
-              {locale === 'th' ? 'สัญญาณเบื้องต้น' : 'Early Signal'}
-            </div>
-            <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.3 }} title={earlySignalText}>
-              {earlySignalText}
-            </div>
-          </div>
-          <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-            <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
-              {locale === 'th' ? 'ความมั่นใจ' : 'Confidence'}
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-              {confidenceDisplayText}
-            </div>
-          </div>
+              ) : isAccommodation && occupancyRate != null && branch?.totalRooms != null
+                ? `${summaryLabels.occupancy} ${Math.round(occupancyRate)}%`
+                : undefined
+            }
+          />
+          <SummaryLine
+            label={summaryLabels.earlySignal}
+            value={earlySignalText}
+            title={earlySignalText}
+            valueStyle={{ fontSize: '13px', lineHeight: 1.3 }}
+          />
+          <SummaryLine
+            label={summaryLabels.confidence}
+            value={confidenceDisplayText}
+          />
           {isFnb && (
             <>
-              <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
-                  {locale === 'th' ? 'ความครอบคลุมข้อมูล' : 'Data Coverage'}
-                </div>
-                <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-                  {dataCoverageText ?? collecting}
-                </div>
-              </div>
-              <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-                <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
-                  {locale === 'th' ? 'ค่าเฉลี่ยต่อบิล' : 'Average Ticket'}
-                </div>
-                <div style={{ fontSize: '20px', fontWeight: 600, color: '#0a0a0a' }}>
-                  {avgTicketVal != null ? `฿${formatCurrency(avgTicketVal)}` : collecting}
-                </div>
-              </div>
+              <SummaryLine
+                label={summaryLabels.dataCoverage}
+                value={dataCoverageText ?? collecting}
+              />
+              <SummaryLine
+                label={summaryLabels.averageTicket}
+                value={avgTicketVal != null ? `฿${formatCurrency(avgTicketVal)}` : collecting}
+              />
               {latestMetricDate && (
-                <div style={{ padding: '1rem', backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-                  <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '0.25rem', fontWeight: 500 }}>
-                    {locale === 'th' ? 'วันที่ข้อมูลล่าสุด' : 'Latest Metric Date'}
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#374151' }}>
-                    {String(latestMetricDate).slice(0, 10)}
-                  </div>
-                </div>
+                <SummaryLine
+                  label={summaryLabels.latestMetricDate}
+                  value={String(latestMetricDate).slice(0, 10)}
+                  valueStyle={{ fontSize: '13px' }}
+                />
               )}
             </>
           )}
@@ -1131,8 +1113,8 @@ export default function BranchOverviewPage() {
           lastUpdated={lastUpdated ? new Date(lastUpdated).toISOString() : null}
           logTodayHref={paths.branchLog}
         />
-        {/* Section A — สถานะธุรกิจวันนี้ */}
-        <OperatingSection title="สถานะธุรกิจวันนี้">
+        {/* Section A — Today's business status */}
+        <OperatingSection title={locale === 'th' ? 'สถานะธุรกิจวันนี้' : "Today's business status"}>
         <MonitoringErrorBoundary componentName="Monitoring Status">
           {monitoringStatus && (
             <MonitoringStatusCard
@@ -1249,8 +1231,8 @@ export default function BranchOverviewPage() {
         </MonitoringErrorBoundary>
         </OperatingSection>
 
-        {/* Section B — ระบบเตือนความเสี่ยง */}
-        <OperatingSection title="ระบบเตือนความเสี่ยง">
+        {/* Section B — Risk alerts */}
+        <OperatingSection title={locale === 'th' ? 'ระบบเตือนความเสี่ยง' : 'Risk alerts'}>
         <MonitoringErrorBoundary
           componentName="Critical Alerts Snapshot"
           fallback={<AlertsFallback />}

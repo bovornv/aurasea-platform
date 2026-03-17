@@ -1,0 +1,23 @@
+# Patch for test_fused_recurrent.py (run inside vllm014 container)
+# Goal: grid total <= 24 (current (8,4,1)=32)
+# Use fused_recurrent_gated_delta_rule_fwd_kernel_loop with grid (min(24, N*HV*NV), NK)
+
+--- a
++++ b
+@@ -356,10 +356,8 @@
+     if ssm_state_indices.ndim == 1:
+         stride_indices_seq, stride_indices_tok = ssm_state_indices.stride(0), 1
+     else:
+         stride_indices_seq, stride_indices_tok = ssm_state_indices.stride()
+
+-    # grid = (NK, NV, N * HV)
+-    # for gcu
+-    # grid = (N * HV, NV, NK)
+-    grid = (N * HV, NV, NK)
+-    # grid = (min(NUM_SM, N * HV * NV), NK)
++    # grid 总数 <= 24，用 loop kernel
++    grid = (min(24, N * HV * NV), NK)
+     # grid = (1, 1, 1)
+     # print(f"skkkkkkkkk grid: {grid}") # grid: (8, 4, 1)
+-    fused_recurrent_gated_delta_rule_fwd_kernel[grid](
++    fused_recurrent_gated_delta_rule_fwd_kernel_loop[grid](
