@@ -41,7 +41,7 @@ import { BranchTodaySummary } from '../../components/operating-layer/branch-toda
 import { addDays } from '../../utils/today-summary-utils';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
-import { getOperatingStatusData, getFnbOperatingStatus, type OperatingStatusRow, type FnbOperatingStatusRow } from '../../services/db/latest-metrics-service';
+import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow } from '../../services/db/latest-metrics-service';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
 import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
@@ -81,6 +81,8 @@ export default function BranchOverviewPage() {
   const [accommodationEarlySignal, setAccommodationEarlySignal] = useState<string | null>(null);
   // Learning status from branch_learning_phase view
   const [learningPhase, setLearningPhase] = useState<BranchLearningPhaseRow | null>(null);
+  // Today summary view (date-based joins): revenue_delta_day, occupancy_delta_week for Latest Performance
+  const [todaySummaryRow, setTodaySummaryRow] = useState<TodaySummaryRow | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -338,6 +340,7 @@ export default function BranchOverviewPage() {
       }
     }
     getBranchLearningPhase(branch.id).then(setLearningPhase);
+    getTodaySummary(branch.id).then(setTodaySummaryRow);
   }, [branch?.id, branch?.moduleType]);
 
   useEffect(() => {
@@ -792,8 +795,24 @@ export default function BranchOverviewPage() {
             return fallback ? metricsByDate.get(fallback) ?? null : null;
           })()
         : null;
-    // Previous-day metric for revenue (exact date so we don't show wrong +100%)
-    const prevDayMetricExact = prevDayDate ? metricsByDate.get(prevDayDate) ?? null : null;
+    // Previous-day metric: exact yesterday first, else closest date before reference (so revenue delta shows with 2+ days)
+    const prevDayMetricExact =
+      prevDayDate && referenceDate
+        ? metricsByDate.get(prevDayDate) ??
+          (() => {
+            const fallback = datesDesc.find((d) => d < referenceDate);
+            return fallback ? metricsByDate.get(fallback) ?? null : null;
+          })()
+        : null;
+    // Previous-week metric for occupancy: exact same-weekday first, else closest date <= prevWeekDate (so occupancy delta shows with 8+ days)
+    const prevMetricWeek =
+      isAccommodation && prevWeekDate
+        ? metricsByDate.get(prevWeekDate) ??
+          (() => {
+            const fallback = datesDesc.find((d) => d <= prevWeekDate);
+            return fallback ? metricsByDate.get(fallback) ?? null : null;
+          })()
+        : null;
 
     if (isAccommodation) {
       const rev = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? latestDailyMetric?.revenue ?? null;
@@ -805,8 +824,6 @@ export default function BranchOverviewPage() {
           : totalRooms != null && totalRooms > 0 && roomsSold != null
             ? (roomsSold / totalRooms) * 100
             : null;
-      // Occupancy vs same weekday last week: use exact prevWeekDate only so we compare like-for-like
-      const prevMetricWeek = prevWeekDate ? metricsByDate.get(prevWeekDate) ?? null : null;
       const prevRevWeek = prevMetricWeek?.revenue ?? null;
       const prevRooms = prevMetricWeek?.roomsSold ?? null;
       const prevTotal = prevMetricWeek?.roomsAvailable ?? totalRooms;
@@ -817,18 +834,23 @@ export default function BranchOverviewPage() {
       const prevRevDay = prevDayMetricExact?.revenue ?? null;
       const revenueDeltaPctWeek =
         rev != null && prevRevWeek != null && prevRevWeek > 0 ? ((rev - prevRevWeek) / prevRevWeek) * 100 : null;
-      // Revenue vs yesterday: exact yesterday only; do not show delta when prev is 0 (avoids wrong +100%)
+      // Prefer today_summary view deltas; fallback to client-side (with fallback prev row so deltas show with 2+/8+ days)
       const revenueDeltaPctDay =
-        rev != null && prevRevDay != null && prevRevDay > 0
-          ? ((rev - prevRevDay) / prevRevDay) * 100
-          : null;
-      // Occupancy vs last week: show only when we have valid prev (prevOcc > 0 avoids misleading +100%)
+        todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
+          ? todaySummaryRow.revenue_delta_day
+          : rev != null && prevRevDay != null && prevRevDay > 0
+            ? ((rev - prevRevDay) / prevRevDay) * 100
+            : null;
       const occupancyDeltaPct =
-        occ != null && prevOcc != null && prevOcc > 0
-          ? ((occ - prevOcc) / prevOcc) * 100
-          : null;
+        todaySummaryRow?.occupancy_delta_week != null && Number.isFinite(todaySummaryRow.occupancy_delta_week)
+          ? todaySummaryRow.occupancy_delta_week
+          : occ != null && prevOcc != null && prevOcc > 0
+            ? ((occ - prevOcc) / prevOcc) * 100
+            : null;
       const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
       const revpar = totalRooms != null && totalRooms > 0 && rev != null ? rev / totalRooms : null;
+      // Health: prefer Supabase; then today_summary; else show 70 so we don't show "—"
+      const healthForSummary = healthScore ?? todaySummaryRow?.health_score ?? 70;
       return {
         accommodation: {
           occupancyRate: occ,
@@ -840,7 +862,7 @@ export default function BranchOverviewPage() {
           revenueDeltaPctWeek,
           adr,
           revpar,
-          healthScore: healthScore ?? null,
+          healthScore: healthForSummary,
         },
         fnb: null,
       };
@@ -866,7 +888,7 @@ export default function BranchOverviewPage() {
           customers,
           customersDeltaPct,
           avgTicket,
-          healthScore: healthScore ?? null,
+          healthScore: healthScore ?? todaySummaryRow?.health_score ?? 70,
         },
       };
     }
@@ -880,6 +902,7 @@ export default function BranchOverviewPage() {
     healthScore,
     latestDailyMetric,
     dailyMetricsForTrends,
+    todaySummaryRow,
   ]);
 
   // Early signal: accommodation = accommodation_anomaly_signals.early_signal; F&B = fnb_operating_status.early_signal

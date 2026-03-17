@@ -216,6 +216,76 @@ export async function getOperatingStatusData(
   return loadOperatingStatus(branchId, 'accommodation');
 }
 
+/**
+ * Row from today_summary view (date-based joins for reliable deltas).
+ * Use for Today page Latest Performance: revenue_delta_day, occupancy_delta_week.
+ */
+export interface TodaySummaryRow {
+  branch_id: string;
+  metric_date: string | null;
+  revenue: number | null;
+  revenue_yesterday: number | null;
+  revenue_delta_day: number | null;
+  occupancy_rate: number | null;
+  occupancy_delta_week: number | null;
+  rooms_sold: number | null;
+  rooms_available: number | null;
+  adr: number | null;
+  revpar: number | null;
+  customers: number | null;
+  avg_ticket: number | null;
+  health_score: number | null;
+}
+
+/**
+ * Fetch latest row from today_summary view for a branch.
+ * Deltas are computed in DB via date-based joins (not lag), so they are correct when
+ * at least 2 days (revenue_delta_day) or 8 days (occupancy_delta_week) exist.
+ * Returns null if view missing or error (caller can fall back to client-side deltas).
+ */
+export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow | null> {
+  if (branchId == null || branchId === '') return null;
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return null;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('today_summary')
+    .select('branch_id, metric_date, revenue, revenue_yesterday, revenue_delta_day, occupancy_rate, occupancy_delta_week, rooms_sold, rooms_available, adr, revpar, customers, avg_ticket, health_score')
+    .eq('branch_id', branchId)
+    .order('metric_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[LatestMetricsService] today_summary error:', error.message);
+    }
+    return null;
+  }
+
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    branch_id: branchId,
+    metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
+    revenue: row.revenue != null ? Number(row.revenue) : null,
+    revenue_yesterday: row.revenue_yesterday != null ? Number(row.revenue_yesterday) : null,
+    revenue_delta_day: row.revenue_delta_day != null ? Number(row.revenue_delta_day) : null,
+    occupancy_rate: row.occupancy_rate != null ? Number(row.occupancy_rate) : null,
+    occupancy_delta_week: row.occupancy_delta_week != null ? Number(row.occupancy_delta_week) : null,
+    rooms_sold: row.rooms_sold != null ? Number(row.rooms_sold) : null,
+    rooms_available: row.rooms_available != null ? Number(row.rooms_available) : null,
+    adr: row.adr != null ? Number(row.adr) : null,
+    revpar: row.revpar != null ? Number(row.revpar) : null,
+    customers: row.customers != null ? Number(row.customers) : null,
+    avg_ticket: row.avg_ticket != null ? Number(row.avg_ticket) : null,
+    health_score: row.health_score != null ? Number(row.health_score) : null,
+  };
+}
+
 /** @deprecated Use getOperatingStatusData + raw row for cards. Kept for compatibility. */
 export async function getLatestMetricForDashboard(
   branchId: string,
