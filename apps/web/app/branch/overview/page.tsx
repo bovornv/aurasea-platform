@@ -37,7 +37,7 @@ import { useUserRole } from '../../contexts/user-role-context';
 import { OperatingHeader } from '../../components/operating-layer/operating-header';
 import { OperatingSection } from '../../components/operating-layer/operating-section';
 import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
-import { TodaySummaryLine } from '../../components/operating-layer/today-summary-line';
+import { BranchTodaySummary } from '../../components/operating-layer/branch-today-summary';
 import { addDays } from '../../utils/today-summary-utils';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
@@ -770,12 +770,12 @@ export default function BranchOverviewPage() {
       null;
     const metricsByDate = new Map<string, DailyMetric>();
     (dailyMetricsForTrends ?? []).forEach((m) => metricsByDate.set(m.date, m));
-    const prevDate = latestDate
-      ? isAccommodation
-        ? addDays(latestDate, -7)
-        : addDays(latestDate, -1)
+    const prevWeekDate = latestDate && isAccommodation ? addDays(latestDate, -7) : null;
+    const prevDayDate = latestDate ? addDays(latestDate, -1) : null;
+    const prevMetric = (isAccommodation ? prevWeekDate : prevDayDate)
+      ? metricsByDate.get(isAccommodation ? prevWeekDate! : prevDayDate!) ?? null
       : null;
-    const prevMetric = prevDate ? metricsByDate.get(prevDate) ?? null : null;
+    const prevDayMetric = prevDayDate ? metricsByDate.get(prevDayDate) ?? null : null;
 
     if (isAccommodation) {
       const rev = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? latestDailyMetric?.revenue ?? null;
@@ -787,13 +787,16 @@ export default function BranchOverviewPage() {
           : totalRooms != null && totalRooms > 0 && roomsSold != null
             ? (roomsSold / totalRooms) * 100
             : null;
-      const prevRev = prevMetric?.revenue ?? null;
+      const prevRevWeek = prevMetric?.revenue ?? null;
       const prevRooms = prevMetric?.roomsSold ?? null;
       const prevTotal = prevMetric?.roomsAvailable ?? totalRooms;
       const prevOcc =
         prevTotal != null && prevTotal > 0 && prevRooms != null ? (prevRooms / prevTotal) * 100 : null;
-      const revenueDeltaPct =
-        rev != null && prevRev != null && prevRev > 0 ? ((rev - prevRev) / prevRev) * 100 : null;
+      const prevRevDay = prevDayMetric?.revenue ?? null;
+      const revenueDeltaPctWeek =
+        rev != null && prevRevWeek != null && prevRevWeek > 0 ? ((rev - prevRevWeek) / prevRevWeek) * 100 : null;
+      const revenueDeltaPctDay =
+        rev != null && prevRevDay != null && prevRevDay > 0 ? ((rev - prevRevDay) / prevRevDay) * 100 : null;
       const occupancyDeltaPct =
         occ != null && prevOcc != null && prevOcc > 0 ? ((occ - prevOcc) / prevOcc) * 100 : null;
       const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
@@ -805,7 +808,8 @@ export default function BranchOverviewPage() {
           roomsSold: roomsSold ?? null,
           totalRooms: totalRooms ?? null,
           revenue: rev,
-          revenueDeltaPct,
+          revenueDeltaPct: revenueDeltaPctDay,
+          revenueDeltaPctWeek,
           adr,
           revpar,
           healthScore: healthScore ?? null,
@@ -982,9 +986,9 @@ export default function BranchOverviewPage() {
             )}
           </div>
         )}
-        {/* Today: compact one-line summary (replaces Business Health Score, Revenue, Rooms, Early Signal, Confidence cards) */}
+        {/* Latest Performance (Yesterday): 2-row inline summary — no cards */}
         {branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb' ? (
-          <TodaySummaryLine
+          <BranchTodaySummary
             branchType={branch.moduleType}
             locale={locale === 'th' ? 'th' : 'en'}
             accommodation={todaySummary.accommodation}
