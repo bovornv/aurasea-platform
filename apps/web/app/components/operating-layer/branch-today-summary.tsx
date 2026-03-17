@@ -73,6 +73,9 @@ export function BranchTodaySummary({
 }: BranchTodaySummaryProps) {
   const isTh = loc === 'th';
   const vsYesterday = isTh ? 'เทียบเมื่อวาน' : 'vs yesterday';
+  const vsLastWeek = isTh ? 'เทียบสัปดาห์ก่อน' : 'vs last week';
+  const labelOccupancy = isTh ? 'อัตราการเข้าพัก' : 'Occupancy';
+  const labelRooms = isTh ? 'ห้อง' : 'Rooms';
   const labelRevenue = isTh ? 'รายได้' : 'Revenue';
   const labelHealth = isTh ? 'สุขภาพ' : 'Health';
   const labelCustomers = isTh ? 'ลูกค้า' : 'Customers';
@@ -93,6 +96,14 @@ export function BranchTodaySummary({
 
   if (branchType === 'accommodation' && accommodation) {
     const a = accommodation;
+    const occ = a.occupancyRate != null ? Math.round(a.occupancyRate) : null;
+    const occDelta = a.occupancyDeltaPct;
+    const roomsStr =
+      a.roomsSold != null && a.totalRooms != null
+        ? `${a.roomsSold}/${a.totalRooms}`
+        : a.roomsSold != null
+          ? String(a.roomsSold)
+          : '—';
     const revStr = a.revenue != null ? formatRevenue(a.revenue) : collectingLabel;
     const revDelta = a.revenueDeltaPct;
     const adrStr = a.adr != null ? formatRevenue(a.adr) : '—';
@@ -103,6 +114,21 @@ export function BranchTodaySummary({
     return (
       <div style={{ padding: 0 }}>
         <div style={rowStyle}>
+          <span style={segmentStyle}>
+            <span style={labelStyle}>{labelOccupancy}</span>
+            <span style={valueStyle}>{occ != null ? `${occ}%` : '—'}</span>
+            {occDelta != null && Number.isFinite(occDelta) && (
+              <span style={occDelta >= 0 ? deltaPos : deltaNeg}>
+                {' '}({occDelta >= 0 ? '+' : ''}{occDelta.toFixed(0)}% {vsLastWeek})
+              </span>
+            )}
+          </span>
+          <span style={sepStyle}>{sep}</span>
+          <span style={segmentStyle}>
+            <span style={labelStyle}>{labelRooms}</span>
+            <span style={valueStyle}>{roomsStr}</span>
+          </span>
+          <span style={sepStyle}>{sep}</span>
           <span style={segmentStyle}>
             <span style={labelStyle}>{labelRevenue}</span>
             <span style={valueStyle}>{revStr}</span>

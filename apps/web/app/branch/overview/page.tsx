@@ -1115,20 +1115,9 @@ export default function BranchOverviewPage() {
 
         {/* 3. Alerts & Recommendations (action layer) */}
         <div style={{ marginTop: learningPhase?.data_days != null ? 0 : 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: 16, fontWeight: 600, color: '#111827', margin: 0 }}>
-              {locale === 'th' ? 'การแจ้งเตือนและคำแนะนำ' : 'Alerts & Recommendations'}
-            </h2>
-            {learningPhase?.data_days != null && (
-              <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 400 }}>
-                {learningPhase.data_days < 14
-                  ? (locale === 'th' ? 'ความน่าเชื่อถือต่ำ ⚠' : 'Low ⚠')
-                  : learningPhase.data_days < 30
-                    ? (locale === 'th' ? 'ความน่าเชื่อถือปานกลาง ⚠' : 'Medium ⚠')
-                    : (locale === 'th' ? 'ความน่าเชื่อถือสูง ✅' : 'High ✅')}
-              </span>
-            )}
-          </div>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 12 }}>
+            {locale === 'th' ? 'การแจ้งเตือนและคำแนะนำ' : 'Alerts & Recommendations'}
+          </h2>
           {alertsTopLoading ? (
             <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
           ) : alertsTop.length === 0 ? (
