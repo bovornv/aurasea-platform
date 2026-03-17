@@ -314,7 +314,7 @@ export async function getBranchTrendSeries(branchId: string, days: number = 30):
 async function getAccommodationTrendFallback(
   branchId: string,
   days: number,
-  supabase: ReturnType<typeof getSupabaseClient>
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>
 ): Promise<BranchTrendSeries | null> {
   const start = new Date();
   start.setDate(start.getDate() - days);
@@ -350,7 +350,7 @@ async function getAccommodationTrendFallback(
 async function getFnbTrendFallback(
   branchId: string,
   days: number,
-  supabase: ReturnType<typeof getSupabaseClient>
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>
 ): Promise<BranchTrendSeries | null> {
   const start = new Date();
   start.setDate(start.getDate() - days);
