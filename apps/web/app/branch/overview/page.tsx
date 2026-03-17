@@ -32,7 +32,6 @@ import { runPlatformAudit } from '../../services/platform-audit-service';
 import { useSystemValidation } from '../../hooks/use-system-validation';
 import { useIntelligenceStageBranch } from '../../hooks/use-intelligence-stage';
 import { isFullyActive } from '../../utils/intelligence-stage';
-import { IntelligenceInitializationCard } from '../../components/intelligence-initialization-card';
 import { useUserRole } from '../../contexts/user-role-context';
 import { OperatingHeader } from '../../components/operating-layer/operating-header';
 import { OperatingSection } from '../../components/operating-layer/operating-section';
@@ -1018,6 +1017,7 @@ export default function BranchOverviewPage() {
 
   const fullyActive = isFullyActive(stage);
   const dataCoverageDays = Math.min(coverageDays, 30);
+  const dataDays = learningPhase?.data_days ?? coverageDays ?? 0;
 
   return (
     <PageLayout title="" subtitle={branch?.branchName ?? ''}>
@@ -1066,20 +1066,75 @@ export default function BranchOverviewPage() {
           />
         ) : null}
 
-        {/* System Learning / Data coverage — below intelligence cards */}
-        {!fullyActive ? (
-          <IntelligenceInitializationCard coverageDays={coverageDays} locale={locale === 'th' ? 'th' : 'en'} />
+        {/* System Maturity Indicator: full card 0–30 days, compact badge 30+ */}
+        {dataDays < 30 ? (
+          <SectionCard title={locale === 'th' ? 'ตัวบ่งชี้ความพร้อมของระบบ' : 'System Maturity Indicator'}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                <span style={{ fontSize: '14px', color: '#374151' }}>
+                  {locale === 'th' ? 'ความครอบคลุมข้อมูล: ' : 'Data coverage: '}
+                  <strong>{Math.min(dataDays, 30)}</strong> / 30 {locale === 'th' ? 'วัน' : 'days'}
+                </span>
+              </div>
+              <div
+                style={{
+                  height: '8px',
+                  borderRadius: '4px',
+                  backgroundColor: '#e5e7eb',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${Math.min(100, (dataDays / 30) * 100)}%`,
+                    backgroundColor: '#0a0a0a',
+                    transition: 'width 0.3s ease',
+                  }}
+                />
+              </div>
+              <p style={{ fontSize: '14px', fontWeight: 500, color: '#1f2937', margin: 0 }}>
+                {locale === 'th' ? 'AI กำลังเรียนรู้รูปแบบธุรกิจของคุณ' : 'AI is learning your business patterns'}
+              </p>
+              <p style={{ fontSize: '13px', color: '#6b7280', margin: 0, lineHeight: 1.5 }}>
+                {locale === 'th' ? 'สัญญาณเบื้องต้นทำงานแล้ว' : 'Early signals are active'}
+              </p>
+              <p style={{ fontSize: '12px', color: '#9ca3af', margin: 0 }}>
+                {locale === 'th' ? 'ปลดล็อกถัดไป: ' : 'Next unlock: '}
+                <strong>
+                  {dataDays < 14
+                    ? (locale === 'th' ? 'จดจำรูปแบบ (14 วัน)' : 'Pattern recognition (14 days)')
+                    : (locale === 'th' ? 'ข้อมูลเชิงลึก AI เต็มรูปแบบ (30 วัน)' : 'Full AI insights (30 days)')}
+                </strong>
+              </p>
+              {dataDays >= 14 && dataDays < 30 && (
+                <p style={{ fontSize: '13px', color: '#b45309', margin: 0 }}>
+                  {locale === 'th' ? 'ความมั่นใจ: ปานกลาง ⚠' : 'Confidence: Medium ⚠'}
+                </p>
+              )}
+            </div>
+          </SectionCard>
         ) : (
-          <div style={{
-            padding: '0.75rem 1rem',
-            backgroundColor: '#f9fafb',
-            border: '1px solid #e5e7eb',
-            borderRadius: '8px',
-            fontSize: '14px',
-            color: '#374151',
-          }}>
-            {locale === 'th' ? 'ความครอบคลุมข้อมูล: ' : 'Data coverage: '}
-            <strong>{dataCoverageDays}</strong> / 30 {locale === 'th' ? 'วัน' : 'days'}
+          <div
+            style={{
+              display: 'inline-flex',
+              flexDirection: 'column',
+              gap: '0.2rem',
+              padding: '0.5rem 0.75rem',
+              backgroundColor: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              borderRadius: '8px',
+              boxSizing: 'border-box',
+              justifyContent: 'center',
+              alignSelf: 'flex-start',
+            }}
+          >
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#166534', lineHeight: 1.2 }}>
+              🧠 {locale === 'th' ? 'เรียนรู้ครบแล้ว (30+ วัน)' : 'Fully Learned (30+ days)'} ✅
+            </div>
+            <div style={{ fontSize: '12px', color: '#15803d', lineHeight: 1.2 }}>
+              {locale === 'th' ? 'ความมั่นใจ: สูง ✅' : 'Confidence: High ✅'}
+            </div>
           </div>
         )}
 
