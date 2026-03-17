@@ -14,6 +14,8 @@ import { useResolvedBranchData } from '../../hooks/use-resolved-branch-data';
 import { ErrorState } from '../../components/error-state';
 import { useI18n } from '../../hooks/use-i18n';
 import { getBranchKpiMetrics } from '../../services/db/kpi-analytics-service';
+import { getDailyMetrics } from '../../services/db/daily-metrics-service';
+import { getBranchTrendSeriesWithFallback } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { SimpleTrendLine } from '../../components/charts/simple-trend-line';
 
@@ -32,77 +34,106 @@ export default function BranchTrendsPage() {
   const branchMetrics = useResolvedBranchData(branch?.id);
   const [kpiRows, setKpiRows] = useState<Awaited<ReturnType<typeof getBranchKpiMetrics>>>([]);
   const [kpiLoading, setKpiLoading] = useState(true);
+  const [dailyMetrics, setDailyMetrics] = useState<Awaited<ReturnType<typeof getDailyMetrics>>>([]);
+  const [dailyLoading, setDailyLoading] = useState(true);
+  const [trendSeries, setTrendSeries] = useState<Awaited<ReturnType<typeof getBranchTrendSeriesWithFallback>>>(null);
 
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!branch?.id) {
       setKpiLoading(false);
+      setDailyLoading(false);
+      setTrendSeries(null);
       return;
     }
-    getBranchKpiMetrics(branch.id, 30)
-      .then((rows) => {
+    Promise.all([
+      getBranchKpiMetrics(branch.id, 30),
+      getDailyMetrics(branch.id, 30),
+      getBranchTrendSeriesWithFallback(branch.id, 30),
+    ])
+      .then(([rows, daily, series]) => {
         setKpiRows(rows ?? []);
+        setDailyMetrics(daily ?? []);
+        setTrendSeries(series ?? null);
         setKpiLoading(false);
+        setDailyLoading(false);
       })
       .catch(() => {
         setKpiRows([]);
+        setDailyMetrics([]);
+        setTrendSeries(null);
         setKpiLoading(false);
+        setDailyLoading(false);
       });
   }, [branch?.id]);
 
   const isAccommodation = branch?.moduleType === 'accommodation';
   const isFnb = branch?.moduleType === 'fnb';
 
+  // Primary source: today_summary_clean (has occupancy, revpar, adr in one query). Fallback: dailyMetrics + kpiRows.
   const revenueValues = useMemo(() => {
+    if (trendSeries && trendSeries.revenue.length >= 2) return trendSeries.revenue;
+    if (dailyMetrics.length >= 2) return dailyMetrics.map((m) => m.revenue);
     const fromKpi = kpiRows
       .filter((r) => r.revenue != null && !Number.isNaN(Number(r.revenue)))
       .map((r) => Number(r.revenue));
     if (fromKpi.length >= 2) return fromKpi;
-    const fromHistory = branchMetrics?.dailyHistory?.revenue;
-    if (fromHistory && fromHistory.length >= 2) return fromHistory;
     return [];
-  }, [kpiRows, branchMetrics?.dailyHistory?.revenue]);
+  }, [trendSeries, dailyMetrics, kpiRows]);
 
   const occupancyValues = useMemo(() => {
-    const occ = branchMetrics?.dailyHistory?.occupancy;
-    if (!occ || occ.length < 2) return [];
-    return occ.map((v) => (v <= 1 ? v * 100 : v));
-  }, [branchMetrics?.dailyHistory?.occupancy]);
+    if (trendSeries && trendSeries.occupancy.length >= 2) return trendSeries.occupancy;
+    if (dailyMetrics.length < 2) return [];
+    return dailyMetrics.map((m) => {
+      const avail = m.roomsAvailable ?? 0;
+      if (avail <= 0) return 0;
+      const sold = m.roomsSold ?? 0;
+      return (sold / avail) * 100;
+    });
+  }, [trendSeries, dailyMetrics]);
 
   const customersValues = useMemo(() => {
-    const c = branchMetrics?.dailyHistory?.customers;
-    if (!c || c.length < 2) return [];
-    return c;
-  }, [branchMetrics?.dailyHistory?.customers]);
+    if (trendSeries && trendSeries.customers.length >= 2) return trendSeries.customers;
+    if (dailyMetrics.length < 2) return [];
+    return dailyMetrics.map((m) => m.customers ?? 0);
+  }, [trendSeries, dailyMetrics]);
 
   const revparValues = useMemo(() => {
-    const rev = branchMetrics?.dailyHistory?.revenue;
-    const totalRooms = branchMetrics?.modules?.accommodation?.totalRoomsAvailable ?? 1;
-    if (!rev || rev.length < 2) return [];
-    return rev.map((r) => (totalRooms > 0 ? r / totalRooms : 0));
-  }, [branchMetrics?.dailyHistory?.revenue, branchMetrics?.modules?.accommodation?.totalRoomsAvailable]);
+    if (trendSeries && trendSeries.revpar.length >= 2) return trendSeries.revpar;
+    if (dailyMetrics.length < 2) return [];
+    return dailyMetrics.map((m) => {
+      const avail = m.roomsAvailable ?? 0;
+      return avail > 0 ? m.revenue / avail : 0;
+    });
+  }, [trendSeries, dailyMetrics]);
 
   const adrValues = useMemo(() => {
-    const rev = branchMetrics?.dailyHistory?.revenue;
-    const occ = branchMetrics?.dailyHistory?.occupancy;
-    const totalRooms = branchMetrics?.modules?.accommodation?.totalRoomsAvailable ?? 1;
-    if (!rev || !occ || rev.length !== occ.length || rev.length < 2) return [];
-    return rev.map((r, i) => {
-      const o = occ[i]!;
-      const sold = o <= 1 ? o * totalRooms : (o / 100) * totalRooms;
-      return sold > 0 ? r / sold : 0;
+    if (trendSeries && trendSeries.adr.length >= 2) return trendSeries.adr;
+    if (dailyMetrics.length < 2) return [];
+    return dailyMetrics.map((m) => {
+      if (m.adr != null && m.adr > 0) return m.adr;
+      const sold = m.roomsSold ?? 0;
+      return sold > 0 ? m.revenue / sold : 0;
     });
-  }, [branchMetrics?.dailyHistory?.revenue, branchMetrics?.dailyHistory?.occupancy, branchMetrics?.modules?.accommodation?.totalRoomsAvailable]);
+  }, [trendSeries, dailyMetrics]);
 
   const avgTicketValues = useMemo(() => {
-    const rev = branchMetrics?.dailyHistory?.revenue;
-    const cust = branchMetrics?.dailyHistory?.customers;
-    if (!rev || !cust || rev.length !== cust.length || rev.length < 2) return [];
-    return rev.map((r, i) => (cust[i]! > 0 ? r / cust[i]! : 0));
-  }, [branchMetrics?.dailyHistory?.revenue, branchMetrics?.dailyHistory?.customers]);
+    if (trendSeries && trendSeries.revenue.length >= 2 && trendSeries.customers.length >= 2) {
+      return trendSeries.revenue.map((r, i) => {
+        const c = trendSeries!.customers[i] ?? 0;
+        return c > 0 ? r / c : 0;
+      });
+    }
+    if (dailyMetrics.length < 2) return [];
+    return dailyMetrics.map((m) => {
+      const c = m.customers ?? 0;
+      return c > 0 ? m.revenue / c : 0;
+    });
+  }, [trendSeries, dailyMetrics]);
 
   const hasAnyData = revenueValues.length >= 2 || occupancyValues.length >= 2 || customersValues.length >= 2;
+  const loading = kpiLoading || dailyLoading;
 
   if (!mounted) {
     return (
@@ -149,7 +180,7 @@ export default function BranchTrendsPage() {
   return (
     <PageLayout title={locale === 'th' ? 'เทรนด์' : 'Trends'} subtitle={pageSubtitle}>
       <div style={{ padding: PAGE_PADDING }}>
-        {!hasAnyData && !kpiLoading ? (
+        {!hasAnyData && !loading ? (
           <div style={{ padding: '2rem 0', textAlign: 'center', fontSize: 15, color: '#6b7280' }}>
             {locale === 'th'
               ? 'เทรนด์จะปรากฏหลังจากมีข้อมูล 10+ วัน'
