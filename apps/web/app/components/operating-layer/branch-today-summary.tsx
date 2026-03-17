@@ -56,6 +56,8 @@ export interface BranchTodaySummaryProps {
   accommodation?: BranchTodaySummaryAccommodation | null;
   fnb?: BranchTodaySummaryFnb | null;
   collectingLabel?: string;
+  /** From branch_learning_phase.data_days — if provided, shows inline "System: Learning (X/30)" or "System: High Confidence ✅" at end of row */
+  systemDataDays?: number | null;
 }
 
 function formatRevenue(n: number | null | undefined): string {
@@ -70,6 +72,65 @@ function formatLastUpdated(dateStr: string | null | undefined, locale: 'en' | 't
   return d.toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', { month: 'short', day: 'numeric' });
 }
 
+const systemLearningLabel = (days: number, isTh: boolean) =>
+  isTh ? `ระบบ: กำลังเรียนรู้ (${days}/30 วัน)` : `System: Learning (${days}/30 days)`;
+const systemHighConfidence = (isTh: boolean) =>
+  isTh ? 'ระบบ: ความมั่นใจสูง ✅' : 'System: High Confidence ✅';
+
+function SystemStatusSegment({
+  dataDays,
+  locale: loc,
+}: { dataDays: number; locale: 'en' | 'th' }) {
+  const isTh = loc === 'th';
+  const styleWrap: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    marginLeft: '0.5rem',
+    fontSize: '12px',
+    color: '#6b7280',
+  };
+  const barWidth = 72;
+  const barHeight = 5;
+  const progress = Math.min(1, dataDays / 30);
+
+  if (dataDays >= 30) {
+    return (
+      <span style={styleWrap}>
+        <span style={{ color: '#9ca3af', fontWeight: 500 }}>{sep}</span>
+        <span style={{ fontWeight: 500, color: '#374151' }}>{systemHighConfidence(isTh)}</span>
+      </span>
+    );
+  }
+  return (
+    <span style={styleWrap}>
+      <span style={{ color: '#9ca3af', fontWeight: 500 }}>{sep}</span>
+      <span style={{ fontWeight: 500, color: '#374151' }}>{systemLearningLabel(dataDays, isTh)}</span>
+      <span
+        style={{
+          display: 'inline-flex',
+          width: barWidth,
+          height: barHeight,
+          borderRadius: 2,
+          backgroundColor: '#e5e7eb',
+          overflow: 'hidden',
+          flexShrink: 0,
+        }}
+        title={`${dataDays}/30`}
+      >
+        <span
+          style={{
+            width: `${progress * 100}%`,
+            height: '100%',
+            backgroundColor: '#4b5563',
+            transition: 'width 0.2s ease',
+          }}
+        />
+      </span>
+    </span>
+  );
+}
+
 export function BranchTodaySummary({
   branchType,
   locale: loc,
@@ -77,6 +138,7 @@ export function BranchTodaySummary({
   accommodation,
   fnb,
   collectingLabel = 'Collecting data...',
+  systemDataDays,
 }: BranchTodaySummaryProps) {
   const isTh = loc === 'th';
   const vsLastWeek = isTh ? 'เทียบสัปดาห์ก่อน' : 'vs last week';
@@ -87,6 +149,8 @@ export function BranchTodaySummary({
   const labelHealth = isTh ? 'สุขภาพ' : 'Health';
   const labelCustomers = isTh ? 'ลูกค้า' : 'Customers';
   const labelAvgTicket = isTh ? 'ค่าเฉลี่ยต่อบิล' : 'Avg Ticket';
+  const dataDays = systemDataDays ?? 0;
+  const showSystem = systemDataDays != null;
   const titleSuffix = lastUpdatedDate
     ? (isTh ? `อัปเดตล่าสุด: ${formatLastUpdated(lastUpdatedDate, loc)}` : `Last updated: ${formatLastUpdated(lastUpdatedDate, loc)}`)
     : (isTh ? 'อัปเดตล่าสุด' : 'Yesterday');
@@ -185,6 +249,7 @@ export function BranchTodaySummary({
               <span style={labelStyle}>{labelHealth}</span>
               <span style={healthColor(a.healthScore)}>{health} {healthIcon}</span>
             </span>
+            {showSystem && <SystemStatusSegment dataDays={dataDays} locale={loc} />}
           </div>
         </div>
       </div>
@@ -231,6 +296,7 @@ export function BranchTodaySummary({
             <span style={labelStyle}>{labelHealth}</span>
             <span style={healthColor(f.healthScore)}>{health} {healthIcon}</span>
           </span>
+          {showSystem && <SystemStatusSegment dataDays={dataDays} locale={loc} />}
         </div>
       </div>
     );
