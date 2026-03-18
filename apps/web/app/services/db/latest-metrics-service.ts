@@ -243,8 +243,9 @@ export interface TodaySummaryRow {
 const TODAY_SUMMARY_SELECT =
   'branch_id, metric_date, total_revenue, occupancy_rate, adr, revpar, health_score, revenue_delta_day, occupancy_delta_week, accommodation_revenue, fnb_revenue';
 
-/** Trend series for Trends page: one value per day (oldest first). */
+/** Trend series for Trends page: one value per day (oldest first). dates[i] = YYYY-MM-DD for values[i]. */
 export interface BranchTrendSeries {
+  dates: string[];
   revenue: number[];
   occupancy: number[];
   revpar: number[];
@@ -295,6 +296,7 @@ export async function getBranchTrendSeries(branchId: string, days: number = 30):
 
   if (!data || data.length < 2) return null;
   const rows = data as Array<{
+    metric_date?: string | null;
     total_revenue?: number | null;
     occupancy_rate?: number | null;
     customers?: number | null;
@@ -302,6 +304,7 @@ export async function getBranchTrendSeries(branchId: string, days: number = 30):
     utilized?: number | null;
   }>;
   return {
+    dates: rows.map((r) => (r.metric_date ? String(r.metric_date).slice(0, 10) : '')),
     revenue: rows.map((r) => Number(r.total_revenue ?? 0)),
     occupancy: rows.map((r) => {
       const v = r.occupancy_rate;
@@ -342,6 +345,7 @@ async function getAccommodationTrendFallback(
   if (error || !data || data.length < 2) return null;
   const rows = data as Array<{ metric_date?: string; revenue?: number | null; rooms_sold?: number | null; rooms_available?: number | null }>;
   return {
+    dates: rows.map((r) => (r.metric_date ? String(r.metric_date).slice(0, 10) : '')),
     revenue: rows.map((r) => Number(r.revenue ?? 0)),
     occupancy: rows.map((r) => {
       const avail = Number(r.rooms_available ?? 0);
@@ -378,6 +382,7 @@ async function getFnbTrendFallback(
   if (error || !data || data.length < 2) return null;
   const rows = data as Array<{ metric_date?: string; revenue?: number | null; total_customers?: number | null }>;
   return {
+    dates: rows.map((r) => (r.metric_date ? String(r.metric_date).slice(0, 10) : '')),
     revenue: rows.map((r) => Number(r.revenue ?? 0)),
     occupancy: rows.map(() => 0),
     revpar: rows.map(() => 0),

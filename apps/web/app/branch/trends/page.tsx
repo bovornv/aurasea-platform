@@ -1,6 +1,7 @@
 /**
- * Branch Trends Page — Decision tomorrow, premium SaaS layout.
- * Layout by branch type only: accommodation OR fnb (no toggle, no mix).
+ * Branch Trends Page — 4 decision-driven charts per business type.
+ * Layout: Row 1 Primary (12) | Row 2 Primary (12) | Row 3 Secondary (6) (6).
+ * Same design system for Accommodation and F&B. Default 30 days.
  */
 'use client';
 
@@ -17,11 +18,25 @@ import { getBranchKpiMetrics } from '../../services/db/kpi-analytics-service';
 import { getDailyMetrics } from '../../services/db/daily-metrics-service';
 import { getBranchTrendSeriesWithFallback } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
-import { SimpleTrendLine } from '../../components/charts/simple-trend-line';
+import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
+import { DayOfWeekChart } from '../../components/charts/day-of-week-chart';
+import { headlineDelta, formatHeadline } from '../../utils/trends-headline';
 
 const PAGE_PADDING = 24;
 const SECTION_GAP = 32;
 const GRID_GAP = 16;
+const DEFAULT_DAYS = 30;
+
+function buildDatesFallback(length: number): string[] {
+  const out: string[] = [];
+  const d = new Date();
+  for (let i = length - 1; i >= 0; i--) {
+    const x = new Date(d);
+    x.setDate(x.getDate() - i);
+    out.push(x.toISOString().split('T')[0]!);
+  }
+  return out;
+}
 
 export default function BranchTrendsPage() {
   const { locale } = useI18n();
@@ -48,9 +63,9 @@ export default function BranchTrendsPage() {
       return;
     }
     Promise.all([
-      getBranchKpiMetrics(branch.id, 30),
-      getDailyMetrics(branch.id, 30),
-      getBranchTrendSeriesWithFallback(branch.id, 30),
+      getBranchKpiMetrics(branch.id, DEFAULT_DAYS),
+      getDailyMetrics(branch.id, DEFAULT_DAYS),
+      getBranchTrendSeriesWithFallback(branch.id, DEFAULT_DAYS),
     ])
       .then(([rows, daily, series]) => {
         setKpiRows(rows ?? []);
@@ -71,7 +86,6 @@ export default function BranchTrendsPage() {
   const isAccommodation = branch?.moduleType === 'accommodation';
   const isFnb = branch?.moduleType === 'fnb';
 
-  // Primary source: today_summary_clean (has occupancy, revpar, adr in one query). Fallback: dailyMetrics + kpiRows.
   const revenueValues = useMemo(() => {
     if (trendSeries && trendSeries.revenue.length >= 2) return trendSeries.revenue;
     if (dailyMetrics.length >= 2) return dailyMetrics.map((m) => m.revenue);
@@ -141,6 +155,12 @@ export default function BranchTrendsPage() {
     });
   }, [trendSeries, dailyMetrics]);
 
+  const chartDates = useMemo(() => {
+    if (trendSeries?.dates?.length === revenueValues.length) return trendSeries.dates;
+    if (dailyMetrics.length >= 2) return dailyMetrics.map((m) => m.date);
+    return buildDatesFallback(revenueValues.length || occupancyValues.length || customersValues.length || 1);
+  }, [trendSeries?.dates, revenueValues.length, dailyMetrics, occupancyValues.length, customersValues.length]);
+
   const hasAnyData = revenueValues.length >= 2 || occupancyValues.length >= 2 || customersValues.length >= 2;
   const loading = kpiLoading || dailyLoading;
 
@@ -181,7 +201,6 @@ export default function BranchTrendsPage() {
   }
 
   const emptyMsg = locale === 'th' ? 'ไม่มีข้อมูล' : 'No data';
-
   const pageSubtitle = locale === 'th'
     ? 'ดูสิ่งที่เปลี่ยนและสิ่งที่ควรทำต่อ'
     : 'See what\'s changing and what to do next';
@@ -212,116 +231,207 @@ export default function BranchTrendsPage() {
                 alignItems: 'start',
               }}
             >
-            {isAccommodation && (
-              <>
-                {/* Row 1: Occupancy | Revenue */}
-                <TrendChartCard
-                  title={locale === 'th' ? 'เทรนด์อัตราการเข้าพัก' : 'Occupancy Trend'}
-                  cols={6}
-                  insight={
-                    occupancyValues.length >= 7 && occupancyValues[occupancyValues.length - 1]! < 50
-                      ? (locale === 'th' ? 'อัตราการเข้าพักวันธรรมดาต่ำ → พิจารณาโปรโมชั่นวันธรรมดา' : 'Weekday occupancy is consistently lower → consider weekday promotions')
-                      : null
-                  }
-                >
-                  <SimpleTrendLine
-                    values={occupancyValues}
-                    color="#6366f1"
-                    emptyMessage={emptyMsg}
-                  />
-                </TrendChartCard>
-                <TrendChartCard
-                  title={locale === 'th' ? 'เทรนด์รายได้' : 'Revenue Trend'}
-                  cols={6}
-                  insight={
-                    revenueValues.length >= 2
-                      ? (locale === 'th' ? 'รายได้ 30 วันล่าสุด' : 'Last 30 days revenue')
-                      : null
-                  }
-                >
-                  <SimpleTrendLine values={revenueValues} color="#059669" emptyMessage={emptyMsg} />
-                </TrendChartCard>
+              {isAccommodation && (
+                <>
+                  {/* 1. Occupancy + ADR (dual axis) — Primary */}
+                  <TrendChartCard
+                    title={locale === 'th' ? 'อัตราการเข้าพัก + ADR' : 'Occupancy + ADR'}
+                    headline={formatHeadline(
+                      headlineDelta(occupancyValues).current,
+                      headlineDelta(occupancyValues).pctVsLastWeek,
+                      'percent'
+                    )}
+                    cols={12}
+                    insight={
+                      occupancyValues.length >= 7 && occupancyValues[occupancyValues.length - 1]! < 50
+                        ? (locale === 'th' ? 'อัตราการเข้าพักวันธรรมดาต่ำ → พิจารณาโปรโมชั่นวันธรรมดา' : 'Weekdays consistently weaker → run weekday promotion')
+                        : (locale === 'th' ? 'เทรนด์ 30 วันล่าสุด' : 'Last 30 days trend')
+                    }
+                  >
+                    <DecisionTrendChart
+                      values={occupancyValues}
+                      valuesRight={adrValues.length === occupancyValues.length ? adrValues : undefined}
+                      dates={chartDates.length === occupancyValues.length ? chartDates : undefined}
+                      color="#2563eb"
+                      colorRight="#7c3aed"
+                      showBaseline={true}
+                      formatLeft={(v) => `${Math.round(v)}%`}
+                      formatRight={(v) => `฿${Math.round(v)}`}
+                      emptyMessage={emptyMsg}
+                    />
+                  </TrendChartCard>
 
-                {/* Row 2: RevPAR full width */}
-                <TrendChartCard
-                  title={locale === 'th' ? 'เทรนด์ RevPAR' : 'RevPAR Trend'}
-                  cols={12}
-                  insight={
-                    revparValues.length >= 7
-                      ? (locale === 'th' ? 'RevPAR รวมอัตราการเข้าพักและราคา → โฟกัสทั้งสองเพื่อเติบโต' : 'RevPAR combines occupancy and rate → focus on both for growth')
-                      : null
-                  }
-                >
-                  <SimpleTrendLine values={revparValues} color="#7c3aed" emptyMessage={emptyMsg} />
-                </TrendChartCard>
+                  {/* 2. Revenue — Primary */}
+                  <TrendChartCard
+                    title={locale === 'th' ? 'รายได้' : 'Revenue'}
+                    headline={formatHeadline(
+                      headlineDelta(revenueValues).current,
+                      headlineDelta(revenueValues).pctVsLastWeek,
+                      'currency'
+                    )}
+                    cols={12}
+                    insight={locale === 'th' ? 'รายได้ 30 วันล่าสุด' : 'Last 30 days revenue'}
+                  >
+                    <DecisionTrendChart
+                      values={revenueValues}
+                      dates={chartDates.length === revenueValues.length ? chartDates : undefined}
+                      color="#059669"
+                      showBaseline={true}
+                      formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      emptyMessage={emptyMsg}
+                    />
+                  </TrendChartCard>
 
-                {/* Row 3: ADR | Occupancy vs ADR */}
-                <TrendChartCard title={locale === 'th' ? 'เทรนด์ ADR' : 'ADR Trend'} cols={6}>
-                  <SimpleTrendLine values={adrValues} color="#0ea5e9" emptyMessage={emptyMsg} />
-                </TrendChartCard>
-                <TrendChartCard
-                  title={locale === 'th' ? 'อัตราการเข้าพัก vs ADR' : 'Occupancy vs ADR'}
-                  cols={6}
-                >
-                  <SimpleTrendLine values={occupancyValues.length >= 2 ? occupancyValues : []} color="#8b5cf6" emptyMessage={emptyMsg} />
-                </TrendChartCard>
-              </>
-            )}
+                  {/* 3. RevPAR + ADR — Secondary */}
+                  <TrendChartCard
+                    title={locale === 'th' ? 'RevPAR + ADR' : 'RevPAR + ADR'}
+                    headline={
+                      revparValues.length >= 2
+                        ? formatHeadline(
+                            headlineDelta(revparValues).current,
+                            headlineDelta(revparValues).pctVsLastWeek,
+                            'currency'
+                          )
+                        : undefined
+                    }
+                    cols={6}
+                    insight={
+                      revparValues.length >= 7
+                        ? (locale === 'th' ? 'RevPAR รวมอัตราการเข้าพักและราคา → โฟกัสทั้งสอง' : 'RevPAR combines occupancy and rate → focus on both')
+                        : undefined
+                    }
+                  >
+                    <DecisionTrendChart
+                      values={revparValues}
+                      valuesRight={adrValues.length === revparValues.length ? adrValues : undefined}
+                      dates={chartDates.length === revparValues.length ? chartDates : undefined}
+                      color="#059669"
+                      colorRight="#7c3aed"
+                      showBaseline={true}
+                      formatLeft={(v) => `฿${Math.round(v)}`}
+                      formatRight={(v) => `฿${Math.round(v)}`}
+                      emptyMessage={emptyMsg}
+                    />
+                  </TrendChartCard>
 
-            {isFnb && (
-              <>
-                {/* Row 1: Revenue | Customers */}
-                <TrendChartCard
-                  title={locale === 'th' ? 'เทรนด์รายได้' : 'Revenue Trend'}
-                  cols={6}
-                  insight={
-                    revenueValues.length >= 2
-                      ? (locale === 'th' ? 'รายได้ 30 วันล่าสุด' : 'Last 30 days revenue')
-                      : null
-                  }
-                >
-                  <SimpleTrendLine values={revenueValues} color="#059669" emptyMessage={emptyMsg} />
-                </TrendChartCard>
-                <TrendChartCard
-                  title={locale === 'th' ? 'เทรนด์จำนวนลูกค้า' : 'Customers Trend'}
-                  cols={6}
-                  insight={
-                    customersValues.length >= 7
-                      ? (locale === 'th' ? 'จำนวนลูกค้าต่อวัน' : 'Daily customer count')
-                      : null
-                  }
-                >
-                  <SimpleTrendLine values={customersValues} color="#6366f1" emptyMessage={emptyMsg} />
-                </TrendChartCard>
+                  {/* 4. Weekday vs Weekend — Secondary */}
+                  <TrendChartCard
+                    title={locale === 'th' ? 'วันธรรมดา vs สุดสัปดาห์' : 'Weekday vs Weekend'}
+                    cols={6}
+                    insight={
+                      locale === 'th'
+                        ? 'รูปแบบตามวันในสัปดาห์ (เสาร์–อาทิตย์เน้นสี)'
+                        : 'Day-of-week pattern (weekend highlighted)'
+                    }
+                  >
+                    <DayOfWeekChart
+                      values={occupancyValues.length >= 2 ? occupancyValues : revenueValues}
+                      dates={chartDates.slice(0, (occupancyValues.length >= 2 ? occupancyValues : revenueValues).length)}
+                      highlightWeekend={true}
+                      formatValue={(v) => (occupancyValues.length >= 2 ? `${Math.round(v)}%` : `฿${Math.round(v)}`)}
+                      emptyMessage={emptyMsg}
+                    />
+                  </TrendChartCard>
+                </>
+              )}
 
-                {/* Row 2: Avg Ticket full width */}
-                <TrendChartCard
-                  title={locale === 'th' ? 'เทรนด์ค่าเฉลี่ยต่อบิล' : 'Avg Ticket Trend'}
-                  cols={12}
-                  insight={
-                    avgTicketValues.length >= 7
-                      ? (locale === 'th' ? 'ค่าเฉลี่ยต่อบิลสะท้อนความสามารถในการขายเพิ่ม → พิจารณาอัปเซลล์' : 'Avg ticket reflects monetization power → consider upsells')
-                      : null
-                  }
-                >
-                  <SimpleTrendLine values={avgTicketValues} color="#7c3aed" emptyMessage={emptyMsg} />
-                </TrendChartCard>
+              {isFnb && (
+                <>
+                  {/* 1. Revenue + Customers — Primary */}
+                  <TrendChartCard
+                    title={locale === 'th' ? 'รายได้ + จำนวนลูกค้า' : 'Revenue + Customers'}
+                    headline={formatHeadline(
+                      headlineDelta(revenueValues).current,
+                      headlineDelta(revenueValues).pctVsLastWeek,
+                      'currency'
+                    )}
+                    cols={12}
+                    insight={locale === 'th' ? 'ความต้องการและรายได้ 30 วัน' : 'Demand and revenue — last 30 days'}
+                  >
+                    <DecisionTrendChart
+                      values={revenueValues}
+                      valuesRight={customersValues.length === revenueValues.length ? customersValues : undefined}
+                      dates={chartDates.length === revenueValues.length ? chartDates : undefined}
+                      color="#059669"
+                      colorRight="#2563eb"
+                      showBaseline={true}
+                      formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      formatRight={(v) => String(Math.round(v))}
+                      emptyMessage={emptyMsg}
+                    />
+                  </TrendChartCard>
 
-                {/* Row 3: Revenue vs Customers | Day-of-week */}
-                <TrendChartCard
-                  title={locale === 'th' ? 'รายได้ vs จำนวนลูกค้า' : 'Revenue vs Customers'}
-                  cols={6}
-                >
-                  <SimpleTrendLine values={revenueValues} color="#0ea5e9" emptyMessage={emptyMsg} />
-                </TrendChartCard>
-                <TrendChartCard
-                  title={locale === 'th' ? 'รูปแบบตามวันในสัปดาห์' : 'Day-of-week Pattern'}
-                  cols={6}
-                >
-                  <SimpleTrendLine values={customersValues.length >= 2 ? customersValues : []} color="#8b5cf6" emptyMessage={emptyMsg} />
-                </TrendChartCard>
-              </>
-            )}
+                  {/* 2. Customers + Avg Ticket — Primary */}
+                  <TrendChartCard
+                    title={locale === 'th' ? 'จำนวนลูกค้า + ค่าเฉลี่ยต่อบิล' : 'Customers + Avg Ticket'}
+                    headline={
+                      customersValues.length >= 2
+                        ? formatHeadline(
+                            headlineDelta(customersValues).current,
+                            headlineDelta(customersValues).pctVsLastWeek,
+                            'number'
+                          )
+                        : undefined
+                    }
+                    cols={12}
+                    insight={
+                      avgTicketValues.length >= 7
+                        ? (locale === 'th' ? 'ลูกค้าและคุณภาพการขาย → พิจารณาอัปเซลล์' : 'Traffic and monetization → consider upsells')
+                        : undefined
+                    }
+                  >
+                    <DecisionTrendChart
+                      values={customersValues}
+                      valuesRight={avgTicketValues.length === customersValues.length ? avgTicketValues : undefined}
+                      dates={chartDates.length === customersValues.length ? chartDates : undefined}
+                      color="#2563eb"
+                      colorRight="#7c3aed"
+                      showBaseline={true}
+                      formatLeft={(v) => String(Math.round(v))}
+                      formatRight={(v) => `฿${Math.round(v)}`}
+                      emptyMessage={emptyMsg}
+                    />
+                  </TrendChartCard>
+
+                  {/* 3. Revenue + Avg Ticket — Secondary */}
+                  <TrendChartCard
+                    title={locale === 'th' ? 'รายได้ + ค่าเฉลี่ยต่อบิล' : 'Revenue + Avg Ticket'}
+                    cols={6}
+                    insight={locale === 'th' ? 'คุณภาพมูลค่ารายได้' : 'Revenue value quality'}
+                  >
+                    <DecisionTrendChart
+                      values={revenueValues}
+                      valuesRight={avgTicketValues.length === revenueValues.length ? avgTicketValues : undefined}
+                      dates={chartDates.length === revenueValues.length ? chartDates : undefined}
+                      color="#059669"
+                      colorRight="#7c3aed"
+                      showBaseline={true}
+                      formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      formatRight={(v) => `฿${Math.round(v)}`}
+                      emptyMessage={emptyMsg}
+                    />
+                  </TrendChartCard>
+
+                  {/* 4. Day-of-week pattern — Secondary */}
+                  <TrendChartCard
+                    title={locale === 'th' ? 'รูปแบบตามวันในสัปดาห์' : 'Day-of-week Pattern'}
+                    cols={6}
+                    insight={
+                      locale === 'th'
+                        ? 'จังหวะความต้องการ (เสาร์–อาทิตย์เน้นสี)'
+                        : 'Demand timing (weekend highlighted)'
+                    }
+                  >
+                    <DayOfWeekChart
+                      values={customersValues.length >= 2 ? customersValues : revenueValues}
+                      dates={chartDates.slice(0, (customersValues.length >= 2 ? customersValues : revenueValues).length)}
+                      highlightWeekend={true}
+                      formatValue={(v) => (customersValues.length >= 2 ? String(Math.round(v)) : `฿${Math.round(v)}`)}
+                      emptyMessage={emptyMsg}
+                    />
+                  </TrendChartCard>
+                </>
+              )}
             </div>
           </>
         )}

@@ -1,25 +1,22 @@
 /**
- * TrendChartCard — soft container for Trends page charts.
- * Padding 16px, radius 8–10px, light border or none, white. Title 14–15px 600, 8px below; optional insight 13px muted.
+ * TrendChartCard — decision-driven chart card for Trends page.
+ * Template: [Title] [Trend arrow + %] | [Chart with axis, weekend shading, baseline] | [1-line insight]
  */
 'use client';
 
 interface TrendChartCardProps {
   title: string;
+  /** e.g. "↓ 36% (−12% vs last week)" or "↑ 8% (+5% vs last week)". Omit to hide headline. */
+  headline?: string | null;
   children: React.ReactNode;
   insight?: string | null;
   /** Column span in 12-col grid: 6 or 12 */
   cols?: 6 | 12;
 }
 
-export function TrendChartCard({ title, children, insight, cols = 6 }: TrendChartCardProps) {
+export function TrendChartCard({ title, headline, children, insight, cols = 12 }: TrendChartCardProps) {
   return (
-    <div
-      style={{
-        gridColumn: `span ${cols}`,
-        minWidth: 0,
-      }}
-    >
+    <div style={{ gridColumn: `span ${cols}`, minWidth: 0 }}>
       <div
         style={{
           padding: 16,
@@ -31,10 +28,17 @@ export function TrendChartCard({ title, children, insight, cols = 6 }: TrendChar
           flexDirection: 'column',
         }}
       >
-        <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 8 }}>
-          {title}
-        </h3>
-        <div style={{ flex: 1, minHeight: 120 }}>{children}</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: 0 }}>
+            {title}
+          </h3>
+          {headline != null && headline !== '' && (
+            <span style={{ fontSize: 16, fontWeight: 600, color: '#374151' }}>
+              {headline}
+            </span>
+          )}
+        </div>
+        <div style={{ flex: 1, minHeight: 140 }}>{children}</div>
         {insight ? (
           <p style={{ fontSize: 13, color: '#6b7280', margin: 0, marginTop: 8, lineHeight: 1.4 }}>
             {insight}
