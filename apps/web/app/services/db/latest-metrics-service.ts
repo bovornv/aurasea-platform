@@ -252,12 +252,14 @@ export interface BranchTrendSeries {
   customers: number[];
 }
 
-const TREND_SELECT =
+const TREND_SELECT_FULL =
   'metric_date, total_revenue, occupancy_rate, customers, capacity, utilized';
+const TREND_SELECT_MIN =
+  'metric_date, total_revenue, occupancy_rate, customers';
 
 /**
  * Fetch last N days from today_summary_clean for Trends charts.
- * Derives adr/revpar from revenue, capacity, utilized when view has NULLs.
+ * Tries full select first (with capacity, utilized for adr/revpar); on error tries minimal select.
  */
 export async function getBranchTrendSeries(branchId: string, days: number = 30): Promise<BranchTrendSeries | null> {
   if (branchId == null || branchId === '') return null;
@@ -268,21 +270,31 @@ export async function getBranchTrendSeries(branchId: string, days: number = 30):
   const start = new Date();
   start.setDate(start.getDate() - days);
   const startStr = start.toISOString().split('T')[0]!;
-  const { data, error } = await supabase
+
+  let data: unknown[] | null = null;
+  let hasCapacityUtilized = false;
+
+  const { data: fullData, error: fullError } = await supabase
     .from('today_summary_clean')
-    .select(TREND_SELECT)
+    .select(TREND_SELECT_FULL)
     .eq('branch_id', branchId)
     .gte('metric_date', startStr)
     .order('metric_date', { ascending: true });
-  if (error) {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[LatestMetricsService] getBranchTrendSeries error:', error.message);
-    }
-    return null;
+  if (!fullError && fullData && fullData.length >= 2) {
+    data = fullData;
+    hasCapacityUtilized = true;
+  } else {
+    const { data: minData, error: minError } = await supabase
+      .from('today_summary_clean')
+      .select(TREND_SELECT_MIN)
+      .eq('branch_id', branchId)
+      .gte('metric_date', startStr)
+      .order('metric_date', { ascending: true });
+    if (!minError && minData && minData.length >= 2) data = minData;
   }
+
   if (!data || data.length < 2) return null;
   const rows = data as Array<{
-    metric_date?: string | null;
     total_revenue?: number | null;
     occupancy_rate?: number | null;
     customers?: number | null;
@@ -297,11 +309,13 @@ export async function getBranchTrendSeries(branchId: string, days: number = 30):
       return Number(v) <= 1 ? Number(v) * 100 : Number(v);
     }),
     revpar: rows.map((r) => {
+      if (!hasCapacityUtilized) return 0;
       const cap = Number(r.capacity ?? 0);
       const rev = Number(r.total_revenue ?? 0);
       return cap > 0 ? rev / cap : 0;
     }),
     adr: rows.map((r) => {
+      if (!hasCapacityUtilized) return 0;
       const util = Number(r.utilized ?? 0);
       const rev = Number(r.total_revenue ?? 0);
       return util > 0 ? rev / util : 0;
@@ -373,20 +387,20 @@ async function getFnbTrendFallback(
 }
 
 /**
- * Fetch trend series for Trends page. Tries today_summary_clean first, then accommodation_daily_metrics, then fnb_daily_metrics.
+ * Fetch trend series for Trends page. Tries direct tables first (most reliable), then today_summary_clean.
  */
 export async function getBranchTrendSeriesWithFallback(
   branchId: string,
   days: number = 30
 ): Promise<BranchTrendSeries | null> {
-  const fromSummary = await getBranchTrendSeries(branchId, days);
-  if (fromSummary != null) return fromSummary;
   if (!isSupabaseAvailable()) return null;
   const supabase = getSupabaseClient();
   if (!supabase) return null;
   const fromAcc = await getAccommodationTrendFallback(branchId, days, supabase);
   if (fromAcc != null) return fromAcc;
-  return getFnbTrendFallback(branchId, days, supabase);
+  const fromFnb = await getFnbTrendFallback(branchId, days, supabase);
+  if (fromFnb != null) return fromFnb;
+  return getBranchTrendSeries(branchId, days);
 }
 
 /**

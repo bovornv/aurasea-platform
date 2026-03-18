@@ -99,23 +99,32 @@ export default function BranchTrendsPage() {
     return dailyMetrics.map((m) => m.customers ?? 0);
   }, [trendSeries, dailyMetrics]);
 
+  const totalRooms = branchMetrics?.modules?.accommodation?.totalRoomsAvailable ?? 0;
+
   const revparValues = useMemo(() => {
     if (trendSeries && trendSeries.revpar.length >= 2) return trendSeries.revpar;
-    if (dailyMetrics.length < 2) return [];
-    return dailyMetrics.map((m) => {
-      const avail = m.roomsAvailable ?? 0;
-      return avail > 0 ? m.revenue / avail : 0;
-    });
-  }, [trendSeries, dailyMetrics]);
+    if (dailyMetrics.length >= 2) {
+      return dailyMetrics.map((m) => {
+        const avail = m.roomsAvailable ?? 0;
+        return avail > 0 ? m.revenue / avail : 0;
+      });
+    }
+    if (revenueValues.length >= 2 && isAccommodation && totalRooms > 0) {
+      return revenueValues.map((r) => r / totalRooms);
+    }
+    return [];
+  }, [trendSeries, dailyMetrics, revenueValues, isAccommodation, totalRooms]);
 
   const adrValues = useMemo(() => {
     if (trendSeries && trendSeries.adr.length >= 2) return trendSeries.adr;
-    if (dailyMetrics.length < 2) return [];
-    return dailyMetrics.map((m) => {
-      if (m.adr != null && m.adr > 0) return m.adr;
-      const sold = m.roomsSold ?? 0;
-      return sold > 0 ? m.revenue / sold : 0;
-    });
+    if (dailyMetrics.length >= 2) {
+      return dailyMetrics.map((m) => {
+        if (m.adr != null && m.adr > 0) return m.adr;
+        const sold = m.roomsSold ?? 0;
+        return sold > 0 ? m.revenue / sold : 0;
+      });
+    }
+    return [];
   }, [trendSeries, dailyMetrics]);
 
   const avgTicketValues = useMemo(() => {
