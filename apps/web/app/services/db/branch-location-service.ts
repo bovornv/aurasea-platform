@@ -74,7 +74,7 @@ export async function updateBranchLocationInSupabase(
   try {
     const { error } = await supabase
       .from('branches')
-      .update(payload)
+      .update(payload as never)
       .eq('id', branchId);
 
     if (error) {
