@@ -120,23 +120,22 @@ export function DecisionTrendChart({
     return pts.join(' ');
   }, [showBaseline, values, hasData, chartHeight, plotLeft, plotW]);
 
+  // Data-driven weekend shading: one block per Sat+Sun pair in the dataset (aligned to x-axis scale).
   const weekendBands = useMemo(() => {
-    if (!dates.length || dates.length !== values.length) return null;
+    if (!dates.length || dates.length !== values.length) return [];
     const n = values.length;
-    if (n < 2) return null;
+    if (n < 2) return [];
     const bands: { x1: number; x2: number }[] = [];
-    let i = 0;
-    while (i < n - 1) {
-      const d0 = getDayOfWeek(dates[i]!);
-      const d1 = getDayOfWeek(dates[i + 1]!);
-      if (d0 === 6 && d1 === 0) {
-        const x1 = plotLeft + (i / (n - 1)) * plotW;
-        const x2 = plotLeft + ((i + 2) / (n - 1)) * plotW;
-        bands.push({ x1, x2 });
-        i += 2;
-        continue;
+    const denom = Math.max(1, n - 1);
+    for (let i = 0; i < n - 1; i++) {
+      const day0 = getDayOfWeek(dates[i]!);
+      const day1 = getDayOfWeek(dates[i + 1]!);
+      if (day0 === 6 && day1 === 0) {
+        bands.push({
+          x1: plotLeft + (i / denom) * plotW,
+          x2: plotLeft + ((i + 2) / denom) * plotW,
+        });
       }
-      i += 1;
     }
     return bands;
   }, [dates, values.length, plotLeft, plotW]);
