@@ -106,6 +106,24 @@ export default function LogTodayPage() {
   const isAccommodation = moduleType === 'accommodation';
   const isFnb = moduleType === 'fnb';
   const hasModuleConfig = moduleType !== null;
+
+  // Accommodation: setup mode = no previous record with both rooms_available > 0 AND staff_count > 0
+  const isAccommodationSetupMode = useMemo(() => {
+    if (!isAccommodation) return false;
+    const cap = accommodationCapacityFromMetrics;
+    if (!cap) return true;
+    const rooms = cap.rooms_available ?? 0;
+    const staff = cap.staff_count ?? 0;
+    return rooms <= 0 || staff <= 0;
+  }, [isAccommodation, accommodationCapacityFromMetrics]);
+
+  // Accommodation: save blocked when rooms_available or staff_count is missing/0
+  const accommodationCapacityInvalid = useMemo(() => {
+    if (!isAccommodation) return false;
+    const rooms = safeNumber(financeData.totalRoomsAvailable, undefined);
+    const staff = safeNumber(financeData.accommodationStaffCount, undefined);
+    return (rooms ?? 0) <= 0 || (staff ?? 0) <= 0;
+  }, [isAccommodation, financeData.totalRoomsAvailable, financeData.accommodationStaffCount]);
   
   // SECTION 1: Today's Data (Primary)
   const [todayData, setTodayData] = useState({
@@ -135,10 +153,13 @@ export default function LogTodayPage() {
     monthly_fixed_cost: number | null;
   } | null>(null);
 
-  // Expand Advanced Finance when navigated from "Please configure hotel capacity" (?expand=finance)
+  // Expand Advanced Finance when navigated from "Please configure hotel capacity" (?expand=finance) or accommodation setup mode
   useEffect(() => {
     if (searchParams.get('expand') === 'finance') setFinanceExpanded(true);
   }, [searchParams]);
+  useEffect(() => {
+    if (isAccommodationSetupMode) setFinanceExpanded(true);
+  }, [isAccommodationSetupMode]);
   
   // SECTION 3: System Preview (calculated after save)
   const [previewData, setPreviewData] = useState<{
@@ -412,15 +433,15 @@ export default function LogTodayPage() {
       newErrors.revenue = locale === 'th' ? 'กรุณากรอกรายได้' : 'Revenue is required';
     }
     
-    // Accommodation: Total Rooms and Staff required when blank (NULL or 0)
+    // Accommodation: rooms_available and staff_count must be > 0 (never 0 or empty)
     if (isAccommodation) {
       const totalRoomsVal = safeNumber(financeData.totalRoomsAvailable, undefined);
       if (totalRoomsVal == null || totalRoomsVal <= 0) {
-        newErrors.totalRoomsAvailable = locale === 'th' ? 'กรุณากรอกจำนวนห้องทั้งหมด' : 'Total Rooms Available is required';
+        newErrors.totalRoomsAvailable = locale === 'th' ? 'ต้องมากกว่า 0' : 'Must be greater than 0';
       }
       const staffVal = safeNumber(financeData.accommodationStaffCount, undefined);
-      if (staffVal == null || staffVal < 0) {
-        newErrors.accommodationStaffCount = locale === 'th' ? 'กรุณากรอกจำนวนพนักงานที่พัก' : 'Accommodation Staff Count is required';
+      if (staffVal == null || staffVal <= 0) {
+        newErrors.accommodationStaffCount = locale === 'th' ? 'ต้องมากกว่า 0' : 'Must be greater than 0';
       }
       if (newErrors.totalRoomsAvailable || newErrors.accommodationStaffCount) setFinanceExpanded(true);
     }
@@ -1012,20 +1033,25 @@ export default function LogTodayPage() {
               {/* PART 5: Hide Save button for viewer role */}
               {role && !role.canViewOnly && (
                 <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {accommodationCapacityInvalid && (
+                    <div style={{ fontSize: '13px', color: '#dc2626' }}>
+                      {locale === 'th' ? 'กรุณากรอกค่าที่ถูกต้อง (ต้องมากกว่า 0)' : 'Please enter valid values (must be greater than 0)'}
+                    </div>
+                  )}
                   <button
                     type="submit"
                     data-rbac="log-today-submit"
-                    disabled={saving}
+                    disabled={saving || accommodationCapacityInvalid}
                     style={{
                       width: '100%',
                       padding: '0.875rem',
-                      backgroundColor: saving ? '#9ca3af' : '#0a0a0a',
+                      backgroundColor: saving || accommodationCapacityInvalid ? '#9ca3af' : '#0a0a0a',
                       color: '#ffffff',
                       border: 'none',
                       borderRadius: '8px',
                       fontSize: '15px',
                       fontWeight: 600,
-                      cursor: saving ? 'not-allowed' : 'pointer',
+                      cursor: saving || accommodationCapacityInvalid ? 'not-allowed' : 'pointer',
                     }}
                   >
                     {saving
@@ -1201,7 +1227,9 @@ export default function LogTodayPage() {
                           onChange={(e) => {
                             const parsed = parseInputNumber(e.target.value);
                             setFinanceData({ ...financeData, totalRoomsAvailable: parsed });
-                            if (errors.totalRoomsAvailable) setErrors((prev) => ({ ...prev, totalRoomsAvailable: '' }));
+                            const num = safeNumber(parsed, undefined);
+                            const msg = locale === 'th' ? 'ต้องมากกว่า 0' : 'Must be greater than 0';
+                            setErrors((prev) => ({ ...prev, totalRoomsAvailable: (num == null || num <= 0) ? msg : '' }));
                           }}
                           style={{
                             width: '100%',
@@ -1213,7 +1241,9 @@ export default function LogTodayPage() {
                           placeholder="0"
                         />
                         <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
-                          {locale === 'th' ? 'เติมจากรายการล่าสุด แก้ไขได้เมื่อความจุเปลี่ยน' : 'Auto-filled from last entry. Edit only if capacity changed.'}
+                          {isAccommodationSetupMode
+                            ? (locale === 'th' ? 'กรอกครั้งแรก (จำเป็น)' : 'Required on first setup.')
+                            : (locale === 'th' ? 'เติมจากรายการล่าสุด แก้ไขได้เมื่อความจุเปลี่ยน' : 'Auto-filled from last entry. Edit only if capacity changed.')}
                         </div>
                         {errors.totalRoomsAvailable && (
                           <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>{errors.totalRoomsAvailable}</div>
@@ -1231,7 +1261,9 @@ export default function LogTodayPage() {
                           onChange={(e) => {
                             const parsed = parseInputNumber(e.target.value);
                             setFinanceData({ ...financeData, accommodationStaffCount: parsed });
-                            if (errors.accommodationStaffCount) setErrors((prev) => ({ ...prev, accommodationStaffCount: '' }));
+                            const num = safeNumber(parsed, undefined);
+                            const msg = locale === 'th' ? 'ต้องมากกว่า 0' : 'Must be greater than 0';
+                            setErrors((prev) => ({ ...prev, accommodationStaffCount: (num == null || num <= 0) ? msg : '' }));
                           }}
                           style={{
                             width: '100%',
@@ -1243,7 +1275,9 @@ export default function LogTodayPage() {
                           placeholder="0"
                         />
                         <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
-                          {locale === 'th' ? 'เติมจากรายการล่าสุด แก้ไขได้เมื่อจำนวนพนักงานเปลี่ยน' : 'Auto-filled from last entry. Edit only if staff count changed.'}
+                          {isAccommodationSetupMode
+                            ? (locale === 'th' ? 'กรอกครั้งแรก (จำเป็น)' : 'Required on first setup.')
+                            : (locale === 'th' ? 'เติมจากรายการล่าสุด แก้ไขได้เมื่อจำนวนพนักงานเปลี่ยน' : 'Auto-filled from last entry. Edit only if staff count changed.')}
                         </div>
                         {errors.accommodationStaffCount && (
                           <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>{errors.accommodationStaffCount}</div>
