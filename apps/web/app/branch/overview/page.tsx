@@ -40,7 +40,7 @@ import { BranchTodaySummary } from '../../components/operating-layer/branch-toda
 import { addDays } from '../../utils/today-summary-utils';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
-import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAlertsTop, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow, type AlertTopRow } from '../../services/db/latest-metrics-service';
+import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAlertsTop, getBranchTrendSeriesWithFallback, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow, type AlertTopRow, type BranchTrendSeries } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
@@ -87,6 +87,7 @@ export default function BranchOverviewPage() {
   // Alerts & Recommendations: top 3 from alerts_top view (problems + opportunities)
   const [alertsTop, setAlertsTop] = useState<AlertTopRow[]>([]);
   const [alertsTopLoading, setAlertsTopLoading] = useState(true);
+  const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -340,6 +341,16 @@ export default function BranchOverviewPage() {
     fetchDailyMetrics();
   }, [branch?.id]);
 
+  useEffect(() => {
+    if (!branch?.id || (branch.moduleType !== 'accommodation' && branch.moduleType !== 'fnb')) {
+      setDriverTrendSeries(null);
+      return;
+    }
+    getBranchTrendSeriesWithFallback(branch.id, 30)
+      .then((series) => setDriverTrendSeries(series ?? null))
+      .catch(() => setDriverTrendSeries(null));
+  }, [branch?.id, branch?.moduleType]);
+
   // Operating Status: F&B = fnb_operating_status + fnb_health_today; accommodation = accommodation_latest_metrics + confidence + early signal + accommodation_health_today
   const refreshOperatingStatus = useCallback(() => {
     if (!branch?.id) return;
@@ -564,10 +575,25 @@ export default function BranchOverviewPage() {
     }
   }, [branchMetrics, dailyMetricsForTrends]);
 
-  // Performance Drivers (top 2 charts from Trends) — reuse dailyMetricsForTrends, no extra fetch
+  // Performance Drivers (top 2 charts from Trends) — use same data source as Trends so charts match
   const isAccommodation = branch?.moduleType === 'accommodation';
   const isFnb = branch?.moduleType === 'fnb';
   const driverChartData = useMemo(() => {
+    if (driverTrendSeries && driverTrendSeries.revenue.length >= 2) {
+      const avgTicket = driverTrendSeries.revenue.map((r, i) => {
+        const c = driverTrendSeries.customers[i] ?? 0;
+        return c > 0 ? r / c : 0;
+      });
+      return {
+        dates: driverTrendSeries.dates,
+        revenue: driverTrendSeries.revenue,
+        occupancy: driverTrendSeries.occupancy,
+        customers: driverTrendSeries.customers,
+        adr: driverTrendSeries.adr,
+        revpar: driverTrendSeries.revpar,
+        avgTicket,
+      };
+    }
     const daily = dailyMetricsForTrends ?? [];
     if (daily.length < 2) return null;
     const sorted = [...daily].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -591,7 +617,7 @@ export default function BranchOverviewPage() {
       return c > 0 ? revenue[i]! / c : 0;
     });
     return { dates, revenue, occupancy, customers, adr, revpar, avgTicket };
-  }, [dailyMetricsForTrends, branchMetrics?.modules?.accommodation?.totalRoomsAvailable]);
+  }, [driverTrendSeries, dailyMetricsForTrends, branchMetrics?.modules?.accommodation?.totalRoomsAvailable]);
 
   // STEP 6 & 7: Debug logging will be added after recommendedActions is defined
 
@@ -1206,9 +1232,6 @@ export default function BranchOverviewPage() {
             <h2 style={{ fontSize: 17, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 16 }}>
               {locale === 'th' ? 'ตัวขับเคลื่อนประสิทธิภาพ' : 'Performance Drivers'}
             </h2>
-            <p style={{ fontSize: 13, color: '#6b7280', margin: 0, marginBottom: 12, lineHeight: 1.4 }}>
-              {locale === 'th' ? 'ดูว่าอะไรขับเคลื่อนผลงานวันนี้' : "Understand what's driving today's performance"}
-            </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
               {isAccommodation && (
                 <>
