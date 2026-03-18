@@ -118,36 +118,52 @@ function applySensitivityAdjustment(threshold: number, sensitivity: AlertSensiti
   return threshold;
 }
 
+const thresholdCache = new Map<string, Record<string, number>>();
+const loggedKeys = new Set<string>();
+
+function logThresholdOnce(businessType: string, sensitivity?: AlertSensitivity): void {
+  if (typeof process === 'undefined' || process.env?.NODE_ENV !== 'development') return;
+  const key = sensitivity ? `${businessType}:${sensitivity}` : businessType;
+  if (loggedKeys.has(key)) return;
+  loggedKeys.add(key);
+  if (sensitivity && sensitivity !== 'medium') {
+    console.log('Using THAI SME thresholds for:', businessType, 'with sensitivity:', sensitivity);
+  } else {
+    console.log('Using THAI SME thresholds for:', businessType);
+  }
+}
+
 /**
- * Get thresholds for a business type and log usage
+ * Get thresholds for a business type and log usage (once per session, dev only)
  * PART 1.4: Apply alert sensitivity adjustment if provided
+ * Results are cached per (businessType, sensitivity) to avoid repeated work.
  */
 export function getThresholds(
   businessType: 'accommodation' | 'fnb',
   sensitivity?: AlertSensitivity
 ) {
+  const cacheKey = `${businessType}:${sensitivity ?? 'medium'}`;
+  const cached = thresholdCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const baseThresholds = THAI_SME_THRESHOLDS[businessType];
-  
-  // PART 1.4: Apply sensitivity adjustment if provided
+
   if (sensitivity && sensitivity !== 'medium') {
-    const adjustedThresholds = { ...baseThresholds };
-    
-    // Apply adjustment to all numeric threshold values
-    Object.keys(adjustedThresholds).forEach(key => {
-      const value = (adjustedThresholds as any)[key];
+    const adjustedThresholds = { ...baseThresholds } as Record<string, number>;
+    Object.keys(adjustedThresholds).forEach((key) => {
+      const value = adjustedThresholds[key];
       if (typeof value === 'number') {
-        (adjustedThresholds as any)[key] = applySensitivityAdjustment(value, sensitivity);
+        adjustedThresholds[key] = applySensitivityAdjustment(value, sensitivity);
       }
     });
-    
-    // Console audit - log active thresholds with sensitivity
-    console.log("Using THAI SME thresholds for:", businessType, "with sensitivity:", sensitivity);
-    
+    logThresholdOnce(businessType, sensitivity);
+    thresholdCache.set(cacheKey, adjustedThresholds);
     return adjustedThresholds;
   }
-  
-  // Console audit - log active thresholds per branch/alert
-  console.log("Using THAI SME thresholds for:", businessType);
-  
+
+  logThresholdOnce(businessType);
+  thresholdCache.set(cacheKey, baseThresholds as Record<string, number>);
   return baseThresholds;
 }

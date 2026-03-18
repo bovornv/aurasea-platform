@@ -44,7 +44,6 @@ export function Navigation() {
     }
     const items: Array<{ href: string; labelKey: keyof typeof LABELS }> = [
       { href: `/org/${orgId}/overview`, labelKey: 'overview' },
-      { href: `/org/${orgId}/trends`, labelKey: 'trends' },
     ];
     if (canSeeCompanySettings) {
       items.push({ href: `/org/${orgId}/settings`, labelKey: 'settings' });

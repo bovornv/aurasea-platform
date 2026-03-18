@@ -1,40 +1,54 @@
 /**
  * Threshold Profile Mapper
- * 
- * Maps business-type-based threshold profiles to specific alert thresholds
- * Provides console logging for threshold usage audit
+ *
+ * Maps business-type-based threshold profiles to specific alert thresholds.
+ * Logging is dev-only and once per session; results are cached.
  */
 
 import { THAI_SME_THRESHOLDS, getBusinessType, isThaiSMEMode } from '../config/threshold-profiles';
 import { InputContract } from '../contracts/inputs';
 
+const alertThresholdCache = new Map<string, Record<string, number> | null>();
+const loggedAlertKeys = new Set<string>();
+
+function logAlertThresholdOnce(businessType: string, alertName: string): void {
+  if (typeof process === 'undefined' || process.env?.NODE_ENV !== 'development') return;
+  const key = `${businessType}:${alertName}`;
+  if (loggedAlertKeys.has(key)) return;
+  loggedAlertKeys.add(key);
+  console.log(`Using THAI SME thresholds for: ${businessType} (alert: ${alertName})`);
+}
+
 /**
  * Check if Thai SME mode should be used
  */
 function shouldUseThaiSME(input?: InputContract): boolean {
-  return isThaiSMEMode() || 
+  return isThaiSMEMode() ||
     (input?.businessContext?.region === 'thailand' && input?.businessContext?.businessSize === 'sme');
 }
 
 /**
  * Get thresholds for a specific alert based on business type
  * Returns null if Thai SME mode is not enabled or alert not mapped
+ * Cached per (alertName, businessType).
  */
 export function getAlertThresholds(
   alertName: string,
   input?: InputContract
 ): Record<string, number> | null {
   if (!shouldUseThaiSME(input)) {
-    return null; // Use default thresholds
+    return null;
   }
-  
+
   const businessType = getBusinessType(input);
+  const cacheKey = `${alertName}:${businessType}`;
+  const cached = alertThresholdCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const profile = THAI_SME_THRESHOLDS[businessType];
-  
-  // Map alert names to profile thresholds
-  // Note: This maps the user's simplified structure to our 16 alerts
   const thresholdMap: Record<string, Record<string, number>> = {
-    // Accommodation alerts
     'cost-pressure': {
       warning: profile.costRatioWarning,
       critical: profile.costRatioCritical,
@@ -59,8 +73,6 @@ export function getAlertThresholds(
       warning: profile.marginCompressionWarning,
       critical: profile.marginCompressionCritical,
     },
-    
-    // F&B alerts
     'menu-revenue-concentration': {
       warning: profile.top3RevenueWarning,
       critical: profile.top3RevenueCritical,
@@ -78,15 +90,13 @@ export function getAlertThresholds(
       critical: profile.revenueDeclineCritical,
     },
   };
-  
-  const thresholds = thresholdMap[alertName];
-  
+
+  const thresholds = thresholdMap[alertName] ?? null;
   if (thresholds) {
-    console.log(`Using THAI SME thresholds for: ${businessType} (alert: ${alertName})`);
-    return thresholds;
+    logAlertThresholdOnce(businessType, alertName);
   }
-  
-  return null; // Alert not in profile, use defaults
+  alertThresholdCache.set(cacheKey, thresholds);
+  return thresholds;
 }
 
 /**
@@ -113,18 +123,32 @@ export function getThreshold(
   return thresholds[severity] || defaultValue;
 }
 
+const allThresholdsCache = new Map<string, Record<string, number>>();
+const loggedAllKeys = new Set<string>();
+
+function logAllThresholdsOnce(businessType: string): void {
+  if (typeof process === 'undefined' || process.env?.NODE_ENV !== 'development') return;
+  if (loggedAllKeys.has(businessType)) return;
+  loggedAllKeys.add(businessType);
+  console.log(`Using THAI SME thresholds for: ${businessType}`);
+}
+
 /**
- * Get all thresholds for a business type (for console audit)
+ * Get all thresholds for a business type. Cached per businessType; log once per session (dev only).
  */
 export function getAllThresholdsForBusinessType(input?: InputContract): Record<string, number> | null {
   if (!shouldUseThaiSME(input)) {
     return null;
   }
-  
+
   const businessType = getBusinessType(input);
+  const cached = allThresholdsCache.get(businessType);
+  if (cached) {
+    return cached;
+  }
   const profile = THAI_SME_THRESHOLDS[businessType];
-  
-  console.log(`Using THAI SME thresholds for: ${businessType}`);
-  
-  return profile as any;
+  logAllThresholdsOnce(businessType);
+  const result = profile as unknown as Record<string, number>;
+  allThresholdsCache.set(businessType, result);
+  return result;
 }

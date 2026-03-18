@@ -43,9 +43,7 @@ import { useOrganization } from '../../contexts/organization-context';
 import { useRbacReady } from '../../hooks/use-route-guard';
 import { calculateRevenueExposureFromAlerts } from '../../utils/revenue-exposure-calculator';
 import { ActivationBlock } from '../../components/activation-block';
-import { IntelligenceInitializationCard } from '../../components/intelligence-initialization-card';
 import { useIntelligenceStageOrganization } from '../../hooks/use-intelligence-stage';
-import { isFullyActive } from '../../utils/intelligence-stage';
 import { validateOrganizationScenario } from '../../utils/validation-logger';
 import { useSystemValidation } from '../../hooks/use-system-validation';
 import { OperatingHeader } from '../../components/operating-layer/operating-header';
@@ -71,7 +69,7 @@ function OwnerSummaryContent() {
   const { testMode } = useTestMode();
   const { activeOrganizationId, activeOrganization } = useOrganization();
   const isReady = useRbacReady();
-  const { coverageDays, stage } = useIntelligenceStageOrganization(activeOrganizationId ?? null);
+  const { coverageDays } = useIntelligenceStageOrganization(activeOrganizationId ?? null);
   const [mounted, setMounted] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
@@ -451,32 +449,6 @@ function OwnerSummaryContent() {
         <PageLayout title="" subtitle="Loading...">
         <div style={{ padding: '4rem 2rem', textAlign: 'center' }}>
           <LoadingSpinner />
-        </div>
-      </PageLayout>
-    );
-  }
-
-  // Intelligence not yet fully active: show init card only (no health score 0, no alerts, no trends)
-  if (!isFullyActive(stage)) {
-    return (
-      <PageLayout title="" subtitle={mounted ? (activeOrganization?.name || businessName) : 'Organization'}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          {showAccessDenied && (
-            <div
-              role="alert"
-              style={{
-                padding: '0.75rem 1rem',
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fecaca',
-                borderRadius: '8px',
-                color: '#b91c1c',
-                fontSize: '14px',
-              }}
-            >
-              {t('common.accessDenied')}
-            </div>
-          )}
-          <IntelligenceInitializationCard coverageDays={coverageDays} locale={locale === 'th' ? 'th' : 'en'} />
         </div>
       </PageLayout>
     );
