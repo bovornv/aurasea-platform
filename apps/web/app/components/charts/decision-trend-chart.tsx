@@ -5,16 +5,17 @@
 'use client';
 
 import { useMemo } from 'react';
-import { rolling7Avg, getDayOfWeek } from '../../utils/trends-headline';
+import { rolling7Avg, getDayOfWeek, formatShortDate } from '../../utils/trends-headline';
 
 const AXIS_COLOR = '#eee';
 const BASELINE_COLOR = '#9ca3af';
-const WEEKEND_OPACITY = 0.06;
+const WEEKEND_OPACITY = 0.07;
 const PAD_LEFT = 40;
 const PAD_RIGHT = 40;
 const PAD_TOP = 12;
-const PAD_BOTTOM = 24;
+const PAD_BOTTOM = 32;
 const HEIGHT = 200;
+const X_TICK_MAX = 7;
 
 interface DecisionTrendChartProps {
   /** Primary series (left axis) */
@@ -124,18 +125,40 @@ export function DecisionTrendChart({
     const n = values.length;
     if (n < 2) return null;
     const bands: { x1: number; x2: number }[] = [];
-    for (let i = 0; i < n - 1; i++) {
+    let i = 0;
+    while (i < n - 1) {
       const d0 = getDayOfWeek(dates[i]!);
       const d1 = getDayOfWeek(dates[i + 1]!);
       if (d0 === 6 && d1 === 0) {
         const x1 = plotLeft + (i / (n - 1)) * plotW;
         const x2 = plotLeft + ((i + 2) / (n - 1)) * plotW;
         bands.push({ x1, x2 });
-        i += 1;
+        i += 2;
+        continue;
       }
+      i += 1;
     }
     return bands;
   }, [dates, values.length, plotLeft, plotW]);
+
+  const xAxisTicks = useMemo(() => {
+    if (!hasData || !dates.length || dates.length !== values.length) return [];
+    const n = values.length;
+    const count = Math.min(X_TICK_MAX, Math.max(1, n));
+    const indices: number[] = [];
+    if (count === 1) {
+      indices.push(0);
+    } else {
+      for (let k = 0; k < count; k++) {
+        indices.push(Math.round((k * (n - 1)) / (count - 1)));
+      }
+    }
+    return indices.map((idx) => ({
+      idx,
+      x: plotLeft + (idx / Math.max(1, n - 1)) * plotW,
+      label: formatShortDate(dates[idx]!),
+    }));
+  }, [hasData, dates, values.length, plotLeft, plotW]);
 
   if (!hasData) {
     return (
@@ -148,13 +171,22 @@ export function DecisionTrendChart({
   return (
     <div style={{ height, width: '100%', overflow: 'hidden' }}>
       <svg width="100%" height={height} viewBox={`0 0 ${chartWidth} ${height}`} preserveAspectRatio="xMidYMid meet" style={{ overflow: 'visible' }}>
-        {/* Weekend shading */}
+        {/* Weekend shading: Sat+Sun only, one 2-day block per weekend, aligned to data scale */}
         {weekendBands?.map((b, i) => (
           <rect key={i} x={b.x1} y={PAD_TOP} width={Math.max(0, b.x2 - b.x1)} height={chartHeight} fill="#9ca3af" fillOpacity={WEEKEND_OPACITY} />
         ))}
         {/* Left axis line */}
         <line x1={plotLeft} y1={PAD_TOP} x2={plotLeft} y2={PAD_TOP + chartHeight} stroke={AXIS_COLOR} strokeWidth="1" />
         <line x1={plotLeft} y1={PAD_TOP + chartHeight} x2={plotRight} y2={PAD_TOP + chartHeight} stroke={AXIS_COLOR} strokeWidth="1" />
+        {/* Horizontal date axis */}
+        {xAxisTicks.map((t, i) => (
+          <g key={i}>
+            <line x1={t.x} y1={PAD_TOP + chartHeight} x2={t.x} y2={PAD_TOP + chartHeight + 4} stroke={AXIS_COLOR} strokeWidth="1" />
+            <text x={t.x} y={height - 8} textAnchor="middle" fontSize="10" fill="#9ca3af">
+              {t.label}
+            </text>
+          </g>
+        ))}
         {/* Left axis label */}
         {leftLabel ? (
           <text x={plotLeft - 2} y={PAD_TOP - 2} textAnchor="end" fontSize="11" fill="#9ca3af">

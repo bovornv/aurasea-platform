@@ -34,10 +34,16 @@ export function formatHeadline(
   return `${valueStr} ${arrow} (${sign}${Math.round(pctVsLastWeek)}% vs last week)`;
 }
 
-/** 0 = Sun, 6 = Sat. Used for weekend shading. */
+/** 0 = Sun, 6 = Sat. Uses noon to avoid timezone date-boundary issues. */
 export function getDayOfWeek(dateStr: string): number {
   const d = new Date(dateStr + 'T12:00:00');
   return d.getDay();
+}
+
+/** Short date for x-axis: e.g. "Mar 1", "Mar 10". Uses noon for consistent day. */
+export function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export function isWeekend(dateStr: string): boolean {
