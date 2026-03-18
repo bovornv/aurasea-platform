@@ -56,6 +56,16 @@ export function DayOfWeekChart({
   const chartHeight = HEIGHT - PAD_TOP - PAD_BOTTOM;
   const barW = (chartWidth - PAD_LEFT - PAD_RIGHT) / 7;
   const gap = barW * 0.2;
+  const tickCount = 4;
+  const yTicks = useMemo(() => {
+    const out: { v: number; y: number }[] = [];
+    for (let i = 0; i <= tickCount; i++) {
+      const v = (maxVal * (tickCount - i)) / tickCount;
+      const y = HEIGHT - PAD_BOTTOM - (chartHeight * (tickCount - i)) / tickCount;
+      out.push({ v, y });
+    }
+    return out;
+  }, [maxVal, chartHeight]);
 
   if (!bars || bars.every((b) => b.avg === 0)) {
     return (
@@ -70,6 +80,14 @@ export function DayOfWeekChart({
       <svg width="100%" height={HEIGHT} viewBox={`0 0 ${chartWidth} ${HEIGHT}`} preserveAspectRatio="xMidYMid meet">
         <line x1={PAD_LEFT} y1={PAD_TOP} x2={PAD_LEFT} y2={HEIGHT - PAD_BOTTOM} stroke={AXIS_COLOR} strokeWidth="1" />
         <line x1={PAD_LEFT} y1={HEIGHT - PAD_BOTTOM} x2={chartWidth - PAD_RIGHT} y2={HEIGHT - PAD_BOTTOM} stroke={AXIS_COLOR} strokeWidth="1" />
+        {yTicks.map((t, i) => (
+          <g key={i}>
+            <line x1={PAD_LEFT} y1={t.y} x2={PAD_LEFT - 4} y2={t.y} stroke={AXIS_COLOR} strokeWidth="1" />
+            <text x={PAD_LEFT - 6} y={t.y + 4} textAnchor="end" fontSize="10" fill="#9ca3af">
+              {formatValue(t.v)}
+            </text>
+          </g>
+        ))}
         {bars.map((b, i) => {
           const x = PAD_LEFT + i * barW + gap / 2;
           const h = maxVal > 0 ? (b.avg / maxVal) * chartHeight : 0;

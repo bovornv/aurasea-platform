@@ -122,19 +122,15 @@ export function DecisionTrendChart({
   const weekendBands = useMemo(() => {
     if (!dates.length || dates.length !== values.length) return null;
     const n = values.length;
+    const dayWidth = n > 1 ? plotW / (n - 1) : 0;
     const bands: { x1: number; x2: number }[] = [];
-    let i = 0;
-    while (i < n - 1) {
-      const d0 = getDayOfWeek(dates[i]!);
-      const d1 = getDayOfWeek(dates[i + 1]!);
-      if (d0 === 6 && d1 === 0) {
-        const x1 = plotLeft + (i / (n - 1)) * plotW;
-        const x2 = plotLeft + ((i + 2) / (n - 1)) * plotW;
+    for (let i = 0; i < n - 1; i++) {
+      const d = getDayOfWeek(dates[i]!);
+      if (d === 6 || d === 0) {
+        const x1 = plotLeft + i * dayWidth;
+        const x2 = plotLeft + (i + 1) * dayWidth;
         bands.push({ x1, x2 });
-        i += 2;
-        continue;
       }
-      i += 1;
     }
     return bands;
   }, [dates, values.length, plotLeft, plotW]);
