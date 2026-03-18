@@ -265,11 +265,11 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
-                  {/* 2. Occupancy + Revenue — Primary (demand vs money) */}
+                  {/* 2. Occupancy + Revenue — Primary (demand vs money). Left: Occupancy, Right: Revenue */}
                   <TrendChartCard
                     legend={[
-                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
                       { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
+                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
@@ -277,16 +277,16 @@ export default function BranchTrendsPage() {
                     recommendation={locale === 'th' ? 'ปรับราคาหรือโปรโมชั่นให้สอดคล้องกับความต้องการ' : 'Align pricing or promotions with demand'}
                   >
                     <DecisionTrendChart
-                      values={revenueValues}
-                      valuesRight={occupancyValues.length === revenueValues.length ? occupancyValues : undefined}
-                      dates={chartDates.length === revenueValues.length ? chartDates : undefined}
-                      color="#16a34a"
-                      colorRight="#2563eb"
+                      values={occupancyValues}
+                      valuesRight={revenueValues.length === occupancyValues.length ? revenueValues : undefined}
+                      dates={chartDates.length === occupancyValues.length ? chartDates : undefined}
+                      color="#2563eb"
+                      colorRight="#16a34a"
                       showBaseline={true}
-                      formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
-                      formatRight={(v) => `${Math.round(v)}%`}
-                      leftLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
-                      rightLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
+                      formatLeft={(v) => `${Math.round(v)}%`}
+                      formatRight={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
+                      rightLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
                       emptyMessage={emptyMsg}
                     />
                   </TrendChartCard>

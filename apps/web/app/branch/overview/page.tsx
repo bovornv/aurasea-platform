@@ -1269,8 +1269,8 @@ export default function BranchOverviewPage() {
                   </TrendChartCard>
                   <TrendChartCard
                     legend={[
-                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
                       { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
+                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
@@ -1278,16 +1278,16 @@ export default function BranchOverviewPage() {
                     recommendation={locale === 'th' ? 'ปรับราคาหรือโปรโมชั่นให้สอดคล้องกับความต้องการ' : 'Align pricing or promotions with demand'}
                   >
                     <DecisionTrendChart
-                      values={driverChartData.revenue}
-                      valuesRight={driverChartData.occupancy.length === driverChartData.revenue.length ? driverChartData.occupancy : undefined}
+                      values={driverChartData.occupancy}
+                      valuesRight={driverChartData.revenue.length === driverChartData.occupancy.length ? driverChartData.revenue : undefined}
                       dates={driverChartData.dates}
-                      color="#16a34a"
-                      colorRight="#2563eb"
+                      color="#2563eb"
+                      colorRight="#16a34a"
                       showBaseline={true}
-                      formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
-                      formatRight={(v) => `${Math.round(v)}%`}
-                      leftLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
-                      rightLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
+                      formatLeft={(v) => `${Math.round(v)}%`}
+                      formatRight={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
+                      rightLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
                       emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
                     />
                   </TrendChartCard>
