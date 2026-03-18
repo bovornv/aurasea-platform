@@ -106,24 +106,6 @@ export default function LogTodayPage() {
   const isAccommodation = moduleType === 'accommodation';
   const isFnb = moduleType === 'fnb';
   const hasModuleConfig = moduleType !== null;
-
-  // Accommodation: setup mode = no previous record with both rooms_available > 0 AND staff_count > 0
-  const isAccommodationSetupMode = useMemo(() => {
-    if (!isAccommodation) return false;
-    const cap = accommodationCapacityFromMetrics;
-    if (!cap) return true;
-    const rooms = cap.rooms_available ?? 0;
-    const staff = cap.staff_count ?? 0;
-    return rooms <= 0 || staff <= 0;
-  }, [isAccommodation, accommodationCapacityFromMetrics]);
-
-  // Accommodation: save blocked when rooms_available or staff_count is missing/0
-  const accommodationCapacityInvalid = useMemo(() => {
-    if (!isAccommodation) return false;
-    const rooms = safeNumber(financeData.totalRoomsAvailable, undefined);
-    const staff = safeNumber(financeData.accommodationStaffCount, undefined);
-    return (rooms ?? 0) <= 0 || (staff ?? 0) <= 0;
-  }, [isAccommodation, financeData.totalRoomsAvailable, financeData.accommodationStaffCount]);
   
   // SECTION 1: Today's Data (Primary)
   const [todayData, setTodayData] = useState({
@@ -152,6 +134,24 @@ export default function LogTodayPage() {
     staff_count: number | null;
     monthly_fixed_cost: number | null;
   } | null>(null);
+
+  // Accommodation: setup mode = no previous record with both rooms_available > 0 AND staff_count > 0
+  const isAccommodationSetupMode = useMemo(() => {
+    if (!isAccommodation) return false;
+    const cap = accommodationCapacityFromMetrics;
+    if (!cap) return true;
+    const rooms = cap.rooms_available ?? 0;
+    const staff = cap.staff_count ?? 0;
+    return rooms <= 0 || staff <= 0;
+  }, [isAccommodation, accommodationCapacityFromMetrics]);
+
+  // Accommodation: save blocked when rooms_available or staff_count is missing/0
+  const accommodationCapacityInvalid = useMemo(() => {
+    if (!isAccommodation) return false;
+    const rooms = safeNumber(financeData.totalRoomsAvailable, undefined);
+    const staff = safeNumber(financeData.accommodationStaffCount, undefined);
+    return (rooms ?? 0) <= 0 || (staff ?? 0) <= 0;
+  }, [isAccommodation, financeData.totalRoomsAvailable, financeData.accommodationStaffCount]);
 
   // Expand Advanced Finance when navigated from "Please configure hotel capacity" (?expand=finance) or accommodation setup mode
   useEffect(() => {
