@@ -1,7 +1,7 @@
 /**
  * Shown when user has valid session but no organization or no branch assigned.
  * Do NOT redirect to /login — auth state is separate from permission state.
- * Fallback: if branch role (manager/staff/viewer) with orgId + branchId, redirect to branch overview to prevent deadlock.
+ * Fallback: if branch role (manager/staff) with orgId + branchId, redirect to branch overview to prevent deadlock.
  */
 'use client';
 
@@ -12,7 +12,7 @@ import { useI18n } from '../hooks/use-i18n';
 import { useUserSession } from '../contexts/user-session-context';
 import { useUserRole } from '../contexts/user-role-context';
 
-const BRANCH_ROLES = ['manager', 'staff', 'viewer'];
+const BRANCH_ROLES = ['manager', 'staff'];
 
 function NoAccessContent() {
   const router = useRouter();

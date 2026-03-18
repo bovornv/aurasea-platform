@@ -40,11 +40,11 @@ export default function LogTodayPage() {
   const { role, isLoading: roleLoading } = useUserRole();
   const { refreshAlerts } = useHospitalityAlerts();
   
-  // PART 2: Protect UI Routes - Log Today: Owner, manager, branch_manager, branch_user (not viewer)
+  // PART 2: Protect UI Routes - Log Today: Owner, manager, staff
   useRouteGuard();
   const paths = useOrgBranchPaths();
 
-  // Additional check: redirect viewer role
+  // Additional check: redirect view-only role (legacy; canViewOnly is now always false)
   useEffect(() => {
     if (!roleLoading && role && role.canViewOnly) {
       router.push(paths.branchOverview || '/branch/overview');
@@ -1030,7 +1030,7 @@ export default function LogTodayPage() {
                 )}
               </div>
               
-              {/* PART 5: Hide Save button for viewer role */}
+              {/* PART 5: Hide Save button for view-only role */}
               {role && !role.canViewOnly && (
                 <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {accommodationCapacityInvalid && (

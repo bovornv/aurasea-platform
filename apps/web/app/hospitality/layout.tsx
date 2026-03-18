@@ -28,7 +28,7 @@ export default function HospitalityLayout({
       return;
     }
 
-    const allowedRoles: import('../lib/auth').AllowedRole[] = ['owner', 'admin', 'manager', 'staff', 'viewer'];
+    const allowedRoles: import('../lib/auth').AllowedRole[] = ['owner', 'admin', 'manager', 'staff'];
     if (!permissions.role || !hasRole(permissions.role as UserRole, allowedRoles)) {
       router.replace('/login');
     }
@@ -38,7 +38,7 @@ export default function HospitalityLayout({
     return null;
   }
 
-  const allowed: import('../lib/auth').AllowedRole[] = ['owner', 'admin', 'manager', 'staff', 'viewer'];
+  const allowed: import('../lib/auth').AllowedRole[] = ['owner', 'admin', 'manager', 'staff'];
   if (!permissions.role || !hasRole(permissions.role as UserRole, allowed)) {
     return null; // Will redirect
   }

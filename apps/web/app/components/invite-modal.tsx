@@ -28,7 +28,6 @@ const ROLE_OPTIONS_ORG: { value: string; labelEn: string; labelTh: string; descE
 const ROLE_OPTIONS_BRANCH: { value: string; labelEn: string; labelTh: string; descEn: string; descTh: string }[] = [
   { value: 'manager', labelEn: 'Manager', labelTh: 'ผู้จัดการสาขา', descEn: 'Can manage this branch and invite branch users.', descTh: 'จัดการสาขานี้และเชิญผู้ใช้สาขาได้' },
   { value: 'staff', labelEn: 'Staff', labelTh: 'พนักงาน', descEn: 'Can log data and view this branch.', descTh: 'บันทึกข้อมูลและดูสาขานี้ได้' },
-  { value: 'viewer', labelEn: 'Viewer', labelTh: 'ผู้ดู', descEn: 'View-only access to this branch.', descTh: 'ดูอย่างเดียว' },
 ];
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

@@ -82,13 +82,13 @@ export interface RouteAccessResult {
   violationCode?: string;
   /** When allowed is false and route org is not in memberOrganizationIds, redirect to this org (memberships[0]). */
   redirectToOrgId?: string;
-  /** When allowed is false and role is manager/staff/viewer on company overview; caller should redirect to branch (no violation log). */
+  /** When allowed is false and role is manager/staff on company overview; caller should redirect to branch (no violation log). */
   redirectToBranch?: boolean;
   /** True when context was not ready; caller must not redirect or show Access Denied. */
   pending?: boolean;
 }
 
-const BRANCH_ROLES = ['manager', 'staff', 'viewer'] as const;
+const BRANCH_ROLES = ['manager', 'staff'] as const;
 function isBranchRole(role: RbacRole): boolean {
   return (BRANCH_ROLES as readonly string[]).includes(role);
 }
@@ -147,7 +147,7 @@ export function validateRouteAccess(
     }
   }
 
-  // Company overview: branch roles (manager, staff, viewer) → redirect to branch overview; intentional, not a denial.
+  // Company overview: branch roles (manager, staff) → redirect to branch overview; intentional, not a denial.
   const isCompanyOverviewRoute =
     orgOverviewMatch && !pathBranchId && !pathname.includes('/settings');
   if (isCompanyOverviewRoute && isBranchRole(userRole)) {
@@ -185,7 +185,7 @@ export function validateRouteAccess(
     }
   }
 
-  // Branch log: no viewer
+  // Branch log: manager, staff (no view-only role)
   if (branchLogMatch) {
     if (!canLogData(userRole)) {
       const reason = `Role ${userRole} cannot access Log Today`;
@@ -199,7 +199,7 @@ export function validateRouteAccess(
     }
   }
 
-  // Branch settings: BRANCH_SETTINGS_ROLES only (owner, admin, manager). Block staff and viewer.
+  // Branch settings: BRANCH_SETTINGS_ROLES only (owner, admin, manager). Block staff.
   if (branchSettingsMatch) {
     const branchSettingsAllowed = (BRANCH_SETTINGS_ROLES as readonly string[]).includes(userRole);
     if (!branchSettingsAllowed) {
@@ -214,7 +214,7 @@ export function validateRouteAccess(
     }
   }
 
-  // Branch READ routes (dashboard, overview, metrics, reports, trends, alerts): BRANCH_READ_ROLES (includes viewer)
+  // Branch READ routes (dashboard, overview, metrics, reports, trends, alerts): BRANCH_READ_ROLES (manager, staff)
   if (
     branchMatch &&
     pathBranchId &&

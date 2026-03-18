@@ -29,7 +29,7 @@ export const ROUTE_PERMISSIONS = {
     settings: ['owner', 'admin'],
   },
   branch: {
-    overview: ['owner', 'admin', 'manager', 'staff', 'viewer'],
+    overview: ['owner', 'admin', 'manager', 'staff'],
     operating: ['owner', 'admin', 'manager', 'staff'],
     trends: ['owner', 'admin', 'manager'],
     log: ['owner', 'admin', 'manager'],
@@ -62,14 +62,14 @@ export function useRbacReady(): boolean {
   );
 }
 
-const BRANCH_ROLES = ['manager', 'staff', 'viewer'] as const;
+const BRANCH_ROLES = ['manager', 'staff'] as const;
 function isBranchRole(role: string | null | undefined): boolean {
   return role != null && (BRANCH_ROLES as readonly string[]).includes(role);
 }
 
 /** Branch sub-route permission map. Order defines fallback priority (first allowed wins). */
 const BRANCH_ROUTE_PERMISSIONS: Record<string, string[]> = {
-  overview: ['owner', 'admin', 'manager', 'staff', 'viewer'],
+  overview: ['owner', 'admin', 'manager', 'staff'],
   operating: ['owner', 'admin', 'manager', 'staff'],
   trends: ['owner', 'admin', 'manager'],
   log: ['owner', 'admin', 'manager'],
@@ -164,7 +164,7 @@ function redirectBranchRoleOffOrgOverview(
   return false;
 }
 
-/** Branch role on a branch sub-route they're not allowed for (e.g. /log as viewer): redirect to branch overview. Do NOT show Access Denied. */
+/** Branch role on a branch sub-route they're not allowed for (e.g. /log as staff): redirect to branch overview. Do NOT show Access Denied. */
 function redirectBranchRoleToBranchOverview(
   path: string,
   accessibleBranchIds: string[] | undefined,
@@ -195,7 +195,7 @@ const COMPANY_SETTINGS_PERMISSION: RoutePermission = {
   allowedRoles: ['owner', 'admin'],
   requiresOrganization: true,
 };
-/** Branch dashboard, reports, metrics, alerts, trends: BRANCH_READ_ROLES (includes viewer). */
+/** Branch dashboard, reports, metrics, alerts, trends: BRANCH_READ_ROLES (manager, staff). */
 const BRANCH_PERMISSION: RoutePermission = {
   allowedRoles: [...BRANCH_READ_ROLES],
   requiresBranch: true,
@@ -271,7 +271,7 @@ export function useRouteGuard(): { isReady: boolean } {
     });
 
     const resolvedOrgId = role.organizationId ?? activeOrganizationId ?? null;
-    const result = validateRouteAccess((role.effectiveRole ?? 'viewer') as RbacRole, path, {
+    const result = validateRouteAccess((role.effectiveRole ?? 'staff') as RbacRole, path, {
       organizationId: resolvedOrgId,
       accessibleBranchIds: role.accessibleBranchIds,
       isSuperAdmin: role.isSuperAdmin,

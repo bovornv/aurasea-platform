@@ -1,7 +1,7 @@
 /**
  * Branch Permission Guard
  *
- * RBAC: organization_members (owner, admin); branch_members (manager, staff, viewer).
+ * RBAC: organization_members (owner, admin); branch_members (owner, manager, staff).
  * Uses effectiveRole only. No fallback to permissions.role.
  * - On branch route: no branch and no org role → NoBranchPage (no-access); no effectiveRole → AccessDenied (unauthorized).
  */
@@ -17,7 +17,7 @@ import { validateBranchSelection, getAccessibleBranches, canAccessAllBranchesVie
 import { businessGroupService } from '../services/business-group-service';
 import { BRANCH_SETTINGS_ROLES } from '../utils/rbac/permission-matrix';
 
-/** Branch routes viewer can access: dashboard, reports, metrics, alerts, trends. */
+/** Branch read routes: overview, trends, alerts, reports, metrics. */
 const BRANCH_READ_ONLY_SEGMENTS = ['overview', 'trends', 'alerts', 'reports', 'metrics'];
 
 function isBranchReadOnlyRoute(pathname: string): boolean {
@@ -61,7 +61,7 @@ export function BranchPermissionGuard({ children }: BranchPermissionGuardProps) 
       router.replace('/unauthorized?from=branch');
       return;
     }
-    // Branch settings: BRANCH_SETTINGS_ROLES only. Staff and viewer → branch overview.
+    // Branch settings: BRANCH_SETTINGS_ROLES only. Staff → branch overview.
     if (isBranchSettingsRoute(pathname) && !(BRANCH_SETTINGS_ROLES as readonly string[]).includes(effectiveRole)) {
       const orgId = pathname.match(/^\/org\/([^/]+)/)?.[1];
       const bid = pathname.match(/\/branch\/([^/]+)/)?.[1];
@@ -92,10 +92,7 @@ export function BranchPermissionGuard({ children }: BranchPermissionGuardProps) 
         }
         return;
       }
-      if (effectiveRole === 'viewer' && !isBranchReadOnlyRoute(pathname)) {
-        const orgId = pathname.match(/^\/org\/([^/]+)/)?.[1];
-        if (orgId && branchId) router.replace(`/org/${orgId}/branch/${branchId}/overview`);
-      }
+      // (viewer removed; legacy viewer normalized to staff in role context)
     }
   }, [branchId, isAllBranches, permissions, router, pathname, effectiveRole]);
 

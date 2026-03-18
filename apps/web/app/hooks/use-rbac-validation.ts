@@ -1,6 +1,6 @@
 /**
  * Hook to run RBAC UI and isolation validation after render.
- * Validation uses effectiveRole only (org-level: owner/admin; branch-level: manager/staff/viewer).
+ * Validation uses effectiveRole only (org-level: owner/admin; branch-level: manager/staff).
  * Does not require org-level role for branch users; does not fail if org loads after branch.
  */
 
@@ -28,7 +28,7 @@ export function useRBACValidation(): void {
     const path = pathname || '';
     const { pathOrgId, pathBranchId } = parseOrgBranchFromPath(path);
 
-    const effectiveRole: RbacRole = (role.effectiveRole ?? 'viewer') as RbacRole;
+    const effectiveRole: RbacRole = (role.effectiveRole ?? 'staff') as RbacRole;
     const ctx = {
       role: effectiveRole,
       organizationId: role.organizationId,

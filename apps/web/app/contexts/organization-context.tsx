@@ -185,7 +185,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
         const list = (memberships ?? []) as OrganizationMembership[];
         let orgIds = list.map((m) => m.organization_id);
         let firstOrgId: string | null = list.length > 0 ? list[0].organization_id : null;
-        let firstRole: UserRole = list.length > 0 ? (list[0].role as UserRole) ?? 'owner' : 'viewer';
+        let firstRole: UserRole = list.length > 0 ? (list[0].role as UserRole) ?? 'owner' : 'staff';
         let branchIdsToSet: string[] | undefined;
 
         const { data: branchMembers } = await supabase
@@ -209,7 +209,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
           if (derivedOrgIds.length > 0) {
             orgIds = derivedOrgIds;
             firstOrgId = derivedOrgIds[0];
-            firstRole = (branchList[0].role as UserRole) || 'viewer';
+            firstRole = (branchList[0].role as UserRole) || 'staff';
             branchIdsToSet = branchList.map((b) => b.branch_id);
           }
         }

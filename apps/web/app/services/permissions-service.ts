@@ -2,7 +2,7 @@
  * Permissions Service
  *
  * Branch-scoped access. Role is always derived from context (no role in localStorage).
- * organization_members: owner, admin. branch_members: manager, staff, viewer.
+ * organization_members: owner, admin. branch_members: owner, manager, staff.
  */
 'use client';
 
@@ -10,7 +10,7 @@ import { businessGroupService } from './business-group-service';
 import type { Branch } from '../models/business-group';
 import { BranchBusinessType } from '../models/business-group';
 
-export type UserRole = 'owner' | 'admin' | 'manager' | 'staff' | 'viewer';
+export type UserRole = 'owner' | 'admin' | 'manager' | 'staff';
 
 export interface UserPermissions {
   role: UserRole | '';

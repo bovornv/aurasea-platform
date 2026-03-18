@@ -67,14 +67,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validRoles = ['owner', 'admin', 'manager', 'staff', 'viewer'];
-    if (!validRoles.includes(role)) {
-      return NextResponse.json(
-        { error: 'Invalid role' },
-        { status: 400 }
-      );
-    }
-
     // Validate scope (either organizationId or branchId, not both)
     if (!organizationId && !branchId) {
       return NextResponse.json(
@@ -88,6 +80,16 @@ export async function POST(request: NextRequest) {
         { error: 'Cannot specify both organizationId and branchId' },
         { status: 400 }
       );
+    }
+
+    // Role by scope: org = owner, admin, manager; branch = owner, manager, staff (viewer removed)
+    const validOrgRoles = ['owner', 'admin', 'manager'];
+    const validBranchRoles = ['owner', 'manager', 'staff'];
+    if (organizationId && !validOrgRoles.includes(role)) {
+      return NextResponse.json({ error: 'Invalid role for organization invite' }, { status: 400 });
+    }
+    if (branchId && !validBranchRoles.includes(role)) {
+      return NextResponse.json({ error: 'Invalid role for branch invite (use owner, manager, or staff)' }, { status: 400 });
     }
 
     // Super admin bypass

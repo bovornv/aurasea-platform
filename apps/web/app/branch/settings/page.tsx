@@ -75,11 +75,11 @@ export default function BranchSettingsPage() {
   // Toast notifications
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  // Branch members & invite (RBAC)
-  const [branchMembers, setBranchMembers] = useState<Array<{ user_id: string; role: string; created_at: string }>>([]);
+  // Branch members & invite (RBAC). email is for display; user_id remains source of truth.
+  const [branchMembers, setBranchMembers] = useState<Array<{ user_id: string; role: string; email: string | null; created_at: string }>>([]);
   const [loadingBranchMembers, setLoadingBranchMembers] = useState(false);
   const [branchInviteEmail, setBranchInviteEmail] = useState('');
-  const [branchInviteRole, setBranchInviteRole] = useState<'manager' | 'staff' | 'viewer'>('staff');
+  const [branchInviteRole, setBranchInviteRole] = useState<'owner' | 'manager' | 'staff'>('staff');
   const [branchInviteLoading, setBranchInviteLoading] = useState(false);
   const [branchInviteResult, setBranchInviteResult] = useState<{ link: string; emailSent?: boolean; emailError?: string } | null>(null);
   const [branchInviteError, setBranchInviteError] = useState<string | null>(null);
@@ -100,17 +100,17 @@ export default function BranchSettingsPage() {
     setLoadingBranchMembers(true);
     const { data } = await supabase
       .from('branch_members')
-      .select('user_id, role, created_at')
+      .select('user_id, role, email, created_at')
       .eq('branch_id', branch.id)
       .order('created_at', { ascending: false });
-    setBranchMembers((data ?? []) as Array<{ user_id: string; role: string; created_at: string }>);
+    setBranchMembers((data ?? []) as Array<{ user_id: string; role: string; email: string | null; created_at: string }>);
     setLoadingBranchMembers(false);
   }, [branch?.id]);
 
   const canFetchBranchInvitations =
     branch?.id &&
     role &&
-    !['staff', 'viewer'].includes(role.effectiveRole ?? '');
+    role.effectiveRole !== 'staff';
 
   const loadPendingBranchInvitations = useCallback(async () => {
     if (!canFetchBranchInvitations || !isSupabaseAvailable()) return;
@@ -1063,16 +1063,16 @@ export default function BranchSettingsPage() {
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                         <thead>
                           <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
+                            <th style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontWeight: 600 }}>{locale === 'th' ? 'อีเมล' : 'Email'}</th>
                             <th style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontWeight: 600 }}>{locale === 'th' ? 'บทบาท' : 'Role'}</th>
-                            <th style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontWeight: 600 }}>{locale === 'th' ? 'ผู้ใช้ (ID)' : 'User (ID)'}</th>
                             <th style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontWeight: 600 }}>{locale === 'th' ? 'เข้าร่วม' : 'Joined'}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {branchMembers.map((m) => (
                             <tr key={m.user_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                              <td style={{ padding: '0.5rem 0.75rem', color: '#374151' }}>{m.role.replace('_', ' ')}</td>
-                              <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontFamily: 'monospace', fontSize: '12px' }}>…{m.user_id.slice(-8)}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: '#374151', fontSize: '13px' }}>{m.email || '—'}</td>
+                              <td style={{ padding: '0.5rem 0.75rem', color: '#374151' }}>{(m.role || '').replace('_', ' ')}</td>
                               <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>
                                 {m.created_at ? new Date(m.created_at).toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', { dateStyle: 'short' }) : '—'}
                               </td>
@@ -1103,12 +1103,12 @@ export default function BranchSettingsPage() {
                       <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>Role</label>
                       <select
                         value={branchInviteRole}
-                        onChange={(e) => setBranchInviteRole(e.target.value as 'manager' | 'staff' | 'viewer')}
+                        onChange={(e) => setBranchInviteRole(e.target.value as 'owner' | 'manager' | 'staff')}
                         style={{ padding: '0.5rem 0.75rem', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px' }}
                       >
+                        <option value="owner">Owner</option>
                         <option value="manager">Manager</option>
                         <option value="staff">Staff</option>
-                        <option value="viewer">Viewer</option>
                       </select>
                     </div>
                     <button

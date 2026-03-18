@@ -162,12 +162,20 @@ function AcceptInviteContent() {
             throw memberError;
           }
         } else if (inv.branch_id) {
+          const branchRole = inv.role === 'viewer' ? 'staff' : inv.role;
+          const memberEmail = user.email ?? inv.email ?? null;
+          if (!memberEmail) {
+            setStatus('error');
+            setMessage('Cannot add member without email');
+            return;
+          }
           const { error: memberError } = await supabase
             .from('branch_members')
             .insert({
               branch_id: inv.branch_id,
               user_id: user.id,
-              role: inv.role,
+              role: branchRole,
+              email: memberEmail,
               invited_by: inv.invited_by,
             } as never);
 

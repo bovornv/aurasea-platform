@@ -101,7 +101,7 @@ export default function LoginPage() {
           .eq('user_id', data.user.id);
         const branchList = (branchRows ?? []) as { branch_id: string; role: string }[];
         const firstBranchId = branchList.length ? (branchList[0] as { branch_id: string }).branch_id : null;
-        const branchRole = branchList.length ? ((branchList[0] as { role: string }).role as UserRole) || 'viewer' : null;
+        const branchRole = branchList.length ? ((branchList[0] as { role: string }).role as UserRole) || 'staff' : null;
         let orgId: string | null = null;
         let organization: { id: string; name: string } | null = null;
         if (ownerOrAdmin) {

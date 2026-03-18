@@ -3,7 +3,7 @@
  *
  * RBAC aligned with Supabase:
  * - organization_members: owner, admin
- * - branch_members: manager, staff, viewer
+ * - branch_members: owner, manager, staff (viewer removed; legacy viewer treated as staff)
  * Role is always derived from context (no localStorage caching).
  */
 'use client';
@@ -22,9 +22,18 @@ function normalizeRole(role: string | null | undefined): string {
 
 /** Organization-level roles (organization_members table). */
 export type OrganizationRole = 'owner' | 'admin';
-/** Branch-level roles (branch_members table). */
-export type BranchRole = 'manager' | 'staff' | 'viewer';
-export type EffectiveRoleValue = 'owner' | 'admin' | 'manager' | 'staff' | 'viewer';
+/** Branch-level roles (branch_members table). Viewer removed; use staff. */
+export type BranchRole = 'owner' | 'manager' | 'staff';
+export type EffectiveRoleValue = 'owner' | 'admin' | 'manager' | 'staff';
+
+/** Map legacy or DB role to allowed BranchRole (viewer/branch_user -> staff, branch_manager -> manager). */
+export function normalizeBranchRole(role: string | null | undefined): BranchRole | null {
+  const r = normalizeRole(role);
+  if (r === 'manager' || r === 'staff' || r === 'owner') return r as BranchRole;
+  if (r === 'viewer' || r === 'branch_user') return 'staff';
+  if (r === 'branch_manager') return 'manager';
+  return null;
+}
 
 /**
  * Resolve effective role: org role takes precedence when owner/admin; else branch role; else null.
@@ -35,9 +44,9 @@ export function resolveEffectiveRole(
   branchRole: string | null | undefined
 ): EffectiveRoleValue | null {
   const org = normalizeRole(orgRole);
-  const branch = normalizeRole(branchRole);
+  const branch = normalizeBranchRole(branchRole) ?? normalizeRole(branchRole);
   if (org === 'owner' || org === 'admin') return org as EffectiveRoleValue;
-  if (branch && (branch === 'manager' || branch === 'staff' || branch === 'viewer')) return branch as EffectiveRoleValue;
+  if (branch && (branch === 'manager' || branch === 'staff' || branch === 'owner')) return branch as EffectiveRoleValue;
   return null;
 }
 
@@ -172,7 +181,7 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
 
       const branchMembersList = (branchMembers ?? []) as { branch_id: string; role: string }[];
       branchMembersList.forEach(member => {
-        const r = normalizeRole(member.role) as BranchRole;
+        const r = normalizeBranchRole(member.role) ?? 'staff';
         branchRoles.set(member.branch_id, r);
         accessibleBranchIds.push(member.branch_id);
       });
@@ -216,9 +225,9 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
       // Permissions from resolved effectiveRole only (deterministic, scope-safe)
       const canManageOrganization = effectiveRole === 'owner';
       const canManageBranches = effectiveRole === 'owner' || effectiveRole === 'admin';
-      const canEditBranch = canManageBranches || effectiveRole === 'manager' || effectiveRole === 'staff';
+      const canEditBranch = canManageBranches || effectiveRole === 'manager' || effectiveRole === 'staff' || effectiveRole === 'owner';
       const canLogData = canEditBranch;
-      const canViewOnly = effectiveRole === 'viewer';
+      const canViewOnly = false;
 
       const userRole: UserRole = {
         isSuperAdmin: finalRole === 'super_admin',

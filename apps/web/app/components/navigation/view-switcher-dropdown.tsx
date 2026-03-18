@@ -32,7 +32,7 @@ export function ViewSwitcherDropdown() {
   const [currentBranch, setCurrentBranch] = useState<Branch | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Company view (overview/trends): owner, manager, viewer (read-only)
+  // Company view (overview/trends): owner, manager
   const canAccessCompany = canViewCompanyOverview;
 
   // Stable permission keys so effect doesn't re-run on every permissions object reference change
@@ -190,7 +190,7 @@ export function ViewSwitcherDropdown() {
   }
 
   // Branch users: never show org-level option; they only see their assigned branch(es)
-  const isBranchLevelUser = ['manager', 'staff', 'viewer'].includes(permissions.role);
+  const isBranchLevelUser = ['manager', 'staff'].includes(permissions.role);
 
   // In Company View: show dropdown only for owner/manager (branch users are redirected to branch)
   if (isCompanyView && canAccessCompany && !isBranchLevelUser) {
@@ -339,7 +339,7 @@ export function ViewSwitcherDropdown() {
   }
 
   // In Branch View: company selector (trigger = company name), options = Company overview + branches
-  const isBranchUser = ['manager', 'staff', 'viewer'].includes(permissions.role);
+  const isBranchUser = ['manager', 'staff'].includes(permissions.role);
   const hasMultipleAccessibleBranches = branches.length > 1;
   const shouldShowDropdown = !isBranchUser || hasMultipleAccessibleBranches;
 

@@ -177,9 +177,7 @@ export function UserMenuButton() {
                           ? locale === 'th' ? 'ผู้จัดการสาขา' : 'Manager'
                           : effective === 'staff'
                             ? locale === 'th' ? 'พนักงาน' : 'Staff'
-                            : effective === 'viewer'
-                              ? locale === 'th' ? 'ผู้ชม' : 'Viewer'
-                              : effective ?? (locale === 'th' ? 'บทบาท' : 'Role');
+                            : effective ?? (locale === 'th' ? 'บทบาท' : 'Role');
                 return locale === 'th' ? `บทบาท: ${roleLabel}` : `Role: ${roleLabel}`;
               })()}
             </div>

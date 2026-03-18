@@ -1,7 +1,7 @@
 /**
  * 403 Unauthorized / Forbidden
  * PART 2: Shown when user lacks permission for the requested resource.
- * Fallback: if user is manager/staff/viewer and has orgId + branchId, redirect to branch overview to prevent deadlock.
+ * Fallback: if user is manager/staff and has orgId + branchId, redirect to branch overview to prevent deadlock.
  */
 'use client';
 
@@ -14,7 +14,7 @@ import { useUserSession } from '../contexts/user-session-context';
 import { useUserRole } from '../contexts/user-role-context';
 import { resolveFallbackRoute } from '../hooks/use-route-guard';
 
-const BRANCH_ROLES = ['manager', 'staff', 'viewer'];
+const BRANCH_ROLES = ['manager', 'staff'];
 
 function UnauthorizedContent() {
   const router = useRouter();

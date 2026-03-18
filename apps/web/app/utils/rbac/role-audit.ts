@@ -22,7 +22,7 @@ export interface RoleAuditReport {
   failed: number;
 }
 
-const ROLES: RbacRole[] = ['owner', 'admin', 'manager', 'staff', 'viewer'];
+const ROLES: RbacRole[] = ['owner', 'admin', 'manager', 'staff'];
 
 const ROUTES_TO_TEST: { path: string; expectOwnerOnly?: boolean; expectNoViewer?: boolean; expectLog?: boolean }[] = [
   { path: '/org/org-a/settings', expectOwnerOnly: true },
@@ -51,26 +51,6 @@ function auditRoutesForRole(
         check: `Route ${path} (owner only)`,
         pass: result.allowed === allowed,
         detail: result.allowed ? 'allowed' : result.reason,
-      });
-      continue;
-    }
-
-    if (expectNoViewer && role === 'viewer') {
-      entries.push({
-        role,
-        check: `Route ${path} (no viewer)`,
-        pass: !result.allowed,
-        detail: result.reason,
-      });
-      continue;
-    }
-
-    if (expectLog && role === 'viewer') {
-      entries.push({
-        role,
-        check: `Route ${path} (log: no viewer)`,
-        pass: !result.allowed,
-        detail: result.reason,
       });
       continue;
     }
@@ -113,7 +93,7 @@ function auditPermissionMatrix(): AuditReportEntry[] {
     entries.push({
       role,
       check: 'logData',
-      pass: p.logData === (role !== 'viewer'),
+      pass: p.logData,
     });
   }
 

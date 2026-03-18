@@ -138,7 +138,7 @@ function OwnerSummaryContent() {
       return;
     }
 
-    if (['manager', 'staff', 'viewer'].includes(permissions.role)) {
+    if (['manager', 'staff'].includes(permissions.role)) {
       router.replace(paths.branchOverview || '/branch/overview');
     }
   }, [permissions.role, isLoggedIn, router, mounted, paths.branchOverview]);
@@ -446,7 +446,7 @@ function OwnerSummaryContent() {
   }
 
   // Don't render if branch user (will redirect)
-  if (['manager', 'staff', 'viewer'].includes(permissions.role)) {
+  if (['manager', 'staff'].includes(permissions.role)) {
     return (
         <PageLayout title="" subtitle="Loading...">
         <div style={{ padding: '4rem 2rem', textAlign: 'center' }}>
