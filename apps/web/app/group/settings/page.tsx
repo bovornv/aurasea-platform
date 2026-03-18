@@ -74,7 +74,7 @@ export default function GroupSettingsPage() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [pendingInvitations, setPendingInvitations] = useState<Array<{ id: string; email: string; role: string; expires_at: string; token?: string | null }>>([]);
   const [loadingInvitations, setLoadingInvitations] = useState(false);
-  const [orgMembers, setOrgMembers] = useState<Array<{ user_id: string; role: string; created_at: string }>>([]);
+  const [orgMembers, setOrgMembers] = useState<Array<{ user_id: string; role: string; email: string | null; created_at: string }>>([]);
   const [loadingOrgMembers, setLoadingOrgMembers] = useState(false);
 
   const loadOrgMembers = useCallback(async () => {
@@ -84,10 +84,10 @@ export default function GroupSettingsPage() {
     setLoadingOrgMembers(true);
     const { data } = await supabase
       .from('organization_members')
-      .select('user_id, role, created_at')
+      .select('user_id, role, email, created_at')
       .eq('organization_id', activeOrganizationId)
       .order('created_at', { ascending: false });
-    setOrgMembers((data ?? []) as Array<{ user_id: string; role: string; created_at: string }>);
+    setOrgMembers((data ?? []) as Array<{ user_id: string; role: string; email: string | null; created_at: string }>);
     setLoadingOrgMembers(false);
   }, [activeOrganizationId]);
 
@@ -865,18 +865,16 @@ const link = baseUrl && inv.token ? `${baseUrl}/accept-invite?token=${encodeURIC
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
+                        <th style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontWeight: 600 }}>{locale === 'th' ? 'อีเมล' : 'Email'}</th>
                         <th style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontWeight: 600 }}>{locale === 'th' ? 'บทบาท' : 'Role'}</th>
-                        <th style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontWeight: 600 }}>{locale === 'th' ? 'ผู้ใช้ (ID)' : 'User (ID)'}</th>
                         <th style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontWeight: 600 }}>{locale === 'th' ? 'เข้าร่วม' : 'Joined'}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {orgMembers.map((m) => (
                         <tr key={m.user_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                          <td style={{ padding: '0.5rem 0.75rem', color: '#374151', fontSize: '13px' }}>{m.email || '—'}</td>
                           <td style={{ padding: '0.5rem 0.75rem', color: '#374151' }}>{m.role}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280', fontFamily: 'monospace', fontSize: '12px' }}>
-                            …{m.user_id.slice(-8)}
-                          </td>
                           <td style={{ padding: '0.5rem 0.75rem', color: '#6b7280' }}>
                             {m.created_at ? new Date(m.created_at).toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', { dateStyle: 'short' }) : '—'}
                           </td>
@@ -886,9 +884,6 @@ const link = baseUrl && inv.token ? `${baseUrl}/accept-invite?token=${encodeURIC
                   </table>
                 </div>
               )}
-              <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '0.25rem' }}>
-                {locale === 'th' ? 'อีเมลดูได้ที่ Supabase Dashboard → Authentication → Users' : 'View emails in Supabase Dashboard → Authentication → Users'}
-              </p>
             </div>
           </SectionCard>
         )}

@@ -144,12 +144,19 @@ function AcceptInviteContent() {
         }
 
         if (inv.organization_id) {
+          const memberEmail = user.email ?? inv.email ?? null;
+          if (!memberEmail) {
+            setStatus('error');
+            setMessage('Cannot add member without email');
+            return;
+          }
           const { error: memberError } = await supabase
             .from('organization_members')
             .insert({
               organization_id: inv.organization_id,
               user_id: user.id,
               role: inv.role,
+              email: memberEmail,
               invited_by: inv.invited_by,
             } as never);
 
