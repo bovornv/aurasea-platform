@@ -122,12 +122,13 @@ export function DecisionTrendChart({
 
   // Data-driven weekend shading: one block per Sat+Sun pair in the dataset (aligned to x-axis scale).
   const weekendBands = useMemo(() => {
-    if (!dates.length || dates.length !== values.length) return [];
     const n = values.length;
-    if (n < 2) return [];
+    if (n < 2 || !dates.length) return [];
+    const count = Math.min(dates.length, n);
+    if (count < 2) return [];
     const bands: { x1: number; x2: number }[] = [];
     const denom = Math.max(1, n - 1);
-    for (let i = 0; i < n - 1; i++) {
+    for (let i = 0; i < count - 1; i++) {
       const day0 = getDayOfWeek(dates[i]!);
       const day1 = getDayOfWeek(dates[i + 1]!);
       if (day0 === 6 && day1 === 0) {
