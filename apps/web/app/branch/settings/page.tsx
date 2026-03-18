@@ -33,6 +33,7 @@ import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/clien
 import { logRbacAudit } from '../../utils/rbac-audit';
 import { getAccommodationMonthlyFixedCost, setAccommodationMonthlyFixedCost } from '../../services/db/daily-metrics-service';
 import { getProvinceFromZip, isValidThaiZip } from '../../utils/thai-zip-province';
+import { updateBranchLocationInSupabase } from '../../services/db/branch-location-service';
 
 export default function BranchSettingsPage() {
   const { locale } = useI18n();
@@ -276,17 +277,33 @@ export default function BranchSettingsPage() {
       const previousModules = branch.modules || [];
       const modulesChanged = JSON.stringify(previousModules.sort()) !== JSON.stringify(modules.sort());
       
-      const resolvedProvince = getProvinceFromZip(zipCode.trim(), locale);
+      const zipTrimmed = zipCode.trim();
+      const resolvedProvince = zipTrimmed ? getProvinceFromZip(zipTrimmed, locale) ?? undefined : undefined;
+      const cityTrimmed = city.trim() || undefined;
+
+      // Update local state (business group / localStorage)
       businessGroupService.updateBranch(branch.id, {
         branchName: branchName.trim(),
         modules,
         location: {
           ...branch.location,
-          city: city.trim() || undefined,
-          zipCode: zipCode.trim() || undefined,
-          province: resolvedProvince || undefined,
+          city: cityTrimmed,
+          zipCode: zipTrimmed || undefined,
+          province: resolvedProvince,
         },
       });
+
+      // PATCH Supabase: only valid columns, no empty/undefined (avoids 400)
+      const patchResult = await updateBranchLocationInSupabase(branch.id, {
+        zipCode: zipTrimmed || null,
+        province: resolvedProvince ?? null,
+        city: cityTrimmed ?? null,
+      });
+      if (!patchResult.success) {
+        showToast(patchResult.error || (locale === 'th' ? 'อัปเดตตำแหน่งไม่สำเร็จ' : 'Failed to update location'), 'error');
+        setSaving(false);
+        return;
+      }
       
       // If modules changed, clear metrics for disabled modules
       if (modulesChanged && branch) {
