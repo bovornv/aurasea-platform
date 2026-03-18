@@ -36,6 +36,10 @@ export interface OperatingDays {
 export interface BranchLocation {
   city?: string;
   country?: string;
+  /** Thai 5-digit postal code (required in Branch Settings). */
+  zipCode?: string;
+  /** Resolved from zipCode (e.g. Nakhon Ratchasima). */
+  province?: string;
 }
 
 /** Branch module type from DB (module_type). Determines Log Today form; no inference, no default in UI. */

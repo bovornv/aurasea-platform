@@ -32,6 +32,7 @@ import { useSystemValidation } from '../../hooks/use-system-validation';
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import { logRbacAudit } from '../../utils/rbac-audit';
 import { getAccommodationMonthlyFixedCost, setAccommodationMonthlyFixedCost } from '../../services/db/daily-metrics-service';
+import { getProvinceFromZip, isValidThaiZip } from '../../utils/thai-zip-province';
 
 export default function BranchSettingsPage() {
   const { locale } = useI18n();
@@ -54,6 +55,7 @@ export default function BranchSettingsPage() {
   // Branch editing
   const [branchName, setBranchName] = useState('');
   const [city, setCity] = useState('');
+  const [zipCode, setZipCode] = useState('');
   const [businessType, setBusinessType] = useState<BranchBusinessType | ''>('');
   const [modules, setModules] = useState<ModuleType[]>([]);
   const [isEditing, setIsEditing] = useState(false);
@@ -215,6 +217,7 @@ export default function BranchSettingsPage() {
     if (branch) {
       setBranchName(branch.branchName);
       setCity(branch.location?.city || '');
+      setZipCode(branch.location?.zipCode || '');
       const branchModules = branch.modules || [ModuleType.FNB];
       setModules(branchModules);
       // Derive business type from modules
@@ -241,9 +244,7 @@ export default function BranchSettingsPage() {
     
     if (!branchName.trim()) {
       newErrors.branchName = locale === 'th' ? 'ชื่อสาขาไม่สามารถว่างได้' : 'Branch name is required';
-    }
-    
-    if (branchName.trim().length < 2) {
+    } else if (branchName.trim().length < 2) {
       newErrors.branchName = locale === 'th' ? 'ชื่อสาขาต้องมีอย่างน้อย 2 ตัวอักษร' : 'Branch name must be at least 2 characters';
     }
     
@@ -253,6 +254,12 @@ export default function BranchSettingsPage() {
     
     if (!modules || modules.length === 0) {
       newErrors.modules = locale === 'th' ? 'ต้องเลือกอย่างน้อยหนึ่งโมดูล' : 'At least one module must be selected';
+    }
+
+    if (!zipCode.trim()) {
+      newErrors.zipCode = locale === 'th' ? 'กรุณากรอกรหัสไปรษณีย์' : 'Zip code is required';
+    } else if (!isValidThaiZip(zipCode.trim())) {
+      newErrors.zipCode = locale === 'th' ? 'รหัสไปรษณีย์ไม่ถูกต้อง' : 'Invalid ZIP code';
     }
     
     setErrors(newErrors);
@@ -269,13 +276,15 @@ export default function BranchSettingsPage() {
       const previousModules = branch.modules || [];
       const modulesChanged = JSON.stringify(previousModules.sort()) !== JSON.stringify(modules.sort());
       
-      // Update branch using business group service
+      const resolvedProvince = getProvinceFromZip(zipCode.trim(), locale);
       businessGroupService.updateBranch(branch.id, {
         branchName: branchName.trim(),
         modules,
         location: {
           ...branch.location,
           city: city.trim() || undefined,
+          zipCode: zipCode.trim() || undefined,
+          province: resolvedProvince || undefined,
         },
       });
       
@@ -323,6 +332,7 @@ export default function BranchSettingsPage() {
     if (branch) {
       setBranchName(branch.branchName);
       setCity(branch.location?.city || '');
+      setZipCode(branch.location?.zipCode || '');
       const branchModules = branch.modules || [ModuleType.FNB];
       setModules(branchModules);
       // Reset business type from modules
@@ -678,13 +688,13 @@ export default function BranchSettingsPage() {
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-        {/* SECTION 1: Branch Identity */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* SECTION 1: Branch Identity — compact 2-col grid */}
         <SectionCard title={locale === 'th' ? 'ข้อมูลประจำตัวสาขา' : 'Branch Identity'}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
             {/* Branch Name */}
             <div>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, marginBottom: '0.5rem', color: '#374151' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
                 {locale === 'th' ? 'ชื่อสาขา' : 'Branch Name'} <span style={{ color: '#ef4444' }}>*</span>
               </label>
               {isEditing ? (
@@ -692,37 +702,39 @@ export default function BranchSettingsPage() {
                   <input
                     type="text"
                     value={branchName}
-                    onChange={(e) => {
-                      setBranchName(e.target.value);
-                      if (errors.branchName) {
-                        setErrors({ ...errors, branchName: '' });
-                      }
-                    }}
+                    onChange={(e) => { setBranchName(e.target.value); if (errors.branchName) setErrors({ ...errors, branchName: '' }); }}
                     placeholder={locale === 'th' ? 'กรอกชื่อสาขา' : 'Enter branch name'}
                     style={{
                       width: '100%',
-                      padding: '0.625rem 0.75rem',
+                      padding: '0.5rem 0.625rem',
                       border: `1px solid ${errors.branchName ? '#ef4444' : '#d1d5db'}`,
                       borderRadius: '6px',
                       fontSize: '14px',
+                      fontWeight: 500,
                     }}
                   />
-                  {errors.branchName && (
-                    <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>
-                      {errors.branchName}
-                    </div>
-                  )}
+                  {errors.branchName && <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '0.2rem' }}>{errors.branchName}</div>}
                 </>
               ) : (
-                <div style={{ fontSize: '16px', fontWeight: 500, color: '#0a0a0a', padding: '0.625rem 0', minHeight: '2.5rem', display: 'flex', alignItems: 'center' }}>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#0a0a0a', padding: '0.5rem 0', minHeight: '2rem', display: 'flex', alignItems: 'center' }}>
                   {branch.branchName}
                 </div>
               )}
             </div>
 
+            {/* Business Type */}
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
+                {locale === 'th' ? 'ประเภทธุรกิจ' : 'Business Type'}
+              </label>
+              <div style={{ fontSize: '14px', fontWeight: 500, color: '#0a0a0a', padding: '0.5rem 0', minHeight: '2rem', display: 'flex', alignItems: 'center' }}>
+                {businessType ? getBusinessTypeLabel(businessType as BranchBusinessType) : (locale === 'th' ? 'ไม่ระบุ' : 'Not specified')}
+              </div>
+            </div>
+
             {/* City */}
             <div>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, marginBottom: '0.5rem', color: '#374151' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
                 {locale === 'th' ? 'เมือง' : 'City'}
               </label>
               {isEditing ? (
@@ -733,84 +745,119 @@ export default function BranchSettingsPage() {
                   placeholder={locale === 'th' ? 'กรอกชื่อเมือง' : 'Enter city name'}
                   style={{
                     width: '100%',
-                    padding: '0.625rem 0.75rem',
+                    padding: '0.5rem 0.625rem',
                     border: '1px solid #d1d5db',
                     borderRadius: '6px',
                     fontSize: '14px',
+                    fontWeight: 500,
                   }}
                 />
               ) : (
-                <div style={{ fontSize: '16px', color: '#6b7280', padding: '0.625rem 0', minHeight: '2.5rem', display: 'flex', alignItems: 'center' }}>
+                <div style={{ fontSize: '14px', fontWeight: 500, color: '#374151', padding: '0.5rem 0', minHeight: '2rem', display: 'flex', alignItems: 'center' }}>
                   {branch.location?.city || (locale === 'th' ? 'ไม่ระบุ' : 'Not specified')}
                 </div>
               )}
             </div>
 
-            {/* Business Type — read-only on branch view */}
+            {/* Zip Code + Province */}
             <div>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, marginBottom: '0.5rem', color: '#374151' }}>
-                {locale === 'th' ? 'ประเภทธุรกิจ' : 'Business Type'}
+              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
+                {locale === 'th' ? 'รหัสไปรษณีย์' : 'Zip Code'} <span style={{ color: '#ef4444' }}>*</span>
               </label>
-              <div style={{ fontSize: '16px', color: '#0a0a0a', padding: '0.625rem 0', minHeight: '2.5rem', display: 'flex', alignItems: 'center' }}>
-                {businessType ? getBusinessTypeLabel(businessType as BranchBusinessType) : (locale === 'th' ? 'ไม่ระบุ' : 'Not specified')}
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
-              {!isEditing ? (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  style={{
-                    padding: '0.625rem 1.25rem',
-                    backgroundColor: '#0a0a0a',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {locale === 'th' ? 'แก้ไข' : 'Edit'}
-                </button>
+              {isEditing ? (
+                <>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={5}
+                    value={zipCode}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, '');
+                      setZipCode(v);
+                      if (errors.zipCode) setErrors({ ...errors, zipCode: '' });
+                    }}
+                    placeholder="30000"
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.625rem',
+                      border: `1px solid ${errors.zipCode ? '#ef4444' : '#d1d5db'}`,
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                    }}
+                  />
+                  {zipCode.trim() && (
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.2rem' }}>
+                      {getProvinceFromZip(zipCode.trim(), locale) ?? (locale === 'th' ? 'ไม่พบจังหวัด' : 'Unknown province')}
+                    </div>
+                  )}
+                  {errors.zipCode && <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '0.2rem' }}>{errors.zipCode}</div>}
+                </>
               ) : (
                 <>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    style={{
-                      padding: '0.625rem 1.25rem',
-                      backgroundColor: saving ? '#9ca3af' : '#0a0a0a',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      cursor: saving ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {saving ? (locale === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (locale === 'th' ? 'บันทึกการเปลี่ยนแปลง' : 'Save Changes')}
-                  </button>
-                  <button
-                    onClick={handleCancel}
-                    disabled={saving}
-                    style={{
-                      padding: '0.625rem 1.25rem',
-                      backgroundColor: '#ffffff',
-                      color: '#6b7280',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      fontWeight: 500,
-                      cursor: saving ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {locale === 'th' ? 'ยกเลิก' : 'Cancel'}
-                  </button>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#0a0a0a', padding: '0.5rem 0 0', minHeight: '1.5rem', display: 'flex', alignItems: 'center' }}>
+                    {branch.location?.zipCode || (locale === 'th' ? 'ไม่ระบุ' : 'Not specified')}
+                  </div>
+                  {branch.location?.province && (
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>{branch.location.province}</div>
+                  )}
                 </>
               )}
             </div>
+          </div>
+          <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+            {!isEditing ? (
+              <button
+                onClick={() => setIsEditing(true)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  backgroundColor: '#0a0a0a',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                {locale === 'th' ? 'แก้ไข' : 'Edit'}
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    backgroundColor: saving ? '#9ca3af' : '#0a0a0a',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {saving ? (locale === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (locale === 'th' ? 'บันทึกการเปลี่ยนแปลง' : 'Save Changes')}
+                </button>
+                <button
+                  onClick={handleCancel}
+                  disabled={saving}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    backgroundColor: '#ffffff',
+                    color: '#6b7280',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    cursor: saving ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {locale === 'th' ? 'ยกเลิก' : 'Cancel'}
+                </button>
+              </>
+            )}
           </div>
         </SectionCard>
 
@@ -872,135 +919,112 @@ export default function BranchSettingsPage() {
 
         {/* SECTION 2: Monitoring Configuration */}
         <SectionCard title={locale === 'th' ? 'การตั้งค่าการติดตาม' : 'Monitoring Configuration'}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {/* Monitoring Status */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {/* Monitoring Active badge (always on) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '13px', color: '#10b981', fontWeight: 500 }}>
+              <span style={{ fontSize: '8px', marginBottom: '2px' }}>●</span>
+              {locale === 'th' ? 'การติดตามทำงานอยู่' : 'Monitoring Active'}
+            </div>
+
+            {/* Alert Sensitivity — 3-button selector */}
             <div>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, marginBottom: '0.5rem', color: '#374151' }}>
-                {locale === 'th' ? 'สถานะการติดตาม' : 'Monitoring Status'}
+              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '0.35rem' }}>
+                {locale === 'th' ? 'ความไวของการแจ้งเตือน' : 'Alert Sensitivity'}
               </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: monitoringLoading ? 'not-allowed' : 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={monitoringActive}
-                    onChange={(e) => handleMonitoringToggle(e.target.checked)}
-                    disabled={monitoringLoading}
-                    style={{ cursor: monitoringLoading ? 'not-allowed' : 'pointer', width: '18px', height: '18px' }}
-                  />
-                  <div style={{
-                    padding: '0.5rem 1rem',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    fontWeight: 500,
-                    backgroundColor: monitoringActive ? '#10b98120' : '#6b728020',
-                    color: monitoringActive ? '#10b981' : '#6b7280',
-                  }}>
-                    {monitoringActive 
-                      ? (locale === 'th' ? '✓ เปิดใช้งาน' : '✓ Active')
-                      : (locale === 'th' ? '⏸ ระงับ' : '⏸ Paused')}
-                  </div>
-                </label>
+              <p style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '0.5rem' }}>
+                {locale === 'th' ? 'ควบคุมความไวของการแจ้งเตือนต่อการเปลี่ยนแปลงประสิทธิภาพ' : 'Controls how sensitive alerts are to performance changes'}
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {(['low', 'medium', 'high'] as const).map((s) => {
+                  const labels = {
+                    low: { en: 'Conservative', th: 'เฉพาะปัญหาใหญ่' },
+                    medium: { en: 'Balanced', th: 'สมดุล' },
+                    high: { en: 'Aggressive', th: 'ตรวจจับเร็ว' },
+                  };
+                  const sub = { low: { en: 'only major issues', th: 'เฉพาะปัญหาใหญ่' }, medium: { en: 'recommended', th: 'แนะนำ' }, high: { en: 'detect early signals', th: 'ตรวจจับสัญญาณเร็ว' } };
+                  const isSelected = alertSensitivity === s;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => handleAlertSensitivityChange(s)}
+                      disabled={monitoringLoading}
+                      style={{
+                        padding: '0.5rem 0.875rem',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        border: `1px solid ${isSelected ? '#0a0a0a' : '#d1d5db'}`,
+                        backgroundColor: isSelected ? '#0a0a0a' : '#ffffff',
+                        color: isSelected ? '#ffffff' : '#374151',
+                        cursor: monitoringLoading ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {labels[s][locale]} <span style={{ opacity: 0.8, fontWeight: 400 }}>— {sub[s][locale]}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* Last Updated Timestamp */}
+            {/* Data Coverage — compact inline */}
             <div>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, marginBottom: '0.5rem', color: '#374151' }}>
-                {locale === 'th' ? 'อัปเดตล่าสุด' : 'Last Updated'}
+              <label style={{ display: 'block', fontSize: '12px', color: '#6b7280', marginBottom: '0.25rem' }}>
+                {locale === 'th' ? 'ความครอบคลุมข้อมูล' : 'Data Coverage'}
               </label>
-              <div style={{ fontSize: '14px', color: '#6b7280' }}>
-                {lastUpdated 
-                  ? (locale === 'th' 
-                      ? `อัปเดตล่าสุด: ${lastUpdated.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}`
-                      : `Last updated: ${lastUpdated.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`)
-                  : (locale === 'th' ? 'ไม่มีข้อมูล' : 'No data')}
+              <div style={{ fontSize: '13px', color: '#374151', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 500 }}>
+                  {coverageDays} {locale === 'th' ? 'วัน' : 'days'}
+                  {coverageDays >= 7 && (locale === 'th' ? ' ของข้อมูล' : ' of data')}
+                </span>
+                <span style={{ color: '#6b7280' }}>●</span>
+                <span style={{ color: coverageDays >= 30 ? '#10b981' : coverageDays >= 7 ? '#f59e0b' : '#ef4444', fontSize: '12px' }}>
+                  {coverageDays >= 30
+                    ? (locale === 'th' ? 'ความมั่นใจสูง' : 'High confidence')
+                    : coverageDays >= 7
+                      ? (locale === 'th' ? 'ความมั่นใจปานกลาง' : 'Medium confidence')
+                      : (locale === 'th' ? 'ช่วงเรียนรู้' : 'Learning phase')}
+                </span>
               </div>
             </div>
 
-            {/* Data Freshness Requirement */}
-            <div>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, marginBottom: '0.5rem', color: '#374151' }}>
-                {locale === 'th' ? 'ความสดของข้อมูล' : 'Data Freshness Requirement'}
-              </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <div style={{
-                  padding: '0.5rem 1rem',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  backgroundColor: `${getCoverageStatus().color}20`,
-                  color: getCoverageStatus().color,
-                }}>
-                  {locale === 'th' 
-                    ? `ครอบคลุม ${coverageDays} วัน (${getCoverageStatus().label})`
-                    : `Coverage: ${coverageDays} days (${getCoverageStatus().label})`}
-                </div>
-              </div>
-              <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '0.25rem' }}>
-                {locale === 'th' 
-                  ? 'ข้อมูลที่ครอบคลุมอย่างน้อย 7 วันจะให้ความมั่นใจในการประเมิน'
-                  : 'Data coverage of at least 7 days provides confidence in evaluation'}
-              </div>
+            {/* Last Updated — smaller, muted */}
+            <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+              {lastUpdated
+                ? (locale === 'th'
+                    ? `อัปเดตล่าสุด: ${lastUpdated.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })}`
+                    : `Last updated: ${lastUpdated.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`)
+                : (locale === 'th' ? 'ไม่มีข้อมูล' : 'No data')}
             </div>
-
-            {/* Alert Sensitivity Level */}
-            <div>
-              <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, marginBottom: '0.5rem', color: '#374151' }}>
-                {locale === 'th' ? 'ระดับความไวในการแจ้งเตือน' : 'Alert Sensitivity Level'}
-              </label>
-              <select
-                value={alertSensitivity}
-                onChange={(e) => handleAlertSensitivityChange(e.target.value as AlertSensitivity)}
-                disabled={monitoringLoading}
-                style={{
-                  width: '100%',
-                  padding: '0.625rem 0.75rem',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: monitoringLoading ? '#f9fafb' : 'white',
-                  cursor: monitoringLoading ? 'not-allowed' : 'pointer',
-                }}
-              >
-                <option value="low">{locale === 'th' ? 'ต่ำ - แจ้งเตือนเฉพาะปัญหาสำคัญ' : 'Low - Alert only critical issues'}</option>
-                <option value="medium">{locale === 'th' ? 'ปานกลาง - แจ้งเตือนปัญหาที่สำคัญและคำเตือน' : 'Medium - Alert important issues and warnings'}</option>
-                <option value="high">{locale === 'th' ? 'สูง - แจ้งเตือนทุกปัญหา' : 'High - Alert all issues'}</option>
-              </select>
-              <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '0.25rem' }}>
-                {locale === 'th' 
-                  ? 'ต่ำ: เพิ่มความทนทานของเกณฑ์ +10% | สูง: ลดความทนทานของเกณฑ์ -10%'
-                  : 'Low: +10% threshold tolerance | High: -10% threshold tolerance'}
-              </div>
-            </div>
-
-            {/* Delete Branch Button (Danger Zone) */}
-            <div style={{
-              marginTop: '1rem',
-              paddingTop: '1.5rem',
-              borderTop: '1px solid #e5e7eb',
-            }}>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: '#ef4444', marginBottom: '0.5rem' }}>
-                {locale === 'th' ? 'โซนอันตราย' : 'Danger Zone'}
-              </div>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                style={{
-                  padding: '0.625rem 1.25rem',
-                  backgroundColor: '#ffffff',
-                  color: '#ef4444',
-                  border: '1px solid #ef4444',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                {locale === 'th' ? 'ลบสาขา' : 'Delete Branch'}
-              </button>
-            </div>
-
           </div>
         </SectionCard>
+
+        {/* Danger Zone — separate section with divider */}
+        <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: '14px', fontWeight: 600, color: '#0a0a0a', marginBottom: '0.5rem' }}>
+            {locale === 'th' ? 'โซนอันตราย' : 'Danger Zone'}
+          </div>
+          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '1rem', lineHeight: 1.5 }}>
+            {locale === 'th'
+              ? 'ลบสาขานี้และข้อมูลที่เกี่ยวข้องทั้งหมด การดำเนินการนี้ไม่สามารถย้อนกลับได้'
+              : 'Delete this branch and all associated data. This action cannot be undone.'}
+          </p>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            style={{
+              padding: '0.5rem 1rem',
+              backgroundColor: '#ffffff',
+              color: '#ef4444',
+              border: '1px solid #ef4444',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            {locale === 'th' ? 'ลบสาขา' : 'Delete Branch'}
+          </button>
+        </div>
 
         {/* SECTION 3: User Access (Branch Level) */}
         <SectionCard title={locale === 'th' ? 'การเข้าถึงผู้ใช้ (ระดับสาขา)' : 'User Access (Branch Level)'}>
