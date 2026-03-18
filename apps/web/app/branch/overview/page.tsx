@@ -41,6 +41,8 @@ import { addDays } from '../../utils/today-summary-utils';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAlertsTop, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow, type AlertTopRow } from '../../services/db/latest-metrics-service';
+import { TrendChartCard } from '../../components/charts/trend-chart-card';
+import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
 import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
@@ -561,6 +563,35 @@ export default function BranchOverviewPage() {
       return null;
     }
   }, [branchMetrics, dailyMetricsForTrends]);
+
+  // Performance Drivers (top 2 charts from Trends) — reuse dailyMetricsForTrends, no extra fetch
+  const isAccommodation = branch?.moduleType === 'accommodation';
+  const isFnb = branch?.moduleType === 'fnb';
+  const driverChartData = useMemo(() => {
+    const daily = dailyMetricsForTrends ?? [];
+    if (daily.length < 2) return null;
+    const sorted = [...daily].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const dates = sorted.map((m) => m.date);
+    const revenue = sorted.map((m) => m.revenue ?? 0);
+    const occupancy = sorted.map((m) => {
+      const avail = m.roomsAvailable ?? 0;
+      if (avail <= 0) return 0;
+      return ((m.roomsSold ?? 0) / avail) * 100;
+    });
+    const customers = sorted.map((m) => m.customers ?? 0);
+    const adr = sorted.map((m) => {
+      if (m.adr != null && m.adr > 0) return m.adr;
+      const sold = m.roomsSold ?? 0;
+      return sold > 0 ? (m.revenue ?? 0) / sold : 0;
+    });
+    const totalRooms = branchMetrics?.modules?.accommodation?.totalRoomsAvailable ?? 0;
+    const revpar = totalRooms > 0 ? revenue.map((r) => r / totalRooms) : sorted.map(() => 0);
+    const avgTicket = sorted.map((m, i) => {
+      const c = customers[i] ?? 0;
+      return c > 0 ? revenue[i]! / c : 0;
+    });
+    return { dates, revenue, occupancy, customers, adr, revpar, avgTicket };
+  }, [dailyMetricsForTrends, branchMetrics?.modules?.accommodation?.totalRoomsAvailable]);
 
   // STEP 6 & 7: Debug logging will be added after recommendedActions is defined
 
@@ -1168,6 +1199,132 @@ export default function BranchOverviewPage() {
             </ul>
           )}
         </div>
+
+        {/* 4. Performance Drivers — top 2 driver charts from Trends, same components and styling */}
+        {(isAccommodation || isFnb) && driverChartData && driverChartData.revenue.length >= 2 ? (
+          <div style={{ marginTop: 32 }}>
+            <h2 style={{ fontSize: 17, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 16 }}>
+              {locale === 'th' ? 'ตัวขับเคลื่อนประสิทธิภาพ' : 'Performance Drivers'}
+            </h2>
+            <p style={{ fontSize: 13, color: '#6b7280', margin: 0, marginBottom: 12, lineHeight: 1.4 }}>
+              {locale === 'th' ? 'ดูว่าอะไรขับเคลื่อนผลงานวันนี้' : "Understand what's driving today's performance"}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+              {isAccommodation && (
+                <>
+                  <TrendChartCard
+                    legend={[
+                      { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
+                      { label: locale === 'th' ? 'ราคาห้องเฉลี่ย' : 'ADR', color: '#7c3aed' },
+                    ]}
+                    cols={12}
+                    locale={locale === 'th' ? 'th' : 'en'}
+                    problem={
+                      driverChartData.occupancy.length >= 7 && (driverChartData.occupancy[driverChartData.occupancy.length - 1] ?? 0) < 50
+                        ? (locale === 'th' ? 'วันธรรมดามีอัตราการเข้าพักต่ำอย่างต่อเนื่อง' : 'Weekday occupancy consistently low')
+                        : undefined
+                    }
+                    recommendation={
+                      driverChartData.occupancy.length >= 7 && (driverChartData.occupancy[driverChartData.occupancy.length - 1] ?? 0) < 50
+                        ? (locale === 'th' ? 'ทำโปรโมชั่นช่วงวันธรรมดา' : 'Run weekday promotion')
+                        : undefined
+                    }
+                  >
+                    <DecisionTrendChart
+                      values={driverChartData.occupancy}
+                      valuesRight={driverChartData.adr.length === driverChartData.occupancy.length ? driverChartData.adr : undefined}
+                      dates={driverChartData.dates}
+                      color="#2563eb"
+                      colorRight="#7c3aed"
+                      showBaseline={true}
+                      formatLeft={(v) => `${Math.round(v)}%`}
+                      formatRight={(v) => `฿${Math.round(v)}`}
+                      leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
+                      rightLabel={locale === 'th' ? 'ราคาห้องเฉลี่ย (฿)' : 'ADR (฿)'}
+                      emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                    />
+                  </TrendChartCard>
+                  <TrendChartCard
+                    legend={[
+                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
+                      { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
+                    ]}
+                    cols={12}
+                    locale={locale === 'th' ? 'th' : 'en'}
+                    problem={locale === 'th' ? 'รายได้หรืออัตราการเข้าพักไม่สอดคล้องกัน' : 'Revenue and occupancy moving in opposite directions'}
+                    recommendation={locale === 'th' ? 'ปรับราคาหรือโปรโมชั่นให้สอดคล้องกับความต้องการ' : 'Align pricing or promotions with demand'}
+                  >
+                    <DecisionTrendChart
+                      values={driverChartData.revenue}
+                      valuesRight={driverChartData.occupancy.length === driverChartData.revenue.length ? driverChartData.occupancy : undefined}
+                      dates={driverChartData.dates}
+                      color="#16a34a"
+                      colorRight="#2563eb"
+                      showBaseline={true}
+                      formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      formatRight={(v) => `${Math.round(v)}%`}
+                      leftLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
+                      rightLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
+                      emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                    />
+                  </TrendChartCard>
+                </>
+              )}
+              {isFnb && (
+                <>
+                  <TrendChartCard
+                    legend={[
+                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
+                      { label: locale === 'th' ? 'จำนวนลูกค้า' : 'Customers', color: '#2563eb' },
+                    ]}
+                    cols={12}
+                    locale={locale === 'th' ? 'th' : 'en'}
+                    problem={locale === 'th' ? 'รายได้หรือจำนวนลูกค้าลด' : 'Revenue or customer traffic declining'}
+                    recommendation={locale === 'th' ? 'โปรโมชั่นหรือแพ็กเกจเพื่อดึงลูกค้า' : 'Run promotion or bundle to attract traffic'}
+                  >
+                    <DecisionTrendChart
+                      values={driverChartData.revenue}
+                      valuesRight={driverChartData.customers.length === driverChartData.revenue.length ? driverChartData.customers : undefined}
+                      dates={driverChartData.dates}
+                      color="#16a34a"
+                      colorRight="#2563eb"
+                      showBaseline={true}
+                      formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      formatRight={(v) => String(Math.round(v))}
+                      leftLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
+                      rightLabel={locale === 'th' ? 'จำนวนลูกค้า' : 'Customers'}
+                      emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                    />
+                  </TrendChartCard>
+                  <TrendChartCard
+                    legend={[
+                      { label: locale === 'th' ? 'จำนวนลูกค้า' : 'Customers', color: '#2563eb' },
+                      { label: locale === 'th' ? 'ค่าใช้จ่ายเฉลี่ยต่อบิล' : 'Avg Ticket', color: '#7c3aed' },
+                    ]}
+                    cols={12}
+                    locale={locale === 'th' ? 'th' : 'en'}
+                    problem={locale === 'th' ? 'ลูกค้าน้อยหรือค่าเฉลี่ยต่อบิลต่ำ' : 'Low traffic or low avg ticket'}
+                    recommendation={locale === 'th' ? 'อัปเซลล์หรือโปรโมชั่นค่าเฉลี่ยสูง' : 'Upsell or promote higher-ticket items'}
+                  >
+                    <DecisionTrendChart
+                      values={driverChartData.customers}
+                      valuesRight={driverChartData.avgTicket.length === driverChartData.customers.length ? driverChartData.avgTicket : undefined}
+                      dates={driverChartData.dates}
+                      color="#2563eb"
+                      colorRight="#7c3aed"
+                      showBaseline={true}
+                      formatLeft={(v) => String(Math.round(v))}
+                      formatRight={(v) => `฿${Math.round(v)}`}
+                      leftLabel={locale === 'th' ? 'จำนวนลูกค้า' : 'Customers'}
+                      rightLabel={locale === 'th' ? 'ค่าใช้จ่ายเฉลี่ยต่อบิล (฿)' : 'Avg Ticket (฿)'}
+                      emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                    />
+                  </TrendChartCard>
+                </>
+              )}
+            </div>
+          </div>
+        ) : null}
 
         {fullyActive && (
           <>
