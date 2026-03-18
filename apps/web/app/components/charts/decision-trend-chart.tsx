@@ -121,14 +121,20 @@ export function DecisionTrendChart({
 
   const weekendBands = useMemo(() => {
     if (!dates.length || dates.length !== values.length) return null;
+    const n = values.length;
     const bands: { x1: number; x2: number }[] = [];
-    for (let i = 0; i < values.length - 1; i++) {
-      const d = getDayOfWeek(dates[i]!);
-      if (d === 0 || d === 6) {
-        const x1 = plotLeft + (i / (values.length - 1)) * plotW;
-        const x2 = plotLeft + ((i + 1) / (values.length - 1)) * plotW;
+    let i = 0;
+    while (i < n - 1) {
+      const d0 = getDayOfWeek(dates[i]!);
+      const d1 = getDayOfWeek(dates[i + 1]!);
+      if (d0 === 6 && d1 === 0) {
+        const x1 = plotLeft + (i / (n - 1)) * plotW;
+        const x2 = plotLeft + ((i + 2) / (n - 1)) * plotW;
         bands.push({ x1, x2 });
+        i += 2;
+        continue;
       }
+      i += 1;
     }
     return bands;
   }, [dates, values.length, plotLeft, plotW]);
@@ -146,7 +152,7 @@ export function DecisionTrendChart({
       <svg width="100%" height={height} viewBox={`0 0 ${chartWidth} ${height}`} preserveAspectRatio="xMidYMid meet" style={{ overflow: 'visible' }}>
         {/* Weekend shading */}
         {weekendBands?.map((b, i) => (
-          <rect key={i} x={b.x1} y={PAD_TOP} width={b.x2 - b.x1} height={chartHeight} fill="#6366f1" fillOpacity={WEEKEND_OPACITY} />
+          <rect key={i} x={b.x1} y={PAD_TOP} width={Math.max(0, b.x2 - b.x1)} height={chartHeight} fill="#9ca3af" fillOpacity={WEEKEND_OPACITY} />
         ))}
         {/* Left axis line */}
         <line x1={plotLeft} y1={PAD_TOP} x2={plotLeft} y2={PAD_TOP + chartHeight} stroke={AXIS_COLOR} strokeWidth="1" />
