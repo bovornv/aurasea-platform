@@ -20,7 +20,6 @@ import { getBranchTrendSeriesWithFallback } from '../../services/db/latest-metri
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
 import { DayOfWeekChart } from '../../components/charts/day-of-week-chart';
-import { headlineDelta, formatHeadline } from '../../utils/trends-headline';
 
 const PAGE_PADDING = 24;
 const SECTION_GAP = 32;
@@ -201,12 +200,9 @@ export default function BranchTrendsPage() {
   }
 
   const emptyMsg = locale === 'th' ? 'ไม่มีข้อมูล' : 'No data';
-  const pageSubtitle = locale === 'th'
-    ? 'ดูสิ่งที่เปลี่ยนและสิ่งที่ควรทำต่อ'
-    : 'See what\'s changing and what to do next';
 
   return (
-    <PageLayout title={locale === 'th' ? 'เทรนด์' : 'Trends'} subtitle={pageSubtitle}>
+    <PageLayout title="" subtitle="">
       <div style={{ padding: PAGE_PADDING }}>
         {!hasAnyData && !loading ? (
           <div style={{ padding: '2rem 0', textAlign: 'center', fontSize: 15, color: '#6b7280' }}>
@@ -236,16 +232,20 @@ export default function BranchTrendsPage() {
                   {/* 1. Occupancy + ADR (dual axis) — Primary */}
                   <TrendChartCard
                     title={locale === 'th' ? 'อัตราการเข้าพัก + ADR' : 'Occupancy + ADR'}
-                    headline={formatHeadline(
-                      headlineDelta(occupancyValues).current,
-                      headlineDelta(occupancyValues).pctVsLastWeek,
-                      'percent'
-                    )}
+                    legend={[
+                      { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
+                      { label: 'ADR', color: '#7c3aed' },
+                    ]}
                     cols={12}
-                    insight={
+                    problem={
                       occupancyValues.length >= 7 && occupancyValues[occupancyValues.length - 1]! < 50
-                        ? (locale === 'th' ? 'อัตราการเข้าพักวันธรรมดาต่ำ → พิจารณาโปรโมชั่นวันธรรมดา' : 'Weekdays consistently weaker → run weekday promotion')
-                        : (locale === 'th' ? 'เทรนด์ 30 วันล่าสุด' : 'Last 30 days trend')
+                        ? (locale === 'th' ? 'อัตราการเข้าพักวันธรรมดาต่ำ' : 'Weekday occupancy consistently low')
+                        : undefined
+                    }
+                    recommendation={
+                      occupancyValues.length >= 7 && occupancyValues[occupancyValues.length - 1]! < 50
+                        ? (locale === 'th' ? 'ลดราคาหรือโปรโมชั่นวันธรรมดา' : 'Run weekday promotion or slightly reduce price')
+                        : undefined
                     }
                   >
                     <DecisionTrendChart
@@ -257,27 +257,34 @@ export default function BranchTrendsPage() {
                       showBaseline={true}
                       formatLeft={(v) => `${Math.round(v)}%`}
                       formatRight={(v) => `฿${Math.round(v)}`}
+                      leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
+                      rightLabel="ADR (฿)"
                       emptyMessage={emptyMsg}
                     />
                   </TrendChartCard>
 
-                  {/* 2. Revenue — Primary */}
+                  {/* 2. Occupancy + Revenue — Primary (demand vs money) */}
                   <TrendChartCard
-                    title={locale === 'th' ? 'รายได้' : 'Revenue'}
-                    headline={formatHeadline(
-                      headlineDelta(revenueValues).current,
-                      headlineDelta(revenueValues).pctVsLastWeek,
-                      'currency'
-                    )}
+                    title={locale === 'th' ? 'อัตราการเข้าพัก + รายได้' : 'Occupancy + Revenue'}
+                    legend={[
+                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#059669' },
+                      { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
+                    ]}
                     cols={12}
-                    insight={locale === 'th' ? 'รายได้ 30 วันล่าสุด' : 'Last 30 days revenue'}
+                    problem={locale === 'th' ? 'รายได้หรืออัตราการเข้าพักไม่สอดคล้องกัน' : 'Revenue and occupancy moving in opposite directions'}
+                    recommendation={locale === 'th' ? 'ปรับราคาหรือโปรโมชั่นให้สอดคล้องกับความต้องการ' : 'Align pricing or promotions with demand'}
                   >
                     <DecisionTrendChart
                       values={revenueValues}
+                      valuesRight={occupancyValues.length === revenueValues.length ? occupancyValues : undefined}
                       dates={chartDates.length === revenueValues.length ? chartDates : undefined}
                       color="#059669"
+                      colorRight="#2563eb"
                       showBaseline={true}
                       formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      formatRight={(v) => `${Math.round(v)}%`}
+                      leftLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
+                      rightLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
                       emptyMessage={emptyMsg}
                     />
                   </TrendChartCard>
@@ -285,21 +292,13 @@ export default function BranchTrendsPage() {
                   {/* 3. RevPAR + ADR — Secondary */}
                   <TrendChartCard
                     title={locale === 'th' ? 'RevPAR + ADR' : 'RevPAR + ADR'}
-                    headline={
-                      revparValues.length >= 2
-                        ? formatHeadline(
-                            headlineDelta(revparValues).current,
-                            headlineDelta(revparValues).pctVsLastWeek,
-                            'currency'
-                          )
-                        : undefined
-                    }
+                    legend={[
+                      { label: 'RevPAR', color: '#059669' },
+                      { label: 'ADR', color: '#7c3aed' },
+                    ]}
                     cols={6}
-                    insight={
-                      revparValues.length >= 7
-                        ? (locale === 'th' ? 'RevPAR รวมอัตราการเข้าพักและราคา → โฟกัสทั้งสอง' : 'RevPAR combines occupancy and rate → focus on both')
-                        : undefined
-                    }
+                    problem={locale === 'th' ? 'RevPAR หรือ ADR ต่ำกระทบรายได้ต่อห้อง' : 'Low RevPAR or ADR hurts revenue per room'}
+                    recommendation={locale === 'th' ? 'โฟกัสทั้งอัตราการเข้าพักและราคา' : 'Focus on both occupancy and rate'}
                   >
                     <DecisionTrendChart
                       values={revparValues}
@@ -310,6 +309,8 @@ export default function BranchTrendsPage() {
                       showBaseline={true}
                       formatLeft={(v) => `฿${Math.round(v)}`}
                       formatRight={(v) => `฿${Math.round(v)}`}
+                      leftLabel="RevPAR (฿)"
+                      rightLabel="ADR (฿)"
                       emptyMessage={emptyMsg}
                     />
                   </TrendChartCard>
@@ -317,12 +318,14 @@ export default function BranchTrendsPage() {
                   {/* 4. Weekday vs Weekend — Secondary */}
                   <TrendChartCard
                     title={locale === 'th' ? 'วันธรรมดา vs สุดสัปดาห์' : 'Weekday vs Weekend'}
-                    cols={6}
-                    insight={
+                    subtitle={
                       locale === 'th'
-                        ? 'รูปแบบตามวันในสัปดาห์ (เสาร์–อาทิตย์เน้นสี)'
-                        : 'Day-of-week pattern (weekend highlighted)'
+                        ? (occupancyValues.length >= 2 ? 'อัตราการเข้าพักตามวันในสัปดาห์' : 'รายได้ตามวันในสัปดาห์') + ' · เสาร์–อาทิตย์เน้นสี'
+                        : (occupancyValues.length >= 2 ? 'Occupancy by day of week' : 'Revenue by day of week') + ' · Weekends highlighted'
                     }
+                    cols={6}
+                    problem={locale === 'th' ? 'วันธรรมดามีรายได้หรืออัตราการเข้าพักต่ำ' : 'Weekdays show lower demand or revenue'}
+                    recommendation={locale === 'th' ? 'โปรโมชั่นวันธรรมดาหรือแพ็กเกจ' : 'Run weekday promotion or package deals'}
                   >
                     <DayOfWeekChart
                       values={occupancyValues.length >= 2 ? occupancyValues : revenueValues}
@@ -340,13 +343,13 @@ export default function BranchTrendsPage() {
                   {/* 1. Revenue + Customers — Primary */}
                   <TrendChartCard
                     title={locale === 'th' ? 'รายได้ + จำนวนลูกค้า' : 'Revenue + Customers'}
-                    headline={formatHeadline(
-                      headlineDelta(revenueValues).current,
-                      headlineDelta(revenueValues).pctVsLastWeek,
-                      'currency'
-                    )}
+                    legend={[
+                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#059669' },
+                      { label: locale === 'th' ? 'จำนวนลูกค้า' : 'Customers', color: '#2563eb' },
+                    ]}
                     cols={12}
-                    insight={locale === 'th' ? 'ความต้องการและรายได้ 30 วัน' : 'Demand and revenue — last 30 days'}
+                    problem={locale === 'th' ? 'รายได้หรือจำนวนลูกค้าลด' : 'Revenue or customer traffic declining'}
+                    recommendation={locale === 'th' ? 'โปรโมชั่นหรือแพ็กเกจเพื่อดึงลูกค้า' : 'Run promotion or bundle to attract traffic'}
                   >
                     <DecisionTrendChart
                       values={revenueValues}
@@ -357,6 +360,8 @@ export default function BranchTrendsPage() {
                       showBaseline={true}
                       formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
                       formatRight={(v) => String(Math.round(v))}
+                      leftLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
+                      rightLabel={locale === 'th' ? 'จำนวนลูกค้า' : 'Customers'}
                       emptyMessage={emptyMsg}
                     />
                   </TrendChartCard>
@@ -364,21 +369,13 @@ export default function BranchTrendsPage() {
                   {/* 2. Customers + Avg Ticket — Primary */}
                   <TrendChartCard
                     title={locale === 'th' ? 'จำนวนลูกค้า + ค่าเฉลี่ยต่อบิล' : 'Customers + Avg Ticket'}
-                    headline={
-                      customersValues.length >= 2
-                        ? formatHeadline(
-                            headlineDelta(customersValues).current,
-                            headlineDelta(customersValues).pctVsLastWeek,
-                            'number'
-                          )
-                        : undefined
-                    }
+                    legend={[
+                      { label: locale === 'th' ? 'จำนวนลูกค้า' : 'Customers', color: '#2563eb' },
+                      { label: locale === 'th' ? 'ค่าเฉลี่ยต่อบิล' : 'Avg Ticket', color: '#7c3aed' },
+                    ]}
                     cols={12}
-                    insight={
-                      avgTicketValues.length >= 7
-                        ? (locale === 'th' ? 'ลูกค้าและคุณภาพการขาย → พิจารณาอัปเซลล์' : 'Traffic and monetization → consider upsells')
-                        : undefined
-                    }
+                    problem={locale === 'th' ? 'ลูกค้าน้อยหรือค่าเฉลี่ยต่อบิลต่ำ' : 'Low traffic or low avg ticket'}
+                    recommendation={locale === 'th' ? 'อัปเซลล์หรือโปรโมชั่นค่าเฉลี่ยสูง' : 'Upsell or promote higher-ticket items'}
                   >
                     <DecisionTrendChart
                       values={customersValues}
@@ -389,6 +386,8 @@ export default function BranchTrendsPage() {
                       showBaseline={true}
                       formatLeft={(v) => String(Math.round(v))}
                       formatRight={(v) => `฿${Math.round(v)}`}
+                      leftLabel={locale === 'th' ? 'จำนวนลูกค้า' : 'Customers'}
+                      rightLabel={locale === 'th' ? 'ค่าเฉลี่ยต่อบิล (฿)' : 'Avg Ticket (฿)'}
                       emptyMessage={emptyMsg}
                     />
                   </TrendChartCard>
@@ -396,8 +395,13 @@ export default function BranchTrendsPage() {
                   {/* 3. Revenue + Avg Ticket — Secondary */}
                   <TrendChartCard
                     title={locale === 'th' ? 'รายได้ + ค่าเฉลี่ยต่อบิล' : 'Revenue + Avg Ticket'}
+                    legend={[
+                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#059669' },
+                      { label: locale === 'th' ? 'ค่าเฉลี่ยต่อบิล' : 'Avg Ticket', color: '#7c3aed' },
+                    ]}
                     cols={6}
-                    insight={locale === 'th' ? 'คุณภาพมูลค่ารายได้' : 'Revenue value quality'}
+                    problem={locale === 'th' ? 'คุณภาพมูลค่ารายได้ต่ำ' : 'Revenue value quality is weak'}
+                    recommendation={locale === 'th' ? 'เพิ่มอัปเซลล์หรือเมนูมูลค่าสูง' : 'Increase upsell or higher-value menu'}
                   >
                     <DecisionTrendChart
                       values={revenueValues}
@@ -408,6 +412,8 @@ export default function BranchTrendsPage() {
                       showBaseline={true}
                       formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
                       formatRight={(v) => `฿${Math.round(v)}`}
+                      leftLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
+                      rightLabel={locale === 'th' ? 'ค่าเฉลี่ยต่อบิล (฿)' : 'Avg Ticket (฿)'}
                       emptyMessage={emptyMsg}
                     />
                   </TrendChartCard>
@@ -415,12 +421,14 @@ export default function BranchTrendsPage() {
                   {/* 4. Day-of-week pattern — Secondary */}
                   <TrendChartCard
                     title={locale === 'th' ? 'รูปแบบตามวันในสัปดาห์' : 'Day-of-week Pattern'}
-                    cols={6}
-                    insight={
+                    subtitle={
                       locale === 'th'
-                        ? 'จังหวะความต้องการ (เสาร์–อาทิตย์เน้นสี)'
-                        : 'Demand timing (weekend highlighted)'
+                        ? 'จำนวนลูกค้าตามวันในสัปดาห์ · เสาร์–อาทิตย์เน้นสี'
+                        : 'Customers by day of week · Weekends highlighted'
                     }
+                    cols={6}
+                    problem={locale === 'th' ? 'วันธรรมดามีลูกค้าน้อย' : 'Weekdays show lower traffic'}
+                    recommendation={locale === 'th' ? 'โปรโมชั่นวันธรรมดาหรือเมนูพิเศษ' : 'Weekday promotion or special menu'}
                   >
                     <DayOfWeekChart
                       values={customersValues.length >= 2 ? customersValues : revenueValues}

@@ -1,20 +1,38 @@
 /**
- * TrendChartCard — decision-driven chart card for Trends page.
- * Template: [Title] [Trend arrow + %] | [Chart with axis, weekend shading, baseline] | [1-line insight]
+ * TrendChartCard — [Title] [Legend] [Chart] Problem / Recommendation.
+ * No header clutter; optional subtitle under title; insight = problem + recommendation.
  */
 'use client';
 
+export interface LegendItem {
+  label: string;
+  color: string;
+}
+
 interface TrendChartCardProps {
   title: string;
-  /** e.g. "↓ 36% (−12% vs last week)" or "↑ 8% (+5% vs last week)". Omit to hide headline. */
-  headline?: string | null;
+  /** Small text under title (12–13px muted). e.g. "Revenue by day of week" */
+  subtitle?: string | null;
+  /** Inline legend for dual-line charts: ● Label (same color as line). 12–13px. */
+  legend?: LegendItem[] | null;
   children: React.ReactNode;
-  insight?: string | null;
-  /** Column span in 12-col grid: 6 or 12 */
+  /** One line each; 13px; 6–8px between. */
+  problem?: string | null;
+  recommendation?: string | null;
   cols?: 6 | 12;
 }
 
-export function TrendChartCard({ title, headline, children, insight, cols = 12 }: TrendChartCardProps) {
+export function TrendChartCard({
+  title,
+  subtitle,
+  legend,
+  children,
+  problem,
+  recommendation,
+  cols = 12,
+}: TrendChartCardProps) {
+  const hasInsight = (problem && problem.trim()) || (recommendation && recommendation.trim());
+
   return (
     <div style={{ gridColumn: `span ${cols}`, minWidth: 0 }}>
       <div
@@ -28,21 +46,38 @@ export function TrendChartCard({ title, headline, children, insight, cols = 12 }
           flexDirection: 'column',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: 0 }}>
-            {title}
-          </h3>
-          {headline != null && headline !== '' && (
-            <span style={{ fontSize: 16, fontWeight: 600, color: '#374151' }}>
-              {headline}
-            </span>
-          )}
-        </div>
-        <div style={{ flex: 1, minHeight: 140 }}>{children}</div>
-        {insight ? (
-          <p style={{ fontSize: 13, color: '#6b7280', margin: 0, marginTop: 8, lineHeight: 1.4 }}>
-            {insight}
+        <h3 style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: 0 }}>
+          {title}
+        </h3>
+        {subtitle ? (
+          <p style={{ fontSize: 12, color: '#6b7280', margin: '4px 0 0 0', lineHeight: 1.3 }}>
+            {subtitle}
           </p>
+        ) : null}
+        {legend && legend.length > 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 6, marginBottom: 4 }}>
+            {legend.map((item, i) => (
+              <span key={i} style={{ fontSize: 12, color: '#374151', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: item.color, flexShrink: 0 }} />
+                {item.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div style={{ flex: 1, minHeight: 140 }}>{children}</div>
+        {hasInsight ? (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {problem && problem.trim() ? (
+              <p style={{ fontSize: 13, color: '#6b7280', margin: 0, lineHeight: 1.4 }}>
+                <strong style={{ color: '#374151' }}>Problem:</strong> {problem.trim()}
+              </p>
+            ) : null}
+            {recommendation && recommendation.trim() ? (
+              <p style={{ fontSize: 13, color: '#6b7280', margin: 0, lineHeight: 1.4 }}>
+                <strong style={{ color: '#374151' }}>Recommendation:</strong> {recommendation.trim()}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>

@@ -32,6 +32,10 @@ interface DecisionTrendChartProps {
   formatLeft?: (v: number) => string;
   /** Format right axis tick */
   formatRight?: (v: number) => string;
+  /** Small label near left axis (11–12px muted). e.g. "Occupancy (%)" */
+  leftLabel?: string;
+  /** Small label near right axis. e.g. "ADR (฿)" */
+  rightLabel?: string;
   emptyMessage?: string;
 }
 
@@ -45,6 +49,8 @@ export function DecisionTrendChart({
   height = HEIGHT,
   formatLeft = (v) => String(Math.round(v)),
   formatRight = (v) => String(Math.round(v)),
+  leftLabel,
+  rightLabel,
   emptyMessage = 'No data',
 }: DecisionTrendChartProps) {
   const hasData = values && values.length >= 2;
@@ -145,6 +151,12 @@ export function DecisionTrendChart({
         {/* Left axis line */}
         <line x1={plotLeft} y1={PAD_TOP} x2={plotLeft} y2={PAD_TOP + chartHeight} stroke={AXIS_COLOR} strokeWidth="1" />
         <line x1={plotLeft} y1={PAD_TOP + chartHeight} x2={plotRight} y2={PAD_TOP + chartHeight} stroke={AXIS_COLOR} strokeWidth="1" />
+        {/* Left axis label */}
+        {leftLabel ? (
+          <text x={plotLeft - 2} y={PAD_TOP - 2} textAnchor="end" fontSize="11" fill="#9ca3af">
+            {leftLabel}
+          </text>
+        ) : null}
         {/* Left axis ticks */}
         {ticksL.map((t, i) => (
           <g key={i}>
@@ -157,6 +169,11 @@ export function DecisionTrendChart({
         {/* Right axis (if dual) */}
         {dualAxis && ticksR.length > 0 && (
           <>
+            {rightLabel ? (
+              <text x={plotRight + 2} y={PAD_TOP - 2} textAnchor="start" fontSize="11" fill="#9ca3af">
+                {rightLabel}
+              </text>
+            ) : null}
             <line x1={plotRight} y1={PAD_TOP} x2={plotRight} y2={PAD_TOP + chartHeight} stroke={AXIS_COLOR} strokeWidth="1" />
             {ticksR.map((t, i) => (
               <g key={i}>
