@@ -250,9 +250,9 @@ export default function LogTodayPage() {
           todayMetric = recent.find((m) => toDateOnly(m.date) === today) ?? null;
         }
 
-        // Single source of truth: same getDataFreshnessStatus as Today page (metric_date only).
+        // Single source of truth: same getDataFreshness as Today page (metric_date only).
         const dates = recent.map((m) => toDateOnly(m.date)).filter(Boolean);
-        const freshness = getDataFreshnessStatus(dates, locale === 'th' ? 'th' : 'en');
+        const freshness = getDataFreshness(dates, locale === 'th' ? 'th' : 'en');
 
         if (todayMetric || freshness.status === 'today') {
           const row = todayMetric ?? recent.find((m) => toDateOnly(m.date) === today) ?? null;
