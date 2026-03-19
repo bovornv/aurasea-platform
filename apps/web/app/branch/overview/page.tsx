@@ -43,7 +43,7 @@ import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAlertsTop, getBranchTrendSeriesWithFallback, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow, type AlertTopRow, type BranchTrendSeries } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
-import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
+import { getAccommodationMonthlyFixedCostStatus, getTodayDailyMetric } from '../../services/db/daily-metrics-service';
 import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { getHealthScoreFromAccommodationHealthToday, getHealthScoreFromFnbHealthToday } from '../../services/db/health-score-kpi-service';
@@ -88,6 +88,7 @@ export default function BranchOverviewPage() {
   const [alertsTop, setAlertsTop] = useState<AlertTopRow[]>([]);
   const [alertsTopLoading, setAlertsTopLoading] = useState(true);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
+  const [hasTodayData, setHasTodayData] = useState<boolean | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -389,6 +390,10 @@ export default function BranchOverviewPage() {
         refreshOperatingStatus();
         getBranchLearningPhase(branch.id).then(setLearningPhase);
         getAlertsTop(branch.id).then(setAlertsTop);
+        const branchType = branch.moduleType === 'accommodation' ? 'accommodation' : branch.moduleType === 'fnb' ? 'fnb' : undefined;
+        if (branchType) {
+          getTodayDailyMetric(branch.id, branchType).then((metric) => setHasTodayData(metric != null));
+        }
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
@@ -453,6 +458,19 @@ export default function BranchOverviewPage() {
     if (!branch?.id) return;
     getBranchLearningPhase(branch.id).then(setLearningPhase);
   }, [branch?.id]);
+
+  // Data freshness: has today's row in accommodation_daily_metrics or fnb_daily_metrics (metric_date only)
+  useEffect(() => {
+    if (!branch?.id || (branch.moduleType !== 'accommodation' && branch.moduleType !== 'fnb')) {
+      setHasTodayData(null);
+      return;
+    }
+    const branchType = branch.moduleType === 'accommodation' ? 'accommodation' : 'fnb';
+    setHasTodayData(null);
+    getTodayDailyMetric(branch.id, branchType).then((metric) => {
+      setHasTodayData(metric != null);
+    });
+  }, [branch?.id, branch?.moduleType]);
 
   const isOwnerOrSuperAdmin = role?.isSuperAdmin === true || role?.effectiveRole === 'owner';
   const isAccommodationBranch = branch?.moduleType === 'accommodation';
@@ -1129,6 +1147,8 @@ export default function BranchOverviewPage() {
             accommodation={todaySummary.accommodation}
             fnb={todaySummary.fnb}
             collectingLabel={locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...'}
+            hasTodayData={hasTodayData === true}
+            dataFreshnessLoading={hasTodayData === null}
           />
         ) : null}
 

@@ -35,26 +35,29 @@ export function PageLayout({ title, subtitle, children, headerRight }: PageLayou
     isOrgRoute || pathname.startsWith('/group/') || pathname.startsWith('/branch/');
   
   if (isGroupOrBranchRoute) {
+    const showHeader = title || subtitle;
     return (
       <div style={{ width: '100%', padding: '1.5rem 0 3rem 0' }}>
-        {title && (
+        {showHeader && (
           <header style={{ marginBottom: '2rem' }}>
-            <h1 style={{ 
-              fontSize: '28px', 
-              fontWeight: 600, 
-              marginBottom: '0.5rem', 
-              color: '#0a0a0a',
-              letterSpacing: '-0.01em',
-              lineHeight: '1.2'
-            }}>
-              {title}
-            </h1>
+            {title && (
+              <h1 style={{
+                fontSize: '28px',
+                fontWeight: 600,
+                marginBottom: '0.5rem',
+                color: '#0a0a0a',
+                letterSpacing: '-0.01em',
+                lineHeight: '1.2'
+              }}>
+                {title}
+              </h1>
+            )}
             {subtitle && (
-              <p style={{ 
-                color: '#6b7280', 
+              <p style={{
+                color: '#6b7280',
                 fontSize: '15px',
                 lineHeight: '1.5',
-                marginTop: '0.5rem'
+                marginTop: title ? '0.5rem' : 0
               }}>
                 {subtitle}
               </p>

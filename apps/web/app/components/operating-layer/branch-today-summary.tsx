@@ -3,10 +3,11 @@
 /**
  * BranchTodaySummary — Top Metrics only (premium, Stripe/Linear-style).
  * Single row: Revenue | ADR | RevPAR | Health (accommodation) or Revenue | Customers | Avg Ticket | Health (F&B).
- * No learning/progress bar; system status lives in a separate strip below.
+ * Optional right-aligned data freshness chip: [● Updated Today] when today's data exists.
  */
 
 import { getHealthIcon } from '../../utils/today-summary-utils';
+import { StatusChip } from '../status-chip';
 
 const sep = ' | ';
 const sepStyle: React.CSSProperties = { color: '#9ca3af', fontSize: '16px', fontWeight: 400, margin: '0 8px' };
@@ -56,6 +57,10 @@ export interface BranchTodaySummaryProps {
   accommodation?: BranchTodaySummaryAccommodation | null;
   fnb?: BranchTodaySummaryFnb | null;
   collectingLabel?: string;
+  /** When true, show [● Updated Today] chip on the right. Omit/false when loading or no today data. */
+  hasTodayData?: boolean;
+  /** When true, do not show the freshness chip (avoid layout shift). */
+  dataFreshnessLoading?: boolean;
 }
 
 function formatRevenue(n: number | null | undefined): string {
@@ -70,6 +75,8 @@ export function BranchTodaySummary({
   accommodation,
   fnb,
   collectingLabel = 'Collecting data...',
+  hasTodayData = false,
+  dataFreshnessLoading = false,
 }: BranchTodaySummaryProps) {
   const isTh = loc === 'th';
   const vsYesterday = isTh ? 'เทียบเมื่อวาน' : 'vs yesterday';
@@ -80,6 +87,7 @@ export function BranchTodaySummary({
   const labelHealth = isTh ? 'สุขภาพ' : 'Health';
   const labelCustomers = isTh ? 'ลูกค้า' : 'Customers';
   const labelAvgTicket = isTh ? 'ค่าเฉลี่ยต่อบิล' : 'Avg Ticket';
+  const labelUpdatedToday = isTh ? 'อัปเดตวันนี้' : 'Updated Today';
 
   const rowStyle: React.CSSProperties = {
     display: 'flex',
@@ -87,6 +95,15 @@ export function BranchTodaySummary({
     alignItems: 'baseline',
     gap: `0 ${itemGap}px`,
     fontSize: '17px',
+  };
+
+  const wrapperStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 16,
+    flexWrap: 'wrap',
   };
 
   const segmentStyle: React.CSSProperties = {
@@ -113,46 +130,51 @@ export function BranchTodaySummary({
 
     return (
       <div style={{ padding: 0 }}>
-        <div style={rowStyle}>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>{labelOccupancy}</span>
-            <span style={valueStyle}>{occ != null ? `${occ}%` : '—'}</span>
-            {occDelta != null && Number.isFinite(occDelta) && (
-              <span style={occDelta >= 0 ? deltaPos : deltaNeg}>
-                {' '}({occDelta >= 0 ? '+' : ''}{occDelta.toFixed(0)}% {vsLastWeek})
-              </span>
-            )}
-          </span>
-          <span style={sepStyle}>{sep}</span>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>{labelRooms}</span>
-            <span style={valueStyle}>{roomsStr}</span>
-          </span>
-          <span style={sepStyle}>{sep}</span>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>{labelRevenue}</span>
-            <span style={valueStyle}>{revStr}</span>
-            {revDelta != null && Number.isFinite(revDelta) && (
-              <span style={revDelta >= 0 ? deltaPos : deltaNeg}>
-                {' '}({revDelta >= 0 ? '+' : ''}{revDelta.toFixed(0)}% {vsYesterday})
-              </span>
-            )}
-          </span>
-          <span style={sepStyle}>{sep}</span>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>ADR</span>
-            <span style={valueStyle}>{adrStr}</span>
-          </span>
-          <span style={sepStyle}>{sep}</span>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>RevPAR</span>
-            <span style={valueStyle}>{revparStr}</span>
-          </span>
-          <span style={sepStyle}>{sep}</span>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>{labelHealth}</span>
-            <span style={healthColor(a.healthScore)}>{health} {healthIcon}</span>
-          </span>
+        <div style={wrapperStyle}>
+          <div style={rowStyle}>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelOccupancy}</span>
+              <span style={valueStyle}>{occ != null ? `${occ}%` : '—'}</span>
+              {occDelta != null && Number.isFinite(occDelta) && (
+                <span style={occDelta >= 0 ? deltaPos : deltaNeg}>
+                  {' '}({occDelta >= 0 ? '+' : ''}{occDelta.toFixed(0)}% {vsLastWeek})
+                </span>
+              )}
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelRooms}</span>
+              <span style={valueStyle}>{roomsStr}</span>
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelRevenue}</span>
+              <span style={valueStyle}>{revStr}</span>
+              {revDelta != null && Number.isFinite(revDelta) && (
+                <span style={revDelta >= 0 ? deltaPos : deltaNeg}>
+                  {' '}({revDelta >= 0 ? '+' : ''}{revDelta.toFixed(0)}% {vsYesterday})
+                </span>
+              )}
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>ADR</span>
+              <span style={valueStyle}>{adrStr}</span>
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>RevPAR</span>
+              <span style={valueStyle}>{revparStr}</span>
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelHealth}</span>
+              <span style={healthColor(a.healthScore)}>{health} {healthIcon}</span>
+            </span>
+          </div>
+          {!dataFreshnessLoading && hasTodayData && (
+            <StatusChip label={labelUpdatedToday} color="green" />
+          )}
         </div>
       </div>
     );
@@ -167,36 +189,41 @@ export function BranchTodaySummary({
     const healthIcon = getHealthIcon(f.healthScore);
     return (
       <div style={{ padding: 0 }}>
-        <div style={rowStyle}>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>{labelRevenue}</span>
-            <span style={valueStyle}>{revStr}</span>
-            {f.revenueDeltaPct != null && Number.isFinite(f.revenueDeltaPct) && (
-              <span style={f.revenueDeltaPct >= 0 ? deltaPos : deltaNeg}>
-                {' '}({f.revenueDeltaPct >= 0 ? '+' : ''}{f.revenueDeltaPct.toFixed(0)}% {vsYesterday})
-              </span>
-            )}
-          </span>
-          <span style={sepStyle}>{sep}</span>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>{labelCustomers}</span>
-            <span style={valueStyle}>{cust}</span>
-            {f.customersDeltaPct != null && Number.isFinite(f.customersDeltaPct) && (
-              <span style={f.customersDeltaPct >= 0 ? deltaPos : deltaNeg}>
-                {' '}({f.customersDeltaPct >= 0 ? '+' : ''}{f.customersDeltaPct.toFixed(0)}% {vsYesterday})
-              </span>
-            )}
-          </span>
-          <span style={sepStyle}>{sep}</span>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>{labelAvgTicket}</span>
-            <span style={valueStyle}>{avgStr}</span>
-          </span>
-          <span style={sepStyle}>{sep}</span>
-          <span style={segmentStyle}>
-            <span style={labelStyle}>{labelHealth}</span>
-            <span style={healthColor(f.healthScore)}>{health} {healthIcon}</span>
-          </span>
+        <div style={wrapperStyle}>
+          <div style={rowStyle}>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelRevenue}</span>
+              <span style={valueStyle}>{revStr}</span>
+              {f.revenueDeltaPct != null && Number.isFinite(f.revenueDeltaPct) && (
+                <span style={f.revenueDeltaPct >= 0 ? deltaPos : deltaNeg}>
+                  {' '}({f.revenueDeltaPct >= 0 ? '+' : ''}{f.revenueDeltaPct.toFixed(0)}% {vsYesterday})
+                </span>
+              )}
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelCustomers}</span>
+              <span style={valueStyle}>{cust}</span>
+              {f.customersDeltaPct != null && Number.isFinite(f.customersDeltaPct) && (
+                <span style={f.customersDeltaPct >= 0 ? deltaPos : deltaNeg}>
+                  {' '}({f.customersDeltaPct >= 0 ? '+' : ''}{f.customersDeltaPct.toFixed(0)}% {vsYesterday})
+                </span>
+              )}
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelAvgTicket}</span>
+              <span style={valueStyle}>{avgStr}</span>
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelHealth}</span>
+              <span style={healthColor(f.healthScore)}>{health} {healthIcon}</span>
+            </span>
+          </div>
+          {!dataFreshnessLoading && hasTodayData && (
+            <StatusChip label={labelUpdatedToday} color="green" />
+          )}
         </div>
       </div>
     );
