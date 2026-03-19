@@ -535,7 +535,7 @@ class BusinessGroupService {
 
       const mapRowToBranch = (row: any): Branch => {
         const mt = (row.module_type || '').toLowerCase();
-        const moduleType: Branch['moduleType'] = mt === 'accommodation' ? 'accommodation' : mt === 'fnb' ? 'fnb' : undefined;
+        const moduleType: Branch['moduleType'] = mt === 'accommodation' || mt === 'hotel' ? 'accommodation' : mt === 'fnb' ? 'fnb' : undefined;
         const modules: ModuleType[] = moduleType === 'accommodation' ? [ModuleType.ACCOMMODATION] : moduleType === 'fnb' ? [ModuleType.FNB] : [];
         return {
           id: row.id,
@@ -598,7 +598,7 @@ class BusinessGroupService {
 
       const mapRowToBranch = (row: (typeof branchesForOrg)[0]): Branch => {
         const mt = (row.module_type || '').toLowerCase();
-        const moduleType: Branch['moduleType'] = mt === 'accommodation' ? 'accommodation' : mt === 'fnb' ? 'fnb' : undefined;
+        const moduleType: Branch['moduleType'] = mt === 'accommodation' || mt === 'hotel' ? 'accommodation' : mt === 'fnb' ? 'fnb' : undefined;
         const modules: ModuleType[] = moduleType === 'accommodation' ? [ModuleType.ACCOMMODATION] : moduleType === 'fnb' ? [ModuleType.FNB] : [];
         return {
           id: row.id,

@@ -132,15 +132,15 @@ export function clearDailyMetricsCacheForBranch(branchId: string): void {
 
 /**
  * Freshness: MAX(metric_date) from RAW tables only.
- * - F&B: fnb_daily_metrics
- * - Accommodation: accommodation_daily_metrics
+ * - F&B: fnb_daily_metrics (same structure as below)
+ * - Accommodation: accommodation_daily_metrics (also accept 'hotel' for moduleType)
  *
  * Do NOT use: *_today_summary, *_latest_metrics, daily_metrics view, or created_at.
- * Used by: Today page (KPI chip) and Enter Data page (badge). Same source everywhere.
+ * No .eq("metric_date", today) — we need ALL dates, then compute latest client-side.
  */
 export async function getFreshnessDatesFromRawTable(
   branchId: string,
-  moduleType: DailyMetricsBranchType | null | undefined
+  moduleType: DailyMetricsBranchType | 'hotel' | null | undefined
 ): Promise<string[]> {
   if (branchId == null || branchId === '') return [];
   rejectMockBranchId(branchId);
@@ -149,17 +149,28 @@ export async function getFreshnessDatesFromRawTable(
   if (!supabase) return [];
 
   const table =
-    moduleType === 'accommodation'
+    moduleType === 'accommodation' || moduleType === 'hotel'
       ? TABLE_ACCOMMODATION
       : moduleType === 'fnb'
         ? TABLE_FNB
         : null;
   if (!table) return [];
 
+  if (process.env.NODE_ENV === 'development') {
+    console.log('getFreshnessDatesFromRawTable branchId:', branchId, 'table:', table);
+  }
+
   const { data, error } = await supabase
     .from(table)
     .select('metric_date')
     .eq('branch_id', branchId);
+
+  if (process.env.NODE_ENV === 'development' && table === TABLE_ACCOMMODATION) {
+    console.log('accommodation data:', data);
+  }
+  if (process.env.NODE_ENV === 'development' && table === TABLE_FNB) {
+    console.log('fnb data:', data);
+  }
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
@@ -171,7 +182,10 @@ export async function getFreshnessDatesFromRawTable(
   const dates = (data ?? []).map((d: { metric_date?: string }) =>
     d.metric_date ? String(d.metric_date).slice(0, 10) : ''
   ).filter(Boolean) as string[];
-  // latest = MAX(metric_date): same as dates.sort().reverse()[0] in getDataFreshness
+  const latest = dates.length ? [...dates].sort().reverse()[0] : null;
+  if (process.env.NODE_ENV === 'development' && latest) {
+    console.log('freshness dates count:', dates.length, 'latest:', latest);
+  }
   return dates;
 }
 
