@@ -244,41 +244,49 @@ export default function LogTodayPage() {
         clearDailyMetricsCacheForBranch(branch.id);
         const branchType = moduleType === 'accommodation' ? 'accommodation' : moduleType === 'fnb' ? 'fnb' : undefined;
         let todayMetric = await getTodayDailyMetric(branch.id, branchType);
+        const recent = await getDailyMetrics(branch.id, 14);
         if (!todayMetric) {
-          const recent = await getDailyMetrics(branch.id, 7);
           todayMetric = recent.find((m) => toDateOnly(m.date) === today) ?? null;
         }
 
-        if (todayMetric) {
-          const rev = todayMetric.revenue != null ? String(todayMetric.revenue) : '';
-          const rooms = todayMetric.roomsSold != null ? String(todayMetric.roomsSold) : '';
-          const cust = todayMetric.customers != null ? String(todayMetric.customers) : '';
-          const top3 = todayMetric.top3MenuRevenue != null ? String(todayMetric.top3MenuRevenue) : '';
-          const addCost = todayMetric.additionalCostToday != null ? String(todayMetric.additionalCostToday) : '';
-          setTodayRecordId(todayMetric.id ?? null);
-          setDataStatus({
-            status: 'green',
-            message: locale === 'th' ? 'อัปเดตวันนี้' : 'Updated Today',
-            lastMetricDate: today,
-          });
-          setTodayData((prev) => ({
-            ...prev,
-            revenue: rev,
-            roomsSold: rooms,
-            customers: cust,
-            top3MenuRevenue: top3,
-            additionalCostToday: addCost,
-          }));
-          setOriginalValues({
-            revenue: rev,
-            roomsSold: rooms,
-            customers: cust,
-            top3MenuRevenue: top3,
-            additionalCostToday: addCost,
-            totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
-            accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
-            fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
-          });
+        // Latest metric date from fetched data only (metric_date → date). Never use created_at.
+        const latestMetricDate = recent.length
+          ? recent.map((m) => toDateOnly(m.date)).sort().reverse()[0]
+          : null;
+
+        if (todayMetric || latestMetricDate === today) {
+          const row = todayMetric ?? recent.find((m) => toDateOnly(m.date) === today) ?? null;
+          if (row) {
+            const rev = row.revenue != null ? String(row.revenue) : '';
+            const rooms = row.roomsSold != null ? String(row.roomsSold) : '';
+            const cust = row.customers != null ? String(row.customers) : '';
+            const top3 = row.top3MenuRevenue != null ? String(row.top3MenuRevenue) : '';
+            const addCost = row.additionalCostToday != null ? String(row.additionalCostToday) : '';
+            setTodayRecordId(row.id ?? null);
+            setDataStatus({
+              status: 'green',
+              message: locale === 'th' ? 'อัปเดตวันนี้' : 'Updated Today',
+              lastMetricDate: today,
+            });
+            setTodayData((prev) => ({
+              ...prev,
+              revenue: rev,
+              roomsSold: rooms,
+              customers: cust,
+              top3MenuRevenue: top3,
+              additionalCostToday: addCost,
+            }));
+            setOriginalValues({
+              revenue: rev,
+              roomsSold: rooms,
+              customers: cust,
+              top3MenuRevenue: top3,
+              additionalCostToday: addCost,
+              totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
+              accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
+              fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
+            });
+          }
         } else {
           setTodayRecordId(null);
           setOriginalValues({
@@ -291,31 +299,30 @@ export default function LogTodayPage() {
             accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
             fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
           });
-          const last2 = await getDailyMetrics(branch.id, 14);
           const yesterdayStr = (() => {
             const [y, m, d] = today.split('-').map(Number);
             const d0 = new Date(y, m - 1, d);
             d0.setDate(d0.getDate() - 1);
             return d0.toISOString().slice(0, 10);
           })();
-          const yesterdayMetric = last2.find((m) => toDateOnly(m.date) === yesterdayStr);
-          if (yesterdayMetric) {
+
+          if (latestMetricDate === yesterdayStr) {
             setDataStatus({
               status: 'yellow',
               message: locale === 'th' ? 'อัปเดตล่าสุด: เมื่อวาน' : 'Last Updated: Yesterday',
               lastMetricDate: yesterdayStr,
             });
-          } else if (last2.length > 0) {
-            const sorted = [...last2].sort((a, b) => toDateOnly(b.date).localeCompare(toDateOnly(a.date)));
-            const lastMetricDate = sorted[0]?.date;
-            const lastDateOnly = lastMetricDate ? toDateOnly(lastMetricDate) : '';
-            const todayNoon = new Date(today + 'T12:00:00.000Z').getTime();
-            const lastNoon = lastDateOnly ? new Date(lastDateOnly + 'T12:00:00.000Z').getTime() : todayNoon;
-            const daysDiff = Math.round((todayNoon - lastNoon) / (1000 * 60 * 60 * 24));
+          } else if (latestMetricDate) {
+            const diffDays = Math.floor(
+              (new Date(today + 'T12:00:00.000Z').getTime() - new Date(latestMetricDate + 'T12:00:00.000Z').getTime()) / (1000 * 60 * 60 * 24)
+            );
             setDataStatus({
               status: 'red',
-              message: locale === 'th' ? `ไม่มีข้อมูลวันนี้ (ล่าสุด: ${daysDiff} วันก่อน)` : `No Data Entered Today (Last: ${daysDiff} days ago)`,
-              lastMetricDate,
+              message:
+                locale === 'th'
+                  ? `ไม่มีข้อมูลวันนี้ (ล่าสุด: ${diffDays} วันก่อน)`
+                  : `No Data Entered Today (Last: ${diffDays} days ago)`,
+              lastMetricDate: latestMetricDate,
             });
           } else {
             setDataStatus({
