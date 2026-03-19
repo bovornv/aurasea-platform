@@ -250,8 +250,8 @@ export default function LogTodayPage() {
           todayMetric = recent.find((m) => toDateOnly(m.date) === today) ?? null;
         }
 
-        // Single source of truth: same getDataFreshness as Today page (metric_date only).
-        const dates = recent.map((m) => toDateOnly(m.date)).filter(Boolean);
+        // Freshness: MAX(metric_date) from raw table only (fnb_daily_metrics / accommodation_daily_metrics). No views, no created_at.
+        const dates = await getFreshnessDatesFromRawTable(branch.id, branchType ?? undefined);
         const freshness = getDataFreshness(dates, locale === 'th' ? 'th' : 'en');
 
         if (todayMetric || freshness.status === 'today') {

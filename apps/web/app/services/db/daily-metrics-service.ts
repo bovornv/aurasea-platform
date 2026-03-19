@@ -131,8 +131,12 @@ export function clearDailyMetricsCacheForBranch(branchId: string): void {
 }
 
 /**
- * Get metric_date list from RAW table only (for freshness indicators).
- * Do NOT use views (today_summary_clean, daily_metrics, fnb_latest_metrics, accommodation_latest_metrics).
+ * Freshness: MAX(metric_date) from RAW tables only.
+ * - F&B: fnb_daily_metrics
+ * - Accommodation: accommodation_daily_metrics
+ *
+ * Do NOT use: *_today_summary, *_latest_metrics, daily_metrics view, or created_at.
+ * Used by: Today page (KPI chip) and Enter Data page (badge). Same source everywhere.
  */
 export async function getFreshnessDatesFromRawTable(
   branchId: string,
@@ -167,12 +171,7 @@ export async function getFreshnessDatesFromRawTable(
   const dates = (data ?? []).map((d: { metric_date?: string }) =>
     d.metric_date ? String(d.metric_date).slice(0, 10) : ''
   ).filter(Boolean) as string[];
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log('SOURCE TABLE:', table);
-    console.log('RAW DATES:', dates);
-    console.log('LATEST USED:', dates.length ? [...dates].sort().reverse()[0] : null);
-  }
+  // latest = MAX(metric_date): same as dates.sort().reverse()[0] in getDataFreshness
   return dates;
 }
 

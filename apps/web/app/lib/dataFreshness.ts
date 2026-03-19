@@ -1,7 +1,10 @@
 /**
- * Centralized data freshness status (single source of truth).
+ * Centralized data freshness (single source of truth).
  * Used by: Today page (KPI chip) and Enter Data page (badge).
- * Both pages must show the same status; use metric_date only (never created_at).
+ *
+ * Input: metric_date only from raw tables (fnb_daily_metrics / accommodation_daily_metrics).
+ * Never use: *_today_summary, *_latest_metrics, or created_at.
+ * Today: Asia/Bangkok. Compare: latest === today → "Updated Today".
  */
 
 const BANGKOK_TZ = 'Asia/Bangkok';
@@ -43,11 +46,6 @@ export function getDataFreshnessStatus(
 
   const today = getTodayBangkok();
   const latest = [...normalized].sort().reverse()[0]!;
-
-  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development') {
-    console.log('RAW DATES:', normalized);
-    console.log('LATEST USED:', latest);
-  }
 
   if (latest === today) {
     return {

@@ -995,7 +995,7 @@ export default function BranchOverviewPage() {
     todaySummaryRow,
   ]);
 
-  // Data freshness: raw table only (accommodation_daily_metrics / fnb_daily_metrics). Never use views.
+  // Data freshness: MAX(metric_date) from raw tables only (fnb_daily_metrics / accommodation_daily_metrics). No *_today_summary, *_latest_metrics, created_at.
   const isAccommodationOrFnb =
     branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb';
   const dataFreshnessLoading = isAccommodationOrFnb && !freshnessLoaded;
