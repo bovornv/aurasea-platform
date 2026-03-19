@@ -677,10 +677,16 @@ export default function LogTodayPage() {
       }
       
       // Don't auto-redirect - let user see the preview and navigate manually
-    } catch (error: any) {
+    } catch (error: unknown) {
       setSaveFeedback('idle');
+      const msg = error instanceof Error ? error.message : (locale === 'th' ? 'เกิดข้อผิดพลาดในการบันทึก' : 'Failed to save metrics');
+      const isPermission =
+        (error as { code?: string })?.code === '42501' ||
+        (typeof msg === 'string' && (msg.includes('not assigned') || msg.includes("don't have permission")));
       setErrors({
-        submit: error.message || (locale === 'th' ? 'เกิดข้อผิดพลาดในการบันทึก' : 'Failed to save metrics'),
+        submit: isPermission
+          ? (locale === 'th' ? 'สิทธิ์ไม่เพียงพอ: คุณไม่ได้ถูกกำหนดให้กับสาขานี้' : 'Permission error: You are not assigned to this branch')
+          : msg,
       });
     } finally {
       setSaving(false);

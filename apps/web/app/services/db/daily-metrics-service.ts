@@ -132,6 +132,7 @@ export function clearDailyMetricsCacheForBranch(branchId: string): void {
 
 /**
  * Save daily metric. branchId must be UUID from Supabase. No fallback; no mock ids.
+ * Validates branch membership before insert; throws on permission/RLS errors for clear UX.
  */
 export async function saveDailyMetric(
   metric: DailyMetricInput
@@ -150,6 +151,25 @@ export async function saveDailyMetric(
   if (!supabase) return false;
 
   try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (process.env.NODE_ENV === 'development') {
+      console.log('USER:', user?.id);
+      console.log('BRANCH:', metric.branchId);
+    }
+
+    const { data: member } = await supabase
+      .from('branch_members')
+      .select('role')
+      .eq('branch_id', metric.branchId)
+      .eq('user_id', user?.id ?? '')
+      .limit(1)
+      .maybeSingle();
+
+    const allowedRoles = ['owner', 'manager', 'staff'];
+    if (!member || !allowedRoles.includes(member.role as string)) {
+      throw new Error("You don't have permission for this branch");
+    }
+
     const table = getWriteTable(metric);
     const allowedColumns = table === TABLE_FNB ? ALLOWED_COLUMNS_FNB : ALLOWED_COLUMNS_ACCOMMODATION;
     const payload =
@@ -170,6 +190,9 @@ export async function saveDailyMetric(
       });
 
     if (error) {
+      if (error.code === '42501') {
+        throw new Error('Permission error: You are not assigned to this branch');
+      }
       console.error('[DailyMetricsService] Failed to save daily metric:', error);
       return false;
     }
@@ -180,8 +203,11 @@ export async function saveDailyMetric(
     }
     cacheKeysToDelete.forEach((k) => metricsCache.delete(k));
     return true;
-  } catch (error) {
-    console.error('[DailyMetricsService] Error saving daily metric:', error);
+  } catch (err: unknown) {
+    if (err instanceof Error && (err.message.includes("don't have permission") || err.message.includes('not assigned'))) {
+      throw err;
+    }
+    console.error('[DailyMetricsService] Error saving daily metric:', err);
     return false;
   }
 }
