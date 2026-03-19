@@ -616,7 +616,6 @@ export default function LogTodayPage() {
         message: afterSaveFreshness.label,
         lastMetricDate: afterSaveFreshness.latest ?? today,
       });
-      setLastEntryDate(today);
 
       // Reload today's data from DB and set originalValues so "unsaved" state resets
       clearDailyMetricsCacheForBranch(branch.id);
