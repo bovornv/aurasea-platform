@@ -43,7 +43,7 @@ import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAlertsTop, getBranchTrendSeriesWithFallback, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow, type AlertTopRow, type BranchTrendSeries } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
-import { getAccommodationMonthlyFixedCostStatus, getTodayDailyMetric } from '../../services/db/daily-metrics-service';
+import { getAccommodationMonthlyFixedCostStatus, getTodayDateString } from '../../services/db/daily-metrics-service';
 import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { getHealthScoreFromAccommodationHealthToday, getHealthScoreFromFnbHealthToday } from '../../services/db/health-score-kpi-service';
@@ -390,10 +390,6 @@ export default function BranchOverviewPage() {
         refreshOperatingStatus();
         getBranchLearningPhase(branch.id).then(setLearningPhase);
         getAlertsTop(branch.id).then(setAlertsTop);
-        const branchType = branch.moduleType === 'accommodation' ? 'accommodation' : branch.moduleType === 'fnb' ? 'fnb' : undefined;
-        if (branchType) {
-          getTodayDailyMetric(branch.id, branchType).then((metric) => setHasTodayData(metric != null));
-        }
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
@@ -458,19 +454,6 @@ export default function BranchOverviewPage() {
     if (!branch?.id) return;
     getBranchLearningPhase(branch.id).then(setLearningPhase);
   }, [branch?.id]);
-
-  // Data freshness: has today's row in accommodation_daily_metrics or fnb_daily_metrics (metric_date only)
-  useEffect(() => {
-    if (!branch?.id || (branch.moduleType !== 'accommodation' && branch.moduleType !== 'fnb')) {
-      setHasTodayData(null);
-      return;
-    }
-    const branchType = branch.moduleType === 'accommodation' ? 'accommodation' : 'fnb';
-    setHasTodayData(null);
-    getTodayDailyMetric(branch.id, branchType).then((metric) => {
-      setHasTodayData(metric != null);
-    });
-  }, [branch?.id, branch?.moduleType]);
 
   const isOwnerOrSuperAdmin = role?.isSuperAdmin === true || role?.effectiveRole === 'owner';
   const isAccommodationBranch = branch?.moduleType === 'accommodation';
@@ -1002,6 +985,15 @@ export default function BranchOverviewPage() {
     todaySummaryRow,
   ]);
 
+  // Data freshness chip: show "Updated Today" when the displayed summary row is for today (metric_date only)
+  const displayedMetricDate =
+    todaySummaryRow?.metric_date ? String(todaySummaryRow.metric_date).slice(0, 10) : null;
+  const hasTodayData =
+    displayedMetricDate != null && displayedMetricDate === getTodayDateString();
+  const isAccommodationOrFnb =
+    branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb';
+  const dataFreshnessLoading = isAccommodationOrFnb && todaySummaryRow === null;
+
   // Early signal: accommodation = accommodation_anomaly_signals.early_signal; F&B = fnb_operating_status.early_signal
   const earlySignalText = useMemo(() => {
     if (branch?.moduleType === 'accommodation') {
@@ -1147,8 +1139,8 @@ export default function BranchOverviewPage() {
             accommodation={todaySummary.accommodation}
             fnb={todaySummary.fnb}
             collectingLabel={locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...'}
-            hasTodayData={hasTodayData === true}
-            dataFreshnessLoading={hasTodayData === null}
+            hasTodayData={hasTodayData}
+            dataFreshnessLoading={dataFreshnessLoading}
           />
         ) : null}
 
