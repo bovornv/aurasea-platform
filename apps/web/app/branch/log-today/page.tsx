@@ -19,8 +19,8 @@ import { useUserSession } from '../../contexts/user-session-context';
 import { useUserRole } from '../../contexts/user-role-context';
 import { useRouteGuard } from '../../hooks/use-route-guard';
 import { businessGroupService } from '../../services/business-group-service';
-import { saveDailyMetric, getDailyMetrics, getTodayDailyMetric, getLastEntryDate, getTodayDateString, clearDailyMetricsCacheForBranch } from '../../services/db/daily-metrics-service';
-import { getDataFreshnessStatus } from '../../lib/dataFreshness';
+import { saveDailyMetric, getDailyMetrics, getTodayDailyMetric, getTodayDateString, clearDailyMetricsCacheForBranch } from '../../services/db/daily-metrics-service';
+import { getDataFreshness } from '../../lib/dataFreshness';
 import { operationalSignalsService } from '../../services/operational-signals-service';
 import { useHospitalityAlerts } from '../../hooks/use-hospitality-alerts';
 import { invalidateBranchState } from '../../utils/cache-invalidation';
@@ -65,7 +65,6 @@ export default function LogTodayPage() {
     message: string;
     lastMetricDate: string | null;
   } | null>(null);
-  const [lastEntryDate, setLastEntryDate] = useState<string | null>(null);
   /** Today's existing record id (when loaded). Used to show we're updating, not creating. */
   const [todayRecordId, setTodayRecordId] = useState<string | null>(null);
   /** Snapshot of saved/loaded values; used to detect unsaved changes and highlight edited fields. */
@@ -311,8 +310,6 @@ export default function LogTodayPage() {
           });
         }
 
-        const lastDate = await getLastEntryDate(branch.id, branchType);
-        setLastEntryDate(lastDate);
       } catch (e) {
         console.error('[LogToday] Failed to load today/last entry:', e);
         setDataStatus({
@@ -612,8 +609,8 @@ export default function LogTodayPage() {
       setSuccess(true);
       setSaveFeedback('recorded');
 
-      // Optimistic: same label as getDataFreshnessStatus([today]) (single source of truth)
-      const afterSaveFreshness = getDataFreshnessStatus([today], locale === 'th' ? 'th' : 'en');
+      // Optimistic: same label as getDataFreshness([today]) (single source of truth)
+      const afterSaveFreshness = getDataFreshness([today], locale === 'th' ? 'th' : 'en');
       setDataStatus({
         status: afterSaveFreshness.color,
         message: afterSaveFreshness.label,
@@ -741,10 +738,9 @@ export default function LogTodayPage() {
         {dataStatus && (
           <div style={{ position: 'absolute', top: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
             <StatusChip label={dataStatus.message} color={dataStatus.status} />
-            {lastEntryDate && (
+            {dataStatus.lastMetricDate && (
               <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                {locale === 'th' ? 'รายการล่าสุด: ' : 'Last entry: '}
-                {new Date(lastEntryDate + 'T12:00:00').toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                {locale === 'th' ? 'ล่าสุด: ' : 'Last: '}{dataStatus.lastMetricDate}
               </div>
             )}
           </div>

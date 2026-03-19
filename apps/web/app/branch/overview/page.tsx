@@ -44,7 +44,7 @@ import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAler
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
 import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
-import { getDataFreshnessStatus } from '../../lib/dataFreshness';
+import { getDataFreshness } from '../../lib/dataFreshness';
 import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { getHealthScoreFromAccommodationHealthToday, getHealthScoreFromFnbHealthToday } from '../../services/db/health-score-kpi-service';
@@ -994,7 +994,7 @@ export default function BranchOverviewPage() {
   const dataFreshnessLoading = isAccommodationOrFnb && todaySummaryRow === null;
   const freshnessResult =
     !dataFreshnessLoading && isAccommodationOrFnb
-      ? getDataFreshnessStatus(freshnessDates, locale === 'th' ? 'th' : 'en')
+      ? getDataFreshness(freshnessDates, locale === 'th' ? 'th' : 'en')
       : null;
   const freshness =
     freshnessResult != null

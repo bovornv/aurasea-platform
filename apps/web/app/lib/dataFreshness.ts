@@ -13,8 +13,8 @@ export interface DataFreshnessResult {
   status: FreshnessStatus;
   label: string;
   color: FreshnessColor;
-  /** Latest metric_date (YYYY-MM-DD) when available, for lastMetricDate display */
-  latest?: string;
+  /** Latest metric_date (YYYY-MM-DD) when available; null when missing */
+  latest: string | null;
 }
 
 function getTodayBangkok(): string {
@@ -37,6 +37,7 @@ export function getDataFreshnessStatus(
       status: 'missing',
       label: locale === 'th' ? 'ไม่มีข้อมูล' : 'No Data',
       color: 'red',
+      latest: null,
     };
   }
 
@@ -73,4 +74,12 @@ export function getDataFreshnessStatus(
     color: 'red',
     latest,
   };
+}
+
+/**
+ * Single source of truth for all freshness indicators (Today KPI chip, Enter Data badge, Last line).
+ * Same logic, same label, same date source (metric_date only). Optional locale for i18n.
+ */
+export function getDataFreshness(dates: string[], locale: 'en' | 'th' = 'en'): DataFreshnessResult {
+  return getDataFreshnessStatus(dates, locale);
 }
