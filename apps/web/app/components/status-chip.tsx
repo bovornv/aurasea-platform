@@ -2,10 +2,11 @@
 
 export type StatusChipColor = 'green' | 'yellow' | 'red';
 
+// High-contrast, SaaS-grade: bg-*-100, text-*-700, border-*-200
 const dotColors: Record<StatusChipColor, string> = {
-  green: '#22c55e',
-  yellow: '#eab308',
-  red: '#ef4444',
+  green: '#16a34a',
+  yellow: '#ca8a04',
+  red: '#dc2626',
 };
 
 const borderColors: Record<StatusChipColor, string> = {
@@ -14,10 +15,16 @@ const borderColors: Record<StatusChipColor, string> = {
   red: '#fecaca',
 };
 
+const bgColors: Record<StatusChipColor, string> = {
+  green: '#dcfce7',
+  yellow: '#fef9c3',
+  red: '#fee2e2',
+};
+
 const textColors: Record<StatusChipColor, string> = {
-  green: '#166534',
-  yellow: '#854d0e',
-  red: '#991b1b',
+  green: '#15803d',
+  yellow: '#a16207',
+  red: '#b91c1c',
 };
 
 interface StatusChipProps {
@@ -37,7 +44,7 @@ export function StatusChip({ label, color }: StatusChipProps) {
         padding: '4px 12px',
         borderRadius: 9999,
         border: `1px solid ${borderColors[color]}`,
-        backgroundColor: color === 'green' ? '#f0fdf4' : color === 'yellow' ? '#fefce8' : '#fef2f2',
+        backgroundColor: bgColors[color],
         color: textColors[color],
         flexShrink: 0,
       }}

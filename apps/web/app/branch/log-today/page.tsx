@@ -20,10 +20,12 @@ import { useUserRole } from '../../contexts/user-role-context';
 import { useRouteGuard } from '../../hooks/use-route-guard';
 import { businessGroupService } from '../../services/business-group-service';
 import { saveDailyMetric, getDailyMetrics, getTodayDailyMetric, getLastEntryDate, getTodayDateString, clearDailyMetricsCacheForBranch } from '../../services/db/daily-metrics-service';
+import { getDataFreshnessStatus } from '../../lib/dataFreshness';
 import { operationalSignalsService } from '../../services/operational-signals-service';
 import { useHospitalityAlerts } from '../../hooks/use-hospitality-alerts';
 import { invalidateBranchState } from '../../utils/cache-invalidation';
 import { LoadingSpinner } from '../../components/loading-spinner';
+import { StatusChip } from '../../components/status-chip';
 import { ErrorState } from '../../components/error-state';
 import { SectionCard } from '../../components/section-card';
 import { formatCurrency } from '../../utils/formatting';
@@ -249,12 +251,11 @@ export default function LogTodayPage() {
           todayMetric = recent.find((m) => toDateOnly(m.date) === today) ?? null;
         }
 
-        // Latest metric date from fetched data only (metric_date → date). Never use created_at.
-        const latestMetricDate = recent.length
-          ? recent.map((m) => toDateOnly(m.date)).sort().reverse()[0]
-          : null;
+        // Single source of truth: same getDataFreshnessStatus as Today page (metric_date only).
+        const dates = recent.map((m) => toDateOnly(m.date)).filter(Boolean);
+        const freshness = getDataFreshnessStatus(dates, locale === 'th' ? 'th' : 'en');
 
-        if (todayMetric || latestMetricDate === today) {
+        if (todayMetric || freshness.status === 'today') {
           const row = todayMetric ?? recent.find((m) => toDateOnly(m.date) === today) ?? null;
           if (row) {
             const rev = row.revenue != null ? String(row.revenue) : '';
@@ -264,9 +265,9 @@ export default function LogTodayPage() {
             const addCost = row.additionalCostToday != null ? String(row.additionalCostToday) : '';
             setTodayRecordId(row.id ?? null);
             setDataStatus({
-              status: 'green',
-              message: locale === 'th' ? 'อัปเดตวันนี้' : 'Updated Today',
-              lastMetricDate: today,
+              status: freshness.color,
+              message: freshness.label,
+              lastMetricDate: freshness.latest ?? today,
             });
             setTodayData((prev) => ({
               ...prev,
@@ -286,6 +287,10 @@ export default function LogTodayPage() {
               accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
               fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
             });
+          } else {
+            setTodayRecordId(null);
+            setOriginalValues({ revenue: '', roomsSold: '', customers: '', top3MenuRevenue: '', additionalCostToday: '', totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '', accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '', fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '' });
+            setDataStatus({ status: freshness.color, message: freshness.label, lastMetricDate: freshness.latest ?? null });
           }
         } else {
           setTodayRecordId(null);
@@ -299,38 +304,11 @@ export default function LogTodayPage() {
             accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
             fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
           });
-          const yesterdayStr = (() => {
-            const [y, m, d] = today.split('-').map(Number);
-            const d0 = new Date(y, m - 1, d);
-            d0.setDate(d0.getDate() - 1);
-            return d0.toISOString().slice(0, 10);
-          })();
-
-          if (latestMetricDate === yesterdayStr) {
-            setDataStatus({
-              status: 'yellow',
-              message: locale === 'th' ? 'อัปเดตล่าสุด: เมื่อวาน' : 'Last Updated: Yesterday',
-              lastMetricDate: yesterdayStr,
-            });
-          } else if (latestMetricDate) {
-            const diffDays = Math.floor(
-              (new Date(today + 'T12:00:00.000Z').getTime() - new Date(latestMetricDate + 'T12:00:00.000Z').getTime()) / (1000 * 60 * 60 * 24)
-            );
-            setDataStatus({
-              status: 'red',
-              message:
-                locale === 'th'
-                  ? `ไม่มีข้อมูลวันนี้ (ล่าสุด: ${diffDays} วันก่อน)`
-                  : `No Data Entered Today (Last: ${diffDays} days ago)`,
-              lastMetricDate: latestMetricDate,
-            });
-          } else {
-            setDataStatus({
-              status: 'red',
-              message: locale === 'th' ? 'ไม่มีข้อมูลวันนี้' : 'No Data Entered Today',
-              lastMetricDate: null,
-            });
-          }
+          setDataStatus({
+            status: freshness.color,
+            message: freshness.label,
+            lastMetricDate: freshness.latest ?? null,
+          });
         }
 
         const lastDate = await getLastEntryDate(branch.id, branchType);
@@ -634,11 +612,12 @@ export default function LogTodayPage() {
       setSuccess(true);
       setSaveFeedback('recorded');
 
-      // Optimistic: set indicator to green immediately so user sees it right after save
+      // Optimistic: same label as getDataFreshnessStatus([today]) (single source of truth)
+      const afterSaveFreshness = getDataFreshnessStatus([today], locale === 'th' ? 'th' : 'en');
       setDataStatus({
-        status: 'green',
-        message: locale === 'th' ? 'อัปเดตวันนี้' : 'Updated Today',
-        lastMetricDate: today,
+        status: afterSaveFreshness.color,
+        message: afterSaveFreshness.label,
+        lastMetricDate: afterSaveFreshness.latest ?? today,
       });
       setLastEntryDate(today);
 
@@ -761,23 +740,7 @@ export default function LogTodayPage() {
         {/* PART 3 & 4: Data Entered Today Indicator (Top-right) */}
         {dataStatus && (
           <div style={{ position: 'absolute', top: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
-            <div style={{
-              padding: '0.5rem 0.75rem',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 500,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              backgroundColor: dataStatus.status === 'green' ? '#f0fdf4' : dataStatus.status === 'yellow' ? '#fefce8' : '#fef2f2',
-              border: `1px solid ${dataStatus.status === 'green' ? '#10b981' : dataStatus.status === 'yellow' ? '#eab308' : '#ef4444'}`,
-              color: dataStatus.status === 'green' ? '#166534' : dataStatus.status === 'yellow' ? '#854d0e' : '#991b1b',
-            }}>
-              <span style={{ fontSize: '14px' }}>
-                {dataStatus.status === 'green' ? '🟢' : dataStatus.status === 'yellow' ? '🟡' : '🔴'}
-              </span>
-              <span>{dataStatus.message}</span>
-            </div>
+            <StatusChip label={dataStatus.message} color={dataStatus.status} />
             {lastEntryDate && (
               <div style={{ fontSize: '12px', color: '#6b7280' }}>
                 {locale === 'th' ? 'รายการล่าสุด: ' : 'Last entry: '}

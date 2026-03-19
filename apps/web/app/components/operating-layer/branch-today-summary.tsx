@@ -3,11 +3,11 @@
 /**
  * BranchTodaySummary — Top Metrics only (premium, Stripe/Linear-style).
  * Single row: Revenue | ADR | RevPAR | Health (accommodation) or Revenue | Customers | Avg Ticket | Health (F&B).
- * Optional right-aligned data freshness chip: [● Updated Today] when today's data exists.
+ * Right-aligned data freshness chip: same status as Enter Data page (shared getDataFreshnessStatus).
  */
 
 import { getHealthIcon } from '../../utils/today-summary-utils';
-import { StatusChip } from '../status-chip';
+import { StatusChip, type StatusChipColor } from '../status-chip';
 
 const sep = ' | ';
 const sepStyle: React.CSSProperties = { color: '#9ca3af', fontSize: '16px', fontWeight: 400, margin: '0 8px' };
@@ -57,10 +57,8 @@ export interface BranchTodaySummaryProps {
   accommodation?: BranchTodaySummaryAccommodation | null;
   fnb?: BranchTodaySummaryFnb | null;
   collectingLabel?: string;
-  /** When true, show [● Updated Today] chip on the right. Omit/false when loading or no today data. */
-  hasTodayData?: boolean;
-  /** When true, do not show the freshness chip (avoid layout shift). */
-  dataFreshnessLoading?: boolean;
+  /** Freshness from getDataFreshnessStatus. When non-null, chip is always shown (same status as Enter Data page). */
+  freshness?: { label: string; color: StatusChipColor } | null;
 }
 
 function formatRevenue(n: number | null | undefined): string {
@@ -75,8 +73,7 @@ export function BranchTodaySummary({
   accommodation,
   fnb,
   collectingLabel = 'Collecting data...',
-  hasTodayData = false,
-  dataFreshnessLoading = false,
+  freshness = null,
 }: BranchTodaySummaryProps) {
   const isTh = loc === 'th';
   const vsYesterday = isTh ? 'เทียบเมื่อวาน' : 'vs yesterday';
@@ -87,7 +84,6 @@ export function BranchTodaySummary({
   const labelHealth = isTh ? 'สุขภาพ' : 'Health';
   const labelCustomers = isTh ? 'ลูกค้า' : 'Customers';
   const labelAvgTicket = isTh ? 'ค่าเฉลี่ยต่อบิล' : 'Avg Ticket';
-  const labelUpdatedToday = isTh ? 'อัปเดตวันนี้' : 'Updated Today';
 
   const rowStyle: React.CSSProperties = {
     display: 'flex',
@@ -172,8 +168,8 @@ export function BranchTodaySummary({
               <span style={healthColor(a.healthScore)}>{health} {healthIcon}</span>
             </span>
           </div>
-          {!dataFreshnessLoading && hasTodayData && (
-            <StatusChip label={labelUpdatedToday} color="green" />
+          {freshness && (
+            <StatusChip label={freshness.label} color={freshness.color} />
           )}
         </div>
       </div>
@@ -221,8 +217,8 @@ export function BranchTodaySummary({
               <span style={healthColor(f.healthScore)}>{health} {healthIcon}</span>
             </span>
           </div>
-          {!dataFreshnessLoading && hasTodayData && (
-            <StatusChip label={labelUpdatedToday} color="green" />
+          {freshness && (
+            <StatusChip label={freshness.label} color={freshness.color} />
           )}
         </div>
       </div>

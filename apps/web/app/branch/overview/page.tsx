@@ -43,7 +43,8 @@ import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAlertsTop, getBranchTrendSeriesWithFallback, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow, type AlertTopRow, type BranchTrendSeries } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
-import { getAccommodationMonthlyFixedCostStatus, getTodayDateString } from '../../services/db/daily-metrics-service';
+import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
+import { getDataFreshnessStatus } from '../../lib/dataFreshness';
 import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { getHealthScoreFromAccommodationHealthToday, getHealthScoreFromFnbHealthToday } from '../../services/db/health-score-kpi-service';
@@ -984,14 +985,21 @@ export default function BranchOverviewPage() {
     todaySummaryRow,
   ]);
 
-  // Data freshness chip: show "Updated Today" when the displayed summary row is for today (metric_date only)
-  const displayedMetricDate =
-    todaySummaryRow?.metric_date ? String(todaySummaryRow.metric_date).slice(0, 10) : null;
-  const hasTodayData =
-    displayedMetricDate != null && displayedMetricDate === getTodayDateString();
+  // Data freshness: single source of truth (same as Enter Data page). metric_date only.
   const isAccommodationOrFnb =
     branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb';
+  const freshnessDates = todaySummaryRow?.metric_date
+    ? [String(todaySummaryRow.metric_date).slice(0, 10)]
+    : [];
   const dataFreshnessLoading = isAccommodationOrFnb && todaySummaryRow === null;
+  const freshnessResult =
+    !dataFreshnessLoading && isAccommodationOrFnb
+      ? getDataFreshnessStatus(freshnessDates, locale === 'th' ? 'th' : 'en')
+      : null;
+  const freshness =
+    freshnessResult != null
+      ? { label: freshnessResult.label, color: freshnessResult.color as 'green' | 'yellow' | 'red' }
+      : null;
 
   // Early signal: accommodation = accommodation_anomaly_signals.early_signal; F&B = fnb_operating_status.early_signal
   const earlySignalText = useMemo(() => {
@@ -1138,8 +1146,7 @@ export default function BranchOverviewPage() {
             accommodation={todaySummary.accommodation}
             fnb={todaySummary.fnb}
             collectingLabel={locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...'}
-            hasTodayData={hasTodayData}
-            dataFreshnessLoading={dataFreshnessLoading}
+            freshness={freshness}
           />
         ) : null}
 
