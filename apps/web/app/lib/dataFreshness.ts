@@ -44,6 +44,11 @@ export function getDataFreshnessStatus(
   const today = getTodayBangkok();
   const latest = [...normalized].sort().reverse()[0]!;
 
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development') {
+    console.log('RAW DATES:', normalized);
+    console.log('LATEST USED:', latest);
+  }
+
   if (latest === today) {
     return {
       status: 'today',

@@ -19,7 +19,7 @@ import { useUserSession } from '../../contexts/user-session-context';
 import { useUserRole } from '../../contexts/user-role-context';
 import { useRouteGuard } from '../../hooks/use-route-guard';
 import { businessGroupService } from '../../services/business-group-service';
-import { saveDailyMetric, getDailyMetrics, getTodayDailyMetric, getTodayDateString, clearDailyMetricsCacheForBranch } from '../../services/db/daily-metrics-service';
+import { saveDailyMetric, getDailyMetrics, getTodayDailyMetric, getTodayDateString, clearDailyMetricsCacheForBranch, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
 import { operationalSignalsService } from '../../services/operational-signals-service';
 import { useHospitalityAlerts } from '../../hooks/use-hospitality-alerts';
@@ -741,13 +741,8 @@ export default function LogTodayPage() {
       <div style={{ maxWidth: '800px', margin: '0 auto', paddingBottom: '2rem', position: 'relative' }}>
         {/* PART 3 & 4: Data Entered Today Indicator (Top-right) */}
         {dataStatus && (
-          <div style={{ position: 'absolute', top: 0, right: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
+          <div style={{ position: 'absolute', top: 0, right: 0 }}>
             <StatusChip label={dataStatus.message} color={dataStatus.status} />
-            {dataStatus.lastMetricDate && (
-              <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                {locale === 'th' ? 'ล่าสุด: ' : 'Last: '}{dataStatus.lastMetricDate}
-              </div>
-            )}
           </div>
         )}
         

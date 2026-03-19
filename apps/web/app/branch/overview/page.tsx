@@ -43,7 +43,7 @@ import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAlertsTop, getBranchTrendSeriesWithFallback, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow, type AlertTopRow, type BranchTrendSeries } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
-import { getAccommodationMonthlyFixedCostStatus } from '../../services/db/daily-metrics-service';
+import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
 import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
@@ -85,6 +85,9 @@ export default function BranchOverviewPage() {
   const [learningPhase, setLearningPhase] = useState<BranchLearningPhaseRow | null>(null);
   // Today summary view (date-based joins): revenue_delta_day, occupancy_delta_week for Latest Performance
   const [todaySummaryRow, setTodaySummaryRow] = useState<TodaySummaryRow | null>(null);
+  // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
+  const [freshnessDatesFromRaw, setFreshnessDatesFromRaw] = useState<string[]>([]);
+  const [freshnessLoaded, setFreshnessLoaded] = useState(false);
   // Alerts & Recommendations: top 3 from alerts_top view (problems + opportunities)
   const [alertsTop, setAlertsTop] = useState<AlertTopRow[]>([]);
   const [alertsTopLoading, setAlertsTopLoading] = useState(true);
@@ -356,6 +359,7 @@ export default function BranchOverviewPage() {
   const refreshOperatingStatus = useCallback(() => {
     if (!branch?.id) return;
     setAlertsTopLoading(true);
+    setFreshnessLoaded(false);
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
@@ -371,6 +375,10 @@ export default function BranchOverviewPage() {
     }
     getBranchLearningPhase(branch.id).then(setLearningPhase);
     getTodaySummary(branch.id).then(setTodaySummaryRow);
+    getFreshnessDatesFromRawTable(branch.id, branch.moduleType).then((dates) => {
+      setFreshnessDatesFromRaw(dates);
+      setFreshnessLoaded(true);
+    });
     getAlertsTop(branch.id).then((rows) => { setAlertsTop(rows); setAlertsTopLoading(false); }).catch(() => { setAlertsTop([]); setAlertsTopLoading(false); });
   }, [branch?.id, branch?.moduleType]);
 
@@ -378,6 +386,8 @@ export default function BranchOverviewPage() {
     if (!branch?.id) {
       setAlertsTop([]);
       setAlertsTopLoading(false);
+      setFreshnessDatesFromRaw([]);
+      setFreshnessLoaded(false);
       return;
     }
     refreshOperatingStatus();
@@ -985,16 +995,13 @@ export default function BranchOverviewPage() {
     todaySummaryRow,
   ]);
 
-  // Data freshness: single source of truth (same as Enter Data page). metric_date only.
+  // Data freshness: raw table only (accommodation_daily_metrics / fnb_daily_metrics). Never use views.
   const isAccommodationOrFnb =
     branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb';
-  const freshnessDates = todaySummaryRow?.metric_date
-    ? [String(todaySummaryRow.metric_date).slice(0, 10)]
-    : [];
-  const dataFreshnessLoading = isAccommodationOrFnb && todaySummaryRow === null;
+  const dataFreshnessLoading = isAccommodationOrFnb && !freshnessLoaded;
   const freshnessResult =
     !dataFreshnessLoading && isAccommodationOrFnb
-      ? getDataFreshness(freshnessDates, locale === 'th' ? 'th' : 'en')
+      ? getDataFreshness(freshnessDatesFromRaw, locale === 'th' ? 'th' : 'en')
       : null;
   const freshness =
     freshnessResult != null

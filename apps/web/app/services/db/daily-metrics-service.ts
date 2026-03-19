@@ -131,6 +131,52 @@ export function clearDailyMetricsCacheForBranch(branchId: string): void {
 }
 
 /**
+ * Get metric_date list from RAW table only (for freshness indicators).
+ * Do NOT use views (today_summary_clean, daily_metrics, fnb_latest_metrics, accommodation_latest_metrics).
+ */
+export async function getFreshnessDatesFromRawTable(
+  branchId: string,
+  moduleType: DailyMetricsBranchType | null | undefined
+): Promise<string[]> {
+  if (branchId == null || branchId === '') return [];
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return [];
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+
+  const table =
+    moduleType === 'accommodation'
+      ? TABLE_ACCOMMODATION
+      : moduleType === 'fnb'
+        ? TABLE_FNB
+        : null;
+  if (!table) return [];
+
+  const { data, error } = await supabase
+    .from(table)
+    .select('metric_date')
+    .eq('branch_id', branchId);
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[DailyMetricsService] getFreshnessDatesFromRawTable error:', error.message);
+    }
+    return [];
+  }
+
+  const dates = (data ?? []).map((d: { metric_date?: string }) =>
+    d.metric_date ? String(d.metric_date).slice(0, 10) : ''
+  ).filter(Boolean) as string[];
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('SOURCE TABLE:', table);
+    console.log('RAW DATES:', dates);
+    console.log('LATEST USED:', dates.length ? [...dates].sort().reverse()[0] : null);
+  }
+  return dates;
+}
+
+/**
  * Save daily metric. branchId must be UUID from Supabase. No fallback; no mock ids.
  * Validates branch membership before insert; throws on permission/RLS errors for clear UX.
  */
