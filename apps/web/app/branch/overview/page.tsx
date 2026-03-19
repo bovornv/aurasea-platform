@@ -88,7 +88,6 @@ export default function BranchOverviewPage() {
   const [alertsTop, setAlertsTop] = useState<AlertTopRow[]>([]);
   const [alertsTopLoading, setAlertsTopLoading] = useState(true);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
-  const [hasTodayData, setHasTodayData] = useState<boolean | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
