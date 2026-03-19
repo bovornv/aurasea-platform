@@ -291,10 +291,13 @@ export default function LogTodayPage() {
             accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
             fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
           });
-          const last2 = await getDailyMetrics(branch.id, 2);
-          const yesterday = new Date();
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+          const last2 = await getDailyMetrics(branch.id, 14);
+          const yesterdayStr = (() => {
+            const [y, m, d] = today.split('-').map(Number);
+            const d0 = new Date(y, m - 1, d);
+            d0.setDate(d0.getDate() - 1);
+            return d0.toISOString().slice(0, 10);
+          })();
           const yesterdayMetric = last2.find((m) => toDateOnly(m.date) === yesterdayStr);
           if (yesterdayMetric) {
             setDataStatus({
@@ -303,9 +306,12 @@ export default function LogTodayPage() {
               lastMetricDate: yesterdayStr,
             });
           } else if (last2.length > 0) {
-            const sorted = [...last2].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            const lastMetricDate = sorted[0].date;
-            const daysDiff = Math.floor((new Date().getTime() - new Date(lastMetricDate).getTime()) / (1000 * 60 * 60 * 24));
+            const sorted = [...last2].sort((a, b) => toDateOnly(b.date).localeCompare(toDateOnly(a.date)));
+            const lastMetricDate = sorted[0]?.date;
+            const lastDateOnly = lastMetricDate ? toDateOnly(lastMetricDate) : '';
+            const todayNoon = new Date(today + 'T12:00:00.000Z').getTime();
+            const lastNoon = lastDateOnly ? new Date(lastDateOnly + 'T12:00:00.000Z').getTime() : todayNoon;
+            const daysDiff = Math.round((todayNoon - lastNoon) / (1000 * 60 * 60 * 24));
             setDataStatus({
               status: 'red',
               message: locale === 'th' ? `ไม่มีข้อมูลวันนี้ (ล่าสุด: ${daysDiff} วันก่อน)` : `No Data Entered Today (Last: ${daysDiff} days ago)`,

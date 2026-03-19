@@ -103,10 +103,11 @@ function getWriteTable(metric: DailyMetricInput): typeof TABLE_FNB | typeof TABL
 const metricsCache = new Map<string, { data: DailyMetric[]; timestamp: number; isEmpty?: boolean }>();
 const CACHE_TTL = 5000; // 5 seconds
 
-/** Today's date in local timezone (YYYY-MM-DD). Use for save and "today" indicator so they match. */
+const BANGKOK_TZ = 'Asia/Bangkok';
+
+/** Today's date in Asia/Bangkok (YYYY-MM-DD). Use for save and "today" check so DB and UI match. */
 export function getTodayDateString(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return new Date().toLocaleDateString('en-CA', { timeZone: BANGKOK_TZ });
 }
 
 function rejectMockBranchId(branchId: string): void {
