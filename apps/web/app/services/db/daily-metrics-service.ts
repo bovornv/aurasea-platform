@@ -132,11 +132,11 @@ export function clearDailyMetricsCacheForBranch(branchId: string): void {
 
 /**
  * Freshness: MAX(metric_date) from RAW tables only.
- * - F&B: fnb_daily_metrics (same structure as below)
+ * - F&B: fnb_daily_metrics
  * - Accommodation: accommodation_daily_metrics (also accept 'hotel' for moduleType)
  *
- * Do NOT use: *_today_summary, *_latest_metrics, daily_metrics view, or created_at.
- * No .eq("metric_date", today) — we need ALL dates, then compute latest client-side.
+ * When moduleType is null/undefined (e.g. branch not yet synced), try accommodation then fnb
+ * so we still show freshness if data exists in either table for this branch_id.
  */
 export async function getFreshnessDatesFromRawTable(
   branchId: string,
@@ -148,45 +148,54 @@ export async function getFreshnessDatesFromRawTable(
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
+  const runQuery = async (table: string): Promise<string[]> => {
+    const { data, error } = await supabase
+      .from(table)
+      .select('metric_date')
+      .eq('branch_id', branchId);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('getFreshnessDatesFromRawTable branchId:', branchId, 'table:', table, 'accommodation data:', table === TABLE_ACCOMMODATION ? data : undefined, 'fnb data:', table === TABLE_FNB ? data : undefined);
+    }
+    if (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[DailyMetricsService] getFreshnessDatesFromRawTable error:', table, error.message);
+      }
+      return [];
+    }
+    return (data ?? []).map((d: { metric_date?: string }) =>
+      d.metric_date ? String(d.metric_date).slice(0, 10) : ''
+    ).filter(Boolean) as string[];
+  };
+
   const table =
     moduleType === 'accommodation' || moduleType === 'hotel'
       ? TABLE_ACCOMMODATION
       : moduleType === 'fnb'
         ? TABLE_FNB
         : null;
-  if (!table) return [];
 
-  if (process.env.NODE_ENV === 'development') {
-    console.log('getFreshnessDatesFromRawTable branchId:', branchId, 'table:', table);
-  }
-
-  const { data, error } = await supabase
-    .from(table)
-    .select('metric_date')
-    .eq('branch_id', branchId);
-
-  if (process.env.NODE_ENV === 'development' && table === TABLE_ACCOMMODATION) {
-    console.log('accommodation data:', data);
-  }
-  if (process.env.NODE_ENV === 'development' && table === TABLE_FNB) {
-    console.log('fnb data:', data);
-  }
-
-  if (error) {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[DailyMetricsService] getFreshnessDatesFromRawTable error:', error.message);
+  if (table) {
+    const dates = await runQuery(table);
+    const latest = dates.length ? [...dates].sort().reverse()[0] : null;
+    if (process.env.NODE_ENV === 'development' && latest) {
+      console.log('freshness dates count:', dates.length, 'latest:', latest);
     }
-    return [];
+    return dates;
   }
 
-  const dates = (data ?? []).map((d: { metric_date?: string }) =>
-    d.metric_date ? String(d.metric_date).slice(0, 10) : ''
-  ).filter(Boolean) as string[];
-  const latest = dates.length ? [...dates].sort().reverse()[0] : null;
-  if (process.env.NODE_ENV === 'development' && latest) {
-    console.log('freshness dates count:', dates.length, 'latest:', latest);
+  // moduleType unknown: try accommodation first (common for resort/hotel), then fnb
+  const fromAcc = await runQuery(TABLE_ACCOMMODATION);
+  if (fromAcc.length > 0) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('freshness (fallback accommodation) count:', fromAcc.length, 'latest:', [...fromAcc].sort().reverse()[0]);
+    }
+    return fromAcc;
   }
-  return dates;
+  const fromFnb = await runQuery(TABLE_FNB);
+  if (process.env.NODE_ENV === 'development' && fromFnb.length > 0) {
+    console.log('freshness (fallback fnb) count:', fromFnb.length, 'latest:', [...fromFnb].sort().reverse()[0]);
+  }
+  return fromFnb;
 }
 
 /**
