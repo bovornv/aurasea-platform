@@ -157,7 +157,7 @@ export async function saveDailyMetric(
       console.log('BRANCH:', metric.branchId);
     }
 
-    const { data: member } = await supabase
+    const { data: memberRow } = await supabase
       .from('branch_members')
       .select('role')
       .eq('branch_id', metric.branchId)
@@ -165,8 +165,9 @@ export async function saveDailyMetric(
       .limit(1)
       .maybeSingle();
 
+    const member = memberRow as { role: string } | null;
     const allowedRoles = ['owner', 'manager', 'staff'];
-    if (!member || !allowedRoles.includes(member.role as string)) {
+    if (!member || !allowedRoles.includes(member.role)) {
       throw new Error("You don't have permission for this branch");
     }
 
