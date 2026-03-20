@@ -37,6 +37,7 @@ import {
   fetchCompanyTodayBundle,
   type CompanyTodayBundle,
 } from '../../services/db/company-today-data-service';
+import { fetchCompanyDailySummary } from '../../services/db/company-daily-summary-service';
 import { ActivationBlock } from '../../components/activation-block';
 import { useIntelligenceStageOrganization } from '../../hooks/use-intelligence-stage';
 import { validateOrganizationScenario } from '../../utils/validation-logger';
@@ -68,6 +69,8 @@ function OwnerSummaryContent() {
   const [showAccessDenied, setShowAccessDenied] = useState(false);
   const [companyTodayBundle, setCompanyTodayBundle] = useState<CompanyTodayBundle | null>(null);
   const [companyTodayLoading, setCompanyTodayLoading] = useState(false);
+  const [aiDailySummaryText, setAiDailySummaryText] = useState<string | null>(null);
+  const [aiDailySummaryLoading, setAiDailySummaryLoading] = useState(false);
   
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
@@ -187,6 +190,28 @@ function OwnerSummaryContent() {
       cancelled = true;
     };
   }, [mounted, groupBranchIds, refreshTrigger, activeOrganizationId, permissions.organizationId]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
+    if (!orgId) {
+      setAiDailySummaryText(null);
+      setAiDailySummaryLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAiDailySummaryLoading(true);
+    (async () => {
+      const { summaryText } = await fetchCompanyDailySummary(orgId);
+      if (!cancelled) {
+        setAiDailySummaryText(summaryText);
+        setAiDailySummaryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, activeOrganizationId, permissions.organizationId, refreshTrigger]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get branch scores sorted by lowest health score first
@@ -441,9 +466,31 @@ function OwnerSummaryContent() {
     );
   })();
 
+  const aiDailySummaryDisplay =
+    aiDailySummaryLoading
+      ? locale === 'th'
+        ? 'กำลังโหลดสรุป…'
+        : 'Loading summary…'
+      : aiDailySummaryText ??
+        (locale === 'th'
+          ? 'ยังไม่มีข้อมูลเพียงพอสำหรับสรุปวันนี้'
+          : "Not enough data for today's summary yet.");
+
   return (
     <PageLayout title="" subtitle="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <p
+          style={{
+            margin: 0,
+            fontSize: '15px',
+            fontWeight: 600,
+            lineHeight: 1.5,
+            color: aiDailySummaryLoading ? '#64748b' : '#0f172a',
+          }}
+        >
+          {aiDailySummaryDisplay}
+        </p>
+
         {showAccessDenied && (
           <div
             role="alert"

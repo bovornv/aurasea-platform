@@ -1,6 +1,9 @@
 -- Company Today page reads these objects (create in Supabase to match your today_summary_clean pipeline).
 -- Expected columns are flexible; the web app maps common aliases (see company-today-data-service.ts).
 --
+-- Unified alerts pipeline (recommended): run rebuild-alerts-enriched-engine.sql
+--   alerts_enriched (engine) → alerts_today (passthrough) → alerts_critical, alerts_top3_revenue_leaks
+--
 -- 1) branch_business_status
 --    branch_id (uuid), organization_id (uuid, optional), branch_name, branch_type ('accommodation'|'fnb'),
 --    health_score, occupancy_pct | occupancy_rate, revenue | revenue_thb, adr, rooms_sold, rooms_total | rooms_available,
@@ -16,5 +19,8 @@
 --
 -- 4) alerts_top3_revenue_leaks
 --    branch_id, branch_name?, alert_type, impact_estimate_thb, cause, recommended_action (optional rank)
+--
+-- 5) company_daily_summary (optional — AI daily blurb; see add-company-daily-summary.sql)
+--    organization_id, summary_text, updated_at
 --
 -- GRANT SELECT ON … TO authenticated;

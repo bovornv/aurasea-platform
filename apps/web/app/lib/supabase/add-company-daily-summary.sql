@@ -1,0 +1,15 @@
+-- AI / batch-generated daily blurb for Company Today (top of page).
+-- App: fetchCompanyDailySummary → .eq('organization_id', …).order('updated_at').limit(1)
+--
+-- CREATE TABLE IF NOT EXISTS company_daily_summary (
+--   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+--   organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+--   summary_text TEXT NOT NULL,
+--   summary_date DATE,
+--   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+--   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+-- );
+-- CREATE INDEX IF NOT EXISTS idx_company_daily_summary_org ON company_daily_summary(organization_id);
+-- ALTER TABLE company_daily_summary ENABLE ROW LEVEL SECURITY;
+-- -- Policy: members can SELECT their org’s row(s)
+-- GRANT SELECT ON company_daily_summary TO authenticated;
