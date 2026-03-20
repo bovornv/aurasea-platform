@@ -41,11 +41,14 @@ export interface NormalizedCriticalAlertRow {
 export interface NormalizedRevenueLeakRow {
   branchId: string;
   branchName: string;
-  issue: string;
+  /** Title line: branch — alert_type */
+  alertType: string;
   impactThb: number;
-  reason: string;
-  action: string;
+  cause: string;
+  /** Null/empty from DB → UI shows “Review performance”. */
+  recommendedAction: string | null;
   rank: number;
+  rowKey: string;
 }
 
 export interface CompanyTodayDailySummary {
@@ -361,14 +364,34 @@ export async function fetchCompanyTodayBundle(
   const revenueLeaks: NormalizedRevenueLeakRow[] = asRecordArray(leaksRes.data)
     .map((r, i) => {
       const branchId = pickStr(r, 'branch_id', 'branchId');
+      const alertType = pickStr(
+        r,
+        'alert_type',
+        'alert_title',
+        'alert_name',
+        'issue',
+        'title',
+        'name'
+      );
+      const rec = pickStr(r, 'recommended_action', 'recommendation', 'action', 'suggested_action');
+      const rowKey =
+        pickStr(r, 'id', 'alert_id', 'uuid', 'row_id') ||
+        `${branchId}:${slugDedupePart(alertType)}:${i}`;
       return {
         branchId,
         branchName: pickStr(r, 'branch_name', 'branchName') || branchNameFromLocal(branchId),
-        issue: pickStr(r, 'issue', 'alert_name', 'alert_title', 'alert_type'),
-        impactThb: pickNum(r, 'impact_estimate_thb', 'estimated_revenue_impact', 'money_leak_thb'),
-        reason: pickStr(r, 'reason', 'cause', 'alert_message'),
-        action: pickStr(r, 'recommended_action', 'recommendation', 'action'),
+        alertType,
+        impactThb: pickNum(
+          r,
+          'impact_estimate_thb',
+          'impact_estimate',
+          'estimated_revenue_impact',
+          'money_leak_thb'
+        ),
+        cause: pickStr(r, 'cause', 'reason', 'alert_message', 'message', 'description'),
+        recommendedAction: rec || null,
         rank: pickNum(r, 'rank', 'leak_rank') || i + 1,
+        rowKey,
       };
     })
     .filter((x) => x.branchId)

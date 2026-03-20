@@ -15,6 +15,6 @@
 --    impact_estimate_thb, action | recommendation
 --
 -- 4) alerts_top3_revenue_leaks
---    branch_id, branch_name?, issue | alert_name, impact_estimate_thb, reason | cause, recommended_action
+--    branch_id, branch_name?, alert_type, impact_estimate_thb, cause, recommended_action (optional rank)
 --
 -- GRANT SELECT ON … TO authenticated;
