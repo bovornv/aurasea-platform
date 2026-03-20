@@ -81,7 +81,7 @@ export default function BranchOverviewPage() {
   const [confidenceLevelFromCoverage, setConfidenceLevelFromCoverage] = useState<string | null>(null);
   // Early Signal card: accommodation uses accommodation_anomaly_signals.early_signal
   const [accommodationEarlySignal, setAccommodationEarlySignal] = useState<string | null>(null);
-  // Learning status from branch_learning_phase view
+  // Learning status from branch_learning_status (union of daily metric dates)
   const [learningPhase, setLearningPhase] = useState<BranchLearningPhaseRow | null>(null);
   // Today summary view (date-based joins): revenue_delta_day, occupancy_delta_week for Latest Performance
   const [todaySummaryRow, setTodaySummaryRow] = useState<TodaySummaryRow | null>(null);
@@ -459,7 +459,7 @@ export default function BranchOverviewPage() {
     getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
   }, [branch?.id, branch?.moduleType]);
 
-  // Learning status from branch_learning_phase
+  // Learning status from branch_learning_status
   useEffect(() => {
     if (!branch?.id) return;
     getBranchLearningPhase(branch.id).then(setLearningPhase);
@@ -1158,18 +1158,26 @@ export default function BranchOverviewPage() {
         ) : null}
 
         {/* 2. System Status Strip — thin, muted, below metrics */}
-        {learningPhase?.data_days != null && (branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb') ? (
+        {learningPhase?.data_days != null ? (
           <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>
-              {locale === 'th' ? `กำลังเรียนรู้ (${learningPhase.data_days}/30 วัน)` : `Learning (${learningPhase.data_days}/30 days)`}
+              {locale === 'th'
+                ? `กำลังเรียนรู้ (${learningPhase.data_days}/30 วัน)`
+                : `Learning (${learningPhase.data_days}/30 days)`}
             </span>
             <span style={{ color: '#9ca3af', fontSize: 10 }}>●</span>
             <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>
-              {learningPhase.data_days < 14
-                ? (locale === 'th' ? 'ความน่าเชื่อถือต่ำ ⚠' : 'Low ⚠')
-                : learningPhase.data_days < 30
-                  ? (locale === 'th' ? 'ความน่าเชื่อถือปานกลาง ⚠' : 'Medium ⚠')
-                  : (locale === 'th' ? 'ความน่าเชื่อถือสูง ✅' : 'High ✅')}
+              {learningPhase.data_days < 7
+                ? locale === 'th'
+                  ? 'ต่ำ'
+                  : 'Low'
+                : learningPhase.data_days <= 20
+                  ? locale === 'th'
+                    ? 'ปานกลาง'
+                    : 'Medium'
+                  : locale === 'th'
+                    ? 'สูง'
+                    : 'High'}
             </span>
             {learningPhase.data_days < 30 && (
               <span

@@ -222,20 +222,40 @@ export async function getEarlySignalFromAccommodationEarlySignal(
   }
 }
 
-/** Row from branch_learning_phase view (learning status per branch). */
+/** Row from branch_learning_status (preferred) or legacy branch_learning_phase. */
 export interface BranchLearningPhaseRow {
   branch_id: string;
   message_th?: string | null;
   message_en?: string | null;
+  /** Capped at 30 for UI (Learning x/30). */
   data_days?: number | null;
+  /** Raw distinct-day count from DB (may exceed 30). */
+  learning_days?: number | null;
+  first_day?: string | null;
+  last_day?: string | null;
   confidence_score?: number | null;
   learning_phase?: string | null;
   [key: string]: unknown;
 }
 
+function mapLearningStatusRow(branchId: string, row: Record<string, unknown>): BranchLearningPhaseRow {
+  const raw = Number(row.learning_days ?? row.data_days ?? 0);
+  const n = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+  const capped = Math.min(30, n);
+  const fd = row.first_day;
+  const ld = row.last_day;
+  return {
+    branch_id: branchId,
+    learning_days: n,
+    data_days: capped,
+    first_day: fd != null ? String(fd).slice(0, 10) : null,
+    last_day: ld != null ? String(ld).slice(0, 10) : null,
+  };
+}
+
 /**
- * Fetch learning status for a branch from branch_learning_phase view.
- * Limit 1 row per branch.
+ * Learning days = COUNT(DISTINCT metric_date) over accommodation_daily_metrics ∪ fnb_daily_metrics
+ * (via branch_learning_status). Falls back to branch_learning_phase if the new view is missing.
  */
 export async function getBranchLearningPhase(
   branchId: string
@@ -244,6 +264,21 @@ export async function getBranchLearningPhase(
     if (!isSupabaseAvailable() || !branchId) return null;
     const supabase = getSupabaseClient();
     if (!supabase) return null;
+
+    const { data: statusRow, error: statusErr } = await supabase
+      .from('branch_learning_status')
+      .select('branch_id, learning_days, first_day, last_day')
+      .eq('branch_id', branchId)
+      .maybeSingle();
+
+    if (!statusErr && statusRow != null) {
+      return mapLearningStatusRow(branchId, statusRow as Record<string, unknown>);
+    }
+
+    if (process.env.NODE_ENV === 'development' && statusErr) {
+      console.warn('[BranchMetricsInfo] branch_learning_status:', statusErr.message);
+    }
+
     const { data, error } = await supabase
       .from('branch_learning_phase')
       .select('*')
@@ -251,7 +286,12 @@ export async function getBranchLearningPhase(
       .limit(1)
       .maybeSingle();
     if (error || data == null) return null;
-    return data as BranchLearningPhaseRow;
+    const legacy = data as Record<string, unknown>;
+    return mapLearningStatusRow(branchId, {
+      learning_days: legacy.data_days ?? legacy.learning_days,
+      first_day: legacy.first_day,
+      last_day: legacy.last_day,
+    });
   } catch (e) {
     if (process.env.NODE_ENV === 'development') {
       console.warn('[BranchMetricsInfo] getBranchLearningPhase error:', e);
