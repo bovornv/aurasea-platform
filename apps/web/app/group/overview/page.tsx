@@ -544,30 +544,72 @@ function OwnerSummaryContent() {
     }
   }
 
-  // If no groupHealthScore, show activation block (first dashboard experience)
-  if (!groupHealthScore) {
-    return (
-      <PageLayout title="" subtitle={mounted ? businessName : 'Organization'}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <ActivationBlock />
-          {safeRawAlerts && safeRawAlerts.length > 0 && (
-            <MonitoringErrorBoundary componentName="Portfolio Alert Summary">
-              <PortfolioAlertSummary
-                alerts={safeTopGroupAlerts}
-                totalCompanyRevenue={totalCompanyRevenue}
-                locale={locale}
-              />
-            </MonitoringErrorBoundary>
-          )}
-        </div>
-      </PageLayout>
-    );
-  }
-
   // PART 6: Prevent 500 Error - wrap render logic in try-catch
   // Note: React components can't have try-catch around return, so we use ErrorBoundary instead
   // All aggregation logic is already wrapped in try-catch above
-  
+
+  const dailySummaryCard = (() => {
+    const { underperformingCount, revenueAtRisk, hasData } = dailySummary;
+    const noData =
+      !hasData &&
+      (!branchScores || branchScores.length === 0) &&
+      dailySummary.source === 'empty';
+    const amountStr = formatDailySummaryCompactThb(revenueAtRisk);
+    let sentence: React.ReactNode;
+    if (noData) {
+      sentence =
+        locale === 'th'
+          ? 'ยังไม่มีข้อมูล เริ่มบันทึกข้อมูลรายวัน'
+          : 'No data yet. Start entering daily metrics.';
+    } else if (underperformingCount === 0) {
+      sentence =
+        locale === 'th'
+          ? 'ทุกสาขาอยู่ในเกณฑ์ปกติ ไม่พบความเสี่ยงรายได้ในขณะนี้'
+          : 'All branches stable. No immediate revenue risk detected.';
+    } else {
+      const n = underperformingCount;
+      sentence =
+        locale === 'th' ? (
+          <>
+            {n} สาขาต่ำกว่าเกณฑ์ ประมาณ{' '}
+            <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span> รายได้มีความเสี่ยงวันนี้
+          </>
+        ) : (
+          <>
+            {n} branches underperforming. Estimated{' '}
+            <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span> revenue at risk today.
+          </>
+        );
+    }
+    const isStable = underperformingCount === 0 && !noData;
+    return (
+      <div
+        style={{
+          background: '#F6F7F9',
+          border: '1px solid #e5e7eb',
+          borderRadius: '12px',
+          padding: '12px 16px',
+          marginBottom: '0.25rem',
+        }}
+      >
+        <div style={{ fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>
+          🧠 {locale === 'th' ? 'สรุปรายวัน' : 'Daily Summary'}
+        </div>
+        <p
+          style={{
+            margin: 0,
+            fontSize: '14px',
+            fontWeight: 500,
+            color: isStable ? '#15803d' : '#374151',
+            lineHeight: 1.4,
+          }}
+        >
+          {sentence}
+        </p>
+      </div>
+    );
+  })();
+
   return (
     <PageLayout title="" subtitle="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -590,76 +632,26 @@ function OwnerSummaryContent() {
         <OperatingHeader />
         <DailyPrompt lastUpdated={lastUpdated?.toISOString?.()} logTodayHref={paths.branchLog} />
 
-        {/* 🧠 Daily Summary — above สถานะธุรกิจ */}
-        {(() => {
-          const { underperformingCount, revenueAtRisk, hasData } = dailySummary;
-          const noData =
-            !hasData &&
-            (!branchScores || branchScores.length === 0) &&
-            dailySummary.source === 'empty';
-          const amountStr = formatDailySummaryCompactThb(revenueAtRisk);
-          let sentence: React.ReactNode;
-          if (noData) {
-            sentence =
-              locale === 'th'
-                ? 'ยังไม่มีข้อมูล เริ่มบันทึกข้อมูลรายวัน'
-                : 'No data yet. Start entering daily metrics.';
-          } else if (underperformingCount === 0) {
-            sentence =
-              locale === 'th'
-                ? 'ทุกสาขาอยู่ในเกณฑ์ปกติ ไม่พบความเสี่ยงรายได้ในขณะนี้'
-                : 'All branches stable. No immediate revenue risk detected.';
-          } else {
-            const n = underperformingCount;
-            sentence =
-              locale === 'th' ? (
-                <>
-                  {n} สาขาต่ำกว่าเกณฑ์ ประมาณ{' '}
-                  <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span> รายได้มีความเสี่ยงวันนี้
-                </>
-              ) : (
-                <>
-                  {n} branches underperforming. Estimated{' '}
-                  <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span> revenue at risk today.
-                </>
-              );
-          }
-          const isStable = underperformingCount === 0 && !noData;
-          return (
-            <div
-              style={{
-                background: '#F6F7F9',
-                border: '1px solid #e5e7eb',
-                borderRadius: '12px',
-                padding: '12px 16px',
-                marginBottom: '1.5rem',
-              }}
-            >
-              <div style={{ fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>
-                🧠 {locale === 'th' ? 'สรุปรายวัน' : 'Daily Summary'}
-              </div>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  color: isStable ? '#15803d' : '#374151',
-                  lineHeight: 1.4,
-                }}
-              >
-                {sentence}
-              </p>
-            </div>
-          );
-        })()}
+        {/* 🧠 Daily Summary — always visible (including activation / no health score yet) */}
+        {dailySummaryCard}
 
+        {!groupHealthScore ? (
+          <>
+            <ActivationBlock />
+            {safeRawAlerts && safeRawAlerts.length > 0 && (
+              <MonitoringErrorBoundary componentName="Portfolio Alert Summary">
+                <PortfolioAlertSummary
+                  alerts={safeTopGroupAlerts}
+                  totalCompanyRevenue={totalCompanyRevenue}
+                  locale={locale}
+                />
+              </MonitoringErrorBoundary>
+            )}
+          </>
+        ) : (
+          <>
         {/* Section A — สถานะธุรกิจวันนี้ */}
         <OperatingSection title="สถานะธุรกิจวันนี้">
-          {!groupHealthScore && safeRawAlerts?.length === 0 ? (
-            <p style={{ margin: 0, fontSize: '14px', color: '#6b7280' }}>
-              กำลังเริ่มต้น — ระบบจะเรียนรู้จากข้อมูลของคุณ
-            </p>
-          ) : (
             <MonitoringErrorBoundary componentName="Portfolio Health Overview">
               {businessGroup && (
                 <PortfolioHealthOverview
@@ -673,7 +665,6 @@ function OwnerSummaryContent() {
                 />
               )}
             </MonitoringErrorBoundary>
-          )}
         </OperatingSection>
 
         {/* Section B — ระบบเตือนความเสี่ยง */}
@@ -735,6 +726,8 @@ function OwnerSummaryContent() {
         <MonitoringErrorBoundary componentName="Portfolio Branch Table">
           <PortfolioBranchTable branchScores={branchScores} alerts={safeRawAlerts || []} locale={locale} />
         </MonitoringErrorBoundary>
+          </>
+        )}
 
         <OperatingFooterTrust />
       </div>
