@@ -42,6 +42,12 @@ import { AlertsFallback } from '../../components/alerts-fallback';
 import { useOrganization } from '../../contexts/organization-context';
 import { useRbacReady } from '../../hooks/use-route-guard';
 import { calculateRevenueExposureFromAlerts } from '../../utils/revenue-exposure-calculator';
+import {
+  fetchGroupDailySummaryDbPartial,
+  mergeGroupDailySummary,
+  formatDailySummaryCompactThb,
+  invalidateDailySummaryCache,
+} from '../../services/daily-summary-service';
 import { ActivationBlock } from '../../components/activation-block';
 import { useIntelligenceStageOrganization } from '../../hooks/use-intelligence-stage';
 import { validateOrganizationScenario } from '../../utils/validation-logger';
@@ -74,6 +80,9 @@ function OwnerSummaryContent() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [showAccessDenied, setShowAccessDenied] = useState(false);
+  const [dailySummaryDb, setDailySummaryDb] = useState<Awaited<
+    ReturnType<typeof fetchGroupDailySummaryDbPartial>
+  > | null>(null);
   
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
@@ -103,13 +112,13 @@ function OwnerSummaryContent() {
     if (!mounted) return;
 
     const handleBranchOrOrganizationChange = () => {
-      // Increment refresh trigger to force useMemo hooks to recalculate
-      setRefreshTrigger(prev => prev + 1);
+      invalidateDailySummaryCache();
+      setRefreshTrigger((prev) => prev + 1);
     };
 
     const handleMetricsUpdate = () => {
-      // Trigger recalculation when metrics are updated
-      setRefreshTrigger(prev => prev + 1);
+      invalidateDailySummaryCache();
+      setRefreshTrigger((prev) => prev + 1);
     };
 
     window.addEventListener('branchUpdated', handleBranchOrOrganizationChange);
@@ -117,6 +126,7 @@ function OwnerSummaryContent() {
     window.addEventListener('storage', handleBranchOrOrganizationChange);
     window.addEventListener('metricsUpdated', handleMetricsUpdate);
     window.addEventListener('branchSelectionChanged', handleBranchOrOrganizationChange);
+    window.addEventListener('forceRecalculation', handleBranchOrOrganizationChange);
 
     return () => {
       window.removeEventListener('branchUpdated', handleBranchOrOrganizationChange);
@@ -124,6 +134,7 @@ function OwnerSummaryContent() {
       window.removeEventListener('storage', handleBranchOrOrganizationChange);
       window.removeEventListener('metricsUpdated', handleMetricsUpdate);
       window.removeEventListener('branchSelectionChanged', handleBranchOrOrganizationChange);
+      window.removeEventListener('forceRecalculation', handleBranchOrOrganizationChange);
     };
   }, [mounted]);
 
@@ -158,6 +169,33 @@ function OwnerSummaryContent() {
   const businessName = mounted 
     ? (currentBranch?.branchName || setup.businessName || businessGroup?.name || t('hospitality.dashboard.title'))
     : 'Organization';
+
+  const groupBranchIds = useMemo(() => {
+    if (!mounted || !businessGroup) return [];
+    return businessGroupService
+      .getAllBranches()
+      .filter((b) => b.businessGroupId === businessGroup.id)
+      .map((b) => b.id);
+  }, [mounted, businessGroup, refreshTrigger]);
+
+  useEffect(() => {
+    if (!mounted || groupBranchIds.length === 0) {
+      setDailySummaryDb(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const partial = await fetchGroupDailySummaryDbPartial(groupBranchIds);
+        if (!cancelled) setDailySummaryDb(partial);
+      } catch {
+        if (!cancelled) setDailySummaryDb(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, groupBranchIds, refreshTrigger, activeOrganizationId]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get branch scores sorted by lowest health score first
@@ -271,6 +309,16 @@ function OwnerSummaryContent() {
       return 0; // Safe fallback
     }
   }, [safeRawAlerts]);
+
+  const dailySummary = useMemo(() => {
+    const merged = mergeGroupDailySummary(dailySummaryDb, safeRawAlerts);
+    return {
+      underperformingCount: merged.underperformingCount,
+      revenueAtRisk: merged.revenueAtRiskThb,
+      hasData: merged.hasAlertData,
+      source: merged.source,
+    };
+  }, [dailySummaryDb, safeRawAlerts]);
 
   // PART 6: Prevent 500 Error - wrap aggregation logic
   // PART 3: Calculate total company revenue (sum of all branch revenues)
@@ -541,6 +589,69 @@ function OwnerSummaryContent() {
 
         <OperatingHeader />
         <DailyPrompt lastUpdated={lastUpdated?.toISOString?.()} logTodayHref={paths.branchLog} />
+
+        {/* 🧠 Daily Summary — above สถานะธุรกิจ */}
+        {(() => {
+          const { underperformingCount, revenueAtRisk, hasData } = dailySummary;
+          const noData =
+            !hasData &&
+            (!branchScores || branchScores.length === 0) &&
+            dailySummary.source === 'empty';
+          const amountStr = formatDailySummaryCompactThb(revenueAtRisk);
+          let sentence: React.ReactNode;
+          if (noData) {
+            sentence =
+              locale === 'th'
+                ? 'ยังไม่มีข้อมูล เริ่มบันทึกข้อมูลรายวัน'
+                : 'No data yet. Start entering daily metrics.';
+          } else if (underperformingCount === 0) {
+            sentence =
+              locale === 'th'
+                ? 'ทุกสาขาอยู่ในเกณฑ์ปกติ ไม่พบความเสี่ยงรายได้ในขณะนี้'
+                : 'All branches stable. No immediate revenue risk detected.';
+          } else {
+            const n = underperformingCount;
+            sentence =
+              locale === 'th' ? (
+                <>
+                  {n} สาขาต่ำกว่าเกณฑ์ ประมาณ{' '}
+                  <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span> รายได้มีความเสี่ยงวันนี้
+                </>
+              ) : (
+                <>
+                  {n} branches underperforming. Estimated{' '}
+                  <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span> revenue at risk today.
+                </>
+              );
+          }
+          const isStable = underperformingCount === 0 && !noData;
+          return (
+            <div
+              style={{
+                background: '#F6F7F9',
+                border: '1px solid #e5e7eb',
+                borderRadius: '12px',
+                padding: '12px 16px',
+                marginBottom: '1.5rem',
+              }}
+            >
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>
+                🧠 {locale === 'th' ? 'สรุปรายวัน' : 'Daily Summary'}
+              </div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: isStable ? '#15803d' : '#374151',
+                  lineHeight: 1.4,
+                }}
+              >
+                {sentence}
+              </p>
+            </div>
+          );
+        })()}
 
         {/* Section A — สถานะธุรกิจวันนี้ */}
         <OperatingSection title="สถานะธุรกิจวันนี้">
