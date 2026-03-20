@@ -1,0 +1,15 @@
+-- Branch Today → “Alerts & Recommendations” reads branch_alerts_today with .eq('branch_id', id).
+-- Columns are mapped flexibly in getBranchAlertsTodayForBranchOverview (latest-metrics-service.ts).
+--
+-- If you only have alerts_today, you can expose the same rows under this name:
+--
+-- CREATE OR REPLACE VIEW branch_alerts_today AS
+-- SELECT *
+-- FROM alerts_today;
+--
+-- Typical columns: branch_id, metric_date, alert_type, alert_message,
+--   impact_estimate_thb (or estimated_revenue_impact),
+--   recommended_action (or recommendation, action),
+--   alert_category, severity / alert_severity (optional, for opportunity styling)
+--
+-- GRANT SELECT ON branch_alerts_today TO authenticated;

@@ -40,7 +40,18 @@ import { BranchTodaySummary } from '../../components/operating-layer/branch-toda
 import { addDays } from '../../utils/today-summary-utils';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
-import { getOperatingStatusData, getFnbOperatingStatus, getTodaySummary, getAlertsTop, getBranchTrendSeriesWithFallback, type OperatingStatusRow, type FnbOperatingStatusRow, type TodaySummaryRow, type AlertTopRow, type BranchTrendSeries } from '../../services/db/latest-metrics-service';
+import {
+  getOperatingStatusData,
+  getFnbOperatingStatus,
+  getTodaySummary,
+  getBranchAlertsTodayForBranchOverview,
+  getBranchTrendSeriesWithFallback,
+  type OperatingStatusRow,
+  type FnbOperatingStatusRow,
+  type TodaySummaryRow,
+  type BranchTodayOverviewAlertRow,
+  type BranchTrendSeries,
+} from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
@@ -93,9 +104,9 @@ export default function BranchOverviewPage() {
   // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
   const [freshnessDatesFromRaw, setFreshnessDatesFromRaw] = useState<string[]>([]);
   const [freshnessLoaded, setFreshnessLoaded] = useState(false);
-  // Alerts & Recommendations: top 3 from alerts_top view (problems + opportunities)
-  const [alertsTop, setAlertsTop] = useState<AlertTopRow[]>([]);
-  const [alertsTopLoading, setAlertsTopLoading] = useState(true);
+  // “What needs attention today”: branch_alerts_today (current branch)
+  const [branchTodayAlerts, setBranchTodayAlerts] = useState<BranchTodayOverviewAlertRow[]>([]);
+  const [branchTodayAlertsLoading, setBranchTodayAlertsLoading] = useState(true);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
 
   // PART 1: System validation (development only)
@@ -208,7 +219,7 @@ export default function BranchOverviewPage() {
     };
   }, [mergedBranchAlerts]);
 
-  // Top 5 alerts for "Alerts & Recommendations" section (severity DESC, then confidence DESC)
+  // Top 5 alerts for “What needs attention today” (severity DESC, then confidence DESC)
   const topAlertsForToday = useMemo(() => {
     const order: Record<string, number> = { critical: 0, warning: 1, informational: 2 };
     return [...mergedBranchAlerts]
@@ -363,7 +374,7 @@ export default function BranchOverviewPage() {
   // Operating Status: F&B = fnb_operating_status + fnb_health_today; accommodation = accommodation_latest_metrics + confidence + early signal + accommodation_health_today
   const refreshOperatingStatus = useCallback(() => {
     if (!branch?.id) return;
-    setAlertsTopLoading(true);
+    setBranchTodayAlertsLoading(true);
     setFreshnessLoaded(false);
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
@@ -384,13 +395,21 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw(dates);
       setFreshnessLoaded(true);
     });
-    getAlertsTop(branch.id).then((rows) => { setAlertsTop(rows); setAlertsTopLoading(false); }).catch(() => { setAlertsTop([]); setAlertsTopLoading(false); });
+    getBranchAlertsTodayForBranchOverview(branch.id)
+      .then((rows) => {
+        setBranchTodayAlerts(rows);
+        setBranchTodayAlertsLoading(false);
+      })
+      .catch(() => {
+        setBranchTodayAlerts([]);
+        setBranchTodayAlertsLoading(false);
+      });
   }, [branch?.id, branch?.moduleType]);
 
   useEffect(() => {
     if (!branch?.id) {
-      setAlertsTop([]);
-      setAlertsTopLoading(false);
+      setBranchTodayAlerts([]);
+      setBranchTodayAlertsLoading(false);
       setFreshnessDatesFromRaw([]);
       setFreshnessLoaded(false);
       return;
@@ -404,7 +423,7 @@ export default function BranchOverviewPage() {
       if (detail?.branchId === branch?.id) {
         refreshOperatingStatus();
         getBranchLearningStatus(branch.id).then(setLearningStatus);
-        getAlertsTop(branch.id).then(setAlertsTop);
+        getBranchAlertsTodayForBranchOverview(branch.id).then(setBranchTodayAlerts);
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
@@ -1115,7 +1134,7 @@ export default function BranchOverviewPage() {
   const dataCoverageDays = Math.min(coverageDays, 30);
 
   return (
-    <PageLayout title="" subtitle={branch?.branchName ?? ''}>
+    <PageLayout title="" subtitle="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         {/* Owner dashboard: Monthly Fixed Cost not configured (accommodation, owner/super_admin only) */}
         {monthlyFixedCostStatus && !monthlyFixedCostStatus.hasValue && (
@@ -1208,24 +1227,37 @@ export default function BranchOverviewPage() {
           </div>
         ) : null}
 
-        {/* 3. Alerts & Recommendations (action layer) */}
+        {/* 3. What needs attention today (branch_alerts_today) */}
         <div style={{ marginTop: learningStatus != null ? 0 : 24 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 12 }}>
-            {locale === 'th' ? 'การแจ้งเตือนและคำแนะนำ' : 'Alerts & Recommendations'}
+            {locale === 'th' ? 'ประเด็นที่ควรดูวันนี้' : 'What needs attention today'}
           </h2>
-          {alertsTopLoading ? (
+          {branchTodayAlertsLoading ? (
             <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
-          ) : alertsTop.length === 0 ? (
-            <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.5 }}>
-              <div>{locale === 'th' ? 'ไม่พบประเด็นสำคัญวันนี้' : 'No major issues detected today'}</div>
-              <div style={{ marginTop: 6 }}>{locale === 'th' ? 'ระบบทำงานปกติ' : 'System operating normally'}</div>
+          ) : branchTodayAlerts.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.55 }}>
+              {locale === 'th'
+                ? 'ระบบทำงานเป็นปกติ — ไม่พบความเสี่ยงด้านรายได้'
+                : 'All systems operating normally — no revenue risks detected'}
             </div>
           ) : (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {alertsTop.slice(0, 3).map((alert, idx) => {
-                const isOpportunity = alert.severity === 1 && (alert.alert_type === 'High Demand Opportunity' || (alert.alert_message ?? '').toLowerCase().includes('growing'));
-                const accentColor = isOpportunity ? '#059669' : '#dc2626';
-                const d = getAlertTopDisplay(alert, locale === 'th' ? 'th' : 'en');
+              {branchTodayAlerts.slice(0, 5).map((alert, idx) => {
+                const accentColor = alert.isOpportunity ? '#059669' : '#dc2626';
+                const d = getAlertTopDisplay(
+                  {
+                    alert_type: alert.alert_type,
+                    alert_message: alert.alert_message,
+                    cause: null,
+                    recommendation: alert.recommended_action,
+                    expected_recovery: null,
+                  },
+                  locale === 'th' ? 'th' : 'en'
+                );
+                const actionFallback = locale === 'th' ? 'ทบทวนประสิทธิภาพ' : 'Review performance';
+                const actionText =
+                  (alert.recommended_action || d.recommendation || '').trim() || actionFallback;
+                const numLoc = locale === 'th' ? 'th-TH' : 'en-US';
                 return (
                   <li
                     key={`${alert.branch_id}-${alert.metric_date}-${alert.alert_type}-${idx}`}
@@ -1236,27 +1268,18 @@ export default function BranchOverviewPage() {
                       color: '#1f2937',
                     }}
                   >
-                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>
-                      {d.type}: {d.message}
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{d.type}</div>
+                    {d.message ? (
+                      <div style={{ fontSize: 14, color: '#374151', marginBottom: 6 }}>{d.message}</div>
+                    ) : null}
+                    <div style={{ fontSize: 13, color: '#b91c1c', fontWeight: 600, marginBottom: 4 }}>
+                      {locale === 'th' ? 'ผลกระทบ: ' : 'Impact: '}
+                      ฿{formatCurrency(alert.impact_estimate_thb, numLoc)}
                     </div>
-                    {d.cause ? (
-                      <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
-                        <span style={{ fontWeight: 500 }}>{locale === 'th' ? 'สาเหตุ: ' : 'Cause: '}</span>
-                        {d.cause}
-                      </div>
-                    ) : null}
-                    {d.recommendation ? (
-                      <div style={{ fontSize: 14, color: '#374151', fontWeight: 500, marginBottom: 4 }}>
-                        <span style={{ fontWeight: 500 }}>{locale === 'th' ? 'คำแนะนำ: ' : 'Recommendation: '}</span>
-                        {d.recommendation}
-                      </div>
-                    ) : null}
-                    {d.expected_recovery ? (
-                      <div style={{ fontSize: 13, color: accentColor, fontWeight: 500 }}>
-                        {locale === 'th' ? 'ผลลัพธ์ที่คาดหวัง: ' : 'Expected recovery: '}
-                        {d.expected_recovery}
-                      </div>
-                    ) : null}
+                    <div style={{ fontSize: 14, color: '#374151' }}>
+                      <span style={{ fontWeight: 600 }}>{locale === 'th' ? 'แนวทาง: ' : 'Action: '}</span>
+                      {actionText}
+                    </div>
                   </li>
                 );
               })}

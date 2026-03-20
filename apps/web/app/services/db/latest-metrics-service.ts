@@ -476,7 +476,7 @@ export async function getLatestMetricForDashboard(
   };
 }
 
-/** Row from alerts_top view (max 3 per branch: problems + opportunities). */
+/** Row from alerts_top view (legacy; prefer branch_alerts_today). */
 export interface AlertTopRow {
   branch_id: string;
   metric_date: string | null;
@@ -489,29 +489,131 @@ export interface AlertTopRow {
   rank: number;
 }
 
+function pickBranchAlertNum(r: Record<string, unknown>, ...keys: string[]): number {
+  for (const k of keys) {
+    const v = r[k];
+    if (typeof v === 'number' && isFinite(v) && !isNaN(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '') {
+      const n = Number(v.replace(/,/g, ''));
+      if (!isNaN(n) && isFinite(n)) return n;
+    }
+  }
+  return 0;
+}
+
+function pickBranchAlertStr(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+
+/** Normalized row for branch Today “Alerts & Recommendations” (source: branch_alerts_today). */
+export interface BranchTodayOverviewAlertRow {
+  branch_id: string;
+  metric_date: string | null;
+  alert_type: string;
+  alert_message: string;
+  impact_estimate_thb: number;
+  recommended_action: string;
+  isOpportunity: boolean;
+}
+
 /**
- * Fetch top alerts for a branch from alerts_top view (max 3, problems first).
+ * Today’s alerts for one branch from branch_alerts_today (not alerts_top / alerts_critical).
+ * Sorted by impact_estimate_thb DESC, then metric_date DESC.
  */
-export async function getAlertsTop(branchId: string): Promise<AlertTopRow[]> {
+export async function getBranchAlertsTodayForBranchOverview(
+  branchId: string
+): Promise<BranchTodayOverviewAlertRow[]> {
   if (branchId == null || branchId === '') return [];
   rejectMockBranchId(branchId);
   if (!isSupabaseAvailable()) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
-  const { data, error } = await supabase
-    .from('alerts_top')
-    .select('branch_id, metric_date, alert_type, severity, alert_message, cause, recommendation, expected_recovery, rank')
-    .eq('branch_id', branchId)
-    .order('rank', { ascending: true });
+  const { data, error } = await supabase.from('branch_alerts_today').select('*').eq('branch_id', branchId);
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[LatestMetricsService] alerts_top error:', error.message);
+      console.warn('[LatestMetricsService] branch_alerts_today error:', error.message);
     }
     return [];
   }
-  return (data ?? []) as AlertTopRow[];
+
+  const raw = (data ?? []) as Record<string, unknown>[];
+  const rows: BranchTodayOverviewAlertRow[] = [];
+
+  for (const r of raw) {
+    const bid = pickBranchAlertStr(r, 'branch_id', 'branchId');
+    if (!bid) continue;
+    const alertType = pickBranchAlertStr(r, 'alert_type', 'alert_name', 'type', 'title');
+    const msg = pickBranchAlertStr(r, 'alert_message', 'message', 'description');
+    const impact = pickBranchAlertNum(
+      r,
+      'impact_estimate_thb',
+      'estimated_revenue_impact',
+      'impact_estimate',
+      'money_impact_thb'
+    );
+    let action = pickBranchAlertStr(
+      r,
+      'recommended_action',
+      'recommendation',
+      'action',
+      'suggested_action'
+    );
+    const md = r.metric_date;
+    const metricDate = md != null ? String(md).slice(0, 10) : null;
+
+    const cat = String(r.alert_category ?? '').toLowerCase();
+    const sevNum = typeof r.severity === 'number' ? r.severity : Number(r.severity);
+    const sevStr = String(r.alert_severity ?? '').toLowerCase();
+    const isOpp =
+      cat === 'opportunity' ||
+      (!Number.isNaN(sevNum) && sevNum <= 1) ||
+      sevStr === 'low' ||
+      sevStr === 'informational' ||
+      /opportunity|high demand|demand is strong/i.test(alertType + msg);
+
+    rows.push({
+      branch_id: bid,
+      metric_date: metricDate,
+      alert_type: alertType || 'Alert',
+      alert_message: msg,
+      impact_estimate_thb: impact,
+      recommended_action: action,
+      isOpportunity: isOpp,
+    });
+  }
+
+  rows.sort((a, b) => {
+    if (b.impact_estimate_thb !== a.impact_estimate_thb) {
+      return b.impact_estimate_thb - a.impact_estimate_thb;
+    }
+    return (b.metric_date ?? '').localeCompare(a.metric_date ?? '');
+  });
+
+  return rows;
+}
+
+/**
+ * @deprecated Use getBranchAlertsTodayForBranchOverview (branch_alerts_today).
+ */
+export async function getAlertsTop(branchId: string): Promise<AlertTopRow[]> {
+  const rows = await getBranchAlertsTodayForBranchOverview(branchId);
+  return rows.map((row, i) => ({
+    branch_id: row.branch_id,
+    metric_date: row.metric_date,
+    alert_type: row.alert_type,
+    severity: row.isOpportunity ? 1 : 2,
+    alert_message: row.alert_message,
+    cause: null,
+    recommendation: row.recommended_action,
+    expected_recovery: null,
+    rank: i + 1,
+  }));
 }
 
 const TREND_PORTFOLIO_SELECT_FULL =
