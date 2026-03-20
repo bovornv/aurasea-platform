@@ -442,8 +442,7 @@ function OwnerSummaryContent() {
     const amountStr = formatDailySummaryCompactThb(revenueAtRisk);
     let sentence: React.ReactNode;
     if (!ready && companyTodayLoading) {
-      sentence =
-        locale === 'th' ? 'กำลังโหลดสรุปจาก branch_business_status / alerts_today…' : 'Loading summary from DB…';
+      sentence = locale === 'th' ? 'กำลังโหลดสรุป…' : 'Loading summary…';
     } else if (!ready) {
       sentence =
         locale === 'th'
@@ -451,16 +450,51 @@ function OwnerSummaryContent() {
           : 'No summary yet (no branches in group).';
     } else {
       const n = underperformingCount;
+      const hasRisk = revenueAtRisk > 0;
       sentence =
         locale === 'th' ? (
           <>
-            {n} สาขาที่ health_score ต่ำกว่า 80 · รวม impact_estimate_thb จาก alerts_today:{' '}
-            <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span>
+            {n === 0 && !hasRisk ? (
+              <>ไม่มีสาขาที่คะแนนสุขภาพต่ำกว่า 80 และไม่มีตัวเลขรายได้เสี่ยงจากการแจ้งเตือนวันนี้</>
+            ) : n === 0 && hasRisk ? (
+              <>
+                ไม่มีสาขาที่คะแนนสุขภาพต่ำกว่า 80 · ประมาณการรายได้ที่อาจได้รับผลจากการแจ้งเตือนวันนี้รวม{' '}
+                <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span>
+              </>
+            ) : (
+              <>
+                มี {n} สาขาที่คะแนนสุขภาพต่ำกว่า 80
+                {hasRisk ? (
+                  <>
+                    {' '}
+                    · ประมาณการรายได้ที่อาจได้รับผลจากการแจ้งเตือนวันนี้รวม{' '}
+                    <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span>
+                  </>
+                ) : null}
+              </>
+            )}
           </>
         ) : (
           <>
-            {n} branches with health_score below 80. Sum of impact_estimate_thb (alerts_today):{' '}
-            <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span>
+            {n === 0 && !hasRisk ? (
+              <>No branches under the health threshold (80), and no estimated revenue at risk from today&apos;s alerts.</>
+            ) : n === 0 && hasRisk ? (
+              <>
+                No branches under the health threshold (80). Estimated revenue at risk from today&apos;s alerts:{' '}
+                <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span>
+              </>
+            ) : (
+              <>
+                {n} branch{n === 1 ? '' : 'es'} under the health threshold (under 80).
+                {hasRisk ? (
+                  <>
+                    {' '}
+                    Estimated revenue at risk from today&apos;s alerts:{' '}
+                    <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span>
+                  </>
+                ) : null}
+              </>
+            )}
           </>
         );
     }
