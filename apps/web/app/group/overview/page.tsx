@@ -467,7 +467,14 @@ function OwnerSummaryContent() {
         {!groupHealthScore && <ActivationBlock />}
 
         {businessGroup && (
-          <OperatingSection title="สถานะธุรกิจวันนี้">
+          <OperatingSection
+            title={locale === 'th' ? 'สถานะธุรกิจล่าสุด' : 'Latest business status'}
+            subtitle={
+              locale === 'th'
+                ? 'แสดงข้อมูลล่าสุดของแต่ละสาขา'
+                : 'Shows latest available data per branch.'
+            }
+          >
             <MonitoringErrorBoundary componentName="Company Business Status">
               <CompanyBusinessStatusTables rows={companyTodayBundle?.businessStatus ?? []} />
             </MonitoringErrorBoundary>
