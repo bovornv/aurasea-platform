@@ -513,3 +513,177 @@ export async function getAlertsTop(branchId: string): Promise<AlertTopRow[]> {
   }
   return (data ?? []) as AlertTopRow[];
 }
+
+const TREND_PORTFOLIO_SELECT_FULL =
+  'metric_date, branch_id, total_revenue, occupancy_rate, customers, accommodation_revenue, fnb_revenue';
+const TREND_PORTFOLIO_SELECT_MIN = 'metric_date, branch_id, total_revenue, occupancy_rate, customers';
+
+/** Aggregated 7-day window across branches (from today_summary_clean). */
+export interface CompanyPortfolioTrendSnapshot {
+  ready: boolean;
+  /** Distinct dates in lookback window. */
+  distinctDates: number;
+  /** Number of days included in the “current” bucket (≤7). */
+  currentWindowDays: number;
+  totalRevenue7d: number;
+  priorTotalRevenue7d: number | null;
+  revenueChangePct: number | null;
+  avgOccupancy7d: number | null;
+  totalCustomers7d: number | null;
+  latestMetricDate: string | null;
+  accommodationRevenue7d: number;
+  fnbRevenue7d: number;
+}
+
+/**
+ * Portfolio-level trend summary for company Today page.
+ * Aggregates per calendar day across branch_ids, then last 7 days vs prior 7 (when 14+ days exist).
+ */
+export async function getCompanyPortfolioTrendSnapshot(
+  branchIds: string[],
+  lookbackDays: number = 24
+): Promise<CompanyPortfolioTrendSnapshot> {
+  const empty: CompanyPortfolioTrendSnapshot = {
+    ready: false,
+    distinctDates: 0,
+    currentWindowDays: 0,
+    totalRevenue7d: 0,
+    priorTotalRevenue7d: null,
+    revenueChangePct: null,
+    avgOccupancy7d: null,
+    totalCustomers7d: null,
+    latestMetricDate: null,
+    accommodationRevenue7d: 0,
+    fnbRevenue7d: 0,
+  };
+
+  const ids = branchIds.filter((id) => id && !String(id).startsWith('bg_'));
+  if (!isSupabaseAvailable() || ids.length === 0) return empty;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return empty;
+
+  const start = new Date();
+  start.setDate(start.getDate() - lookbackDays);
+  const startStr = start.toISOString().split('T')[0]!;
+
+  let rows: unknown[] | null = null;
+  const { data: full, error: errFull } = await supabase
+    .from('today_summary_clean')
+    .select(TREND_PORTFOLIO_SELECT_FULL)
+    .in('branch_id', ids)
+    .gte('metric_date', startStr)
+    .order('metric_date', { ascending: true });
+
+  if (!errFull && full && full.length > 0) {
+    rows = full;
+  } else {
+    const { data: min, error: errMin } = await supabase
+      .from('today_summary_clean')
+      .select(TREND_PORTFOLIO_SELECT_MIN)
+      .in('branch_id', ids)
+      .gte('metric_date', startStr)
+      .order('metric_date', { ascending: true });
+    if (!errMin && min && min.length > 0) rows = min;
+    else {
+      if (process.env.NODE_ENV === 'development' && (errFull || errMin)) {
+        console.warn(
+          '[LatestMetricsService] portfolio trend:',
+          errFull?.message || errMin?.message
+        );
+      }
+      return empty;
+    }
+  }
+
+  type Agg = {
+    revenue: number;
+    occSum: number;
+    occCount: number;
+    customers: number;
+    accom: number;
+    fnb: number;
+  };
+  const byDate = new Map<string, Agg>();
+
+  for (const raw of rows) {
+    const r = raw as Record<string, unknown>;
+    if (r.metric_date == null) continue;
+    const d = String(r.metric_date).slice(0, 10);
+    const cur: Agg = byDate.get(d) ?? {
+      revenue: 0,
+      occSum: 0,
+      occCount: 0,
+      customers: 0,
+      accom: 0,
+      fnb: 0,
+    };
+    cur.revenue += Number(r.total_revenue ?? 0);
+    const orv = r.occupancy_rate;
+    if (orv != null && !Number.isNaN(Number(orv))) {
+      let occ = Number(orv);
+      if (occ > 0 && occ <= 1) occ *= 100;
+      cur.occSum += occ;
+      cur.occCount += 1;
+    }
+    cur.customers += Number(r.customers ?? 0);
+    cur.accom += Number(r.accommodation_revenue ?? 0);
+    cur.fnb += Number(r.fnb_revenue ?? 0);
+    byDate.set(d, cur);
+  }
+
+  const dates = [...byDate.keys()].sort();
+  if (dates.length === 0) return empty;
+
+  const latestMetricDate = dates[dates.length - 1] ?? null;
+  const tailDates = dates.slice(-7);
+  const priorDates = dates.length >= 14 ? dates.slice(-14, -7) : [];
+
+  let totalRevenue7d = 0;
+  let occNumerator = 0;
+  let occDenominator = 0;
+  let totalCustomers7d = 0;
+  let accommodationRevenue7d = 0;
+  let fnbRevenue7d = 0;
+
+  for (const d of tailDates) {
+    const a = byDate.get(d);
+    if (!a) continue;
+    totalRevenue7d += a.revenue;
+    totalCustomers7d += a.customers;
+    accommodationRevenue7d += a.accom;
+    fnbRevenue7d += a.fnb;
+    if (a.occCount > 0) {
+      occNumerator += a.occSum / a.occCount;
+      occDenominator += 1;
+    }
+  }
+
+  let priorTotalRevenue7d: number | null = null;
+  if (priorDates.length === 7) {
+    priorTotalRevenue7d = priorDates.reduce((sum, d) => sum + (byDate.get(d)?.revenue ?? 0), 0);
+  }
+
+  let revenueChangePct: number | null = null;
+  if (priorTotalRevenue7d != null && priorTotalRevenue7d > 0) {
+    revenueChangePct = ((totalRevenue7d - priorTotalRevenue7d) / priorTotalRevenue7d) * 100;
+  }
+
+  const avgOccupancy7d = occDenominator > 0 ? occNumerator / occDenominator : null;
+
+  const ready = tailDates.length >= 1 && totalRevenue7d > 0;
+
+  return {
+    ready,
+    distinctDates: dates.length,
+    currentWindowDays: tailDates.length,
+    totalRevenue7d,
+    priorTotalRevenue7d,
+    revenueChangePct,
+    avgOccupancy7d,
+    totalCustomers7d: totalCustomers7d > 0 ? totalCustomers7d : null,
+    latestMetricDate,
+    accommodationRevenue7d,
+    fnbRevenue7d,
+  };
+}

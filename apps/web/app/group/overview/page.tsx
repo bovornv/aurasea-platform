@@ -46,6 +46,11 @@ import { OperatingSection } from '../../components/operating-layer/operating-sec
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { CompanyLastUpdated } from '../../components/company/company-last-updated';
 import { CompanyBusinessStatusTables } from '../../components/company/company-business-status-tables';
+import { CompanyBusinessTrendSummary } from '../../components/company/company-business-trend-summary';
+import {
+  getCompanyPortfolioTrendSnapshot,
+  type CompanyPortfolioTrendSnapshot,
+} from '../../services/db/latest-metrics-service';
 function OwnerSummaryContent() {
   // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONALS, NO EARLY RETURNS
   const router = useRouter();
@@ -71,6 +76,8 @@ function OwnerSummaryContent() {
   const [companyTodayLoading, setCompanyTodayLoading] = useState(false);
   const [aiDailySummaryText, setAiDailySummaryText] = useState<string | null>(null);
   const [aiDailySummaryLoading, setAiDailySummaryLoading] = useState(false);
+  const [portfolioTrendSnapshot, setPortfolioTrendSnapshot] = useState<CompanyPortfolioTrendSnapshot | null>(null);
+  const [portfolioTrendLoading, setPortfolioTrendLoading] = useState(false);
   
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
@@ -212,6 +219,26 @@ function OwnerSummaryContent() {
       cancelled = true;
     };
   }, [mounted, activeOrganizationId, permissions.organizationId, refreshTrigger]);
+
+  useEffect(() => {
+    if (!mounted || groupBranchIds.length === 0) {
+      setPortfolioTrendSnapshot(null);
+      setPortfolioTrendLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPortfolioTrendLoading(true);
+    (async () => {
+      const snap = await getCompanyPortfolioTrendSnapshot(groupBranchIds, 24);
+      if (!cancelled) {
+        setPortfolioTrendSnapshot(snap);
+        setPortfolioTrendLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, groupBranchIds, refreshTrigger]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get branch scores sorted by lowest health score first
@@ -528,18 +555,23 @@ function OwnerSummaryContent() {
           </OperatingSection>
         )}
 
-        <OperatingSection title="แนวโน้มธุรกิจ">
-          {coverageDays < 7 ? (
-            <p style={{ margin: 0, fontSize: '14px', color: '#6b7280' }}>
-              ข้อมูลยังไม่ครบ 7 วัน ระบบกำลังรวบรวมข้อมูล
-            </p>
-          ) : (
-            <p style={{ margin: 0, fontSize: '14px', color: '#374151' }}>
-              {locale === 'th'
-                ? 'รายได้ 7 วัน · อัตราการเข้าพัก/ยอดขาย · แนวโน้มต้นทุน — ดูรายละเอียดในหน้าแนวโน้ม'
-                : '7-day revenue · Occupancy/sales · Cost trend — see Trends page for details.'}
-            </p>
-          )}
+        <OperatingSection
+          title={locale === 'th' ? 'แนวโน้มธุรกิจ' : 'Business trends'}
+          subtitle={
+            locale === 'th'
+              ? 'สรุปจาก today_summary_clean ทุกสาขาในกลุ่ม (รายได้ · เทียบสัปดาห์ก่อน · เข้าพัก/ลูกค้า)'
+              : 'From today_summary_clean across your branches (revenue · week-over-week · occupancy/customers).'
+          }
+        >
+          <MonitoringErrorBoundary componentName="Company business trends">
+            <CompanyBusinessTrendSummary
+              snapshot={portfolioTrendSnapshot}
+              loading={portfolioTrendLoading}
+              locale={locale}
+              coverageDays={coverageDays}
+              trendsUrl={paths.companyTrends}
+            />
+          </MonitoringErrorBoundary>
         </OperatingSection>
 
         <OperatingSection title={locale === 'th' ? 'การแจ้งเตือนวิกฤติ' : 'Critical Alerts'}>
