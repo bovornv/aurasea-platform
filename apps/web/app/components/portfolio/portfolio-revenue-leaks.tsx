@@ -1,10 +1,9 @@
 /**
- * Portfolio Revenue Leaks Component
- * 
- * Top 3 revenue leaks with impact and actions
+ * Portfolio Revenue Leaks — Company Today: always up to 3 rows by impact_estimate (revenueImpact), no “stable” empty.
  */
 'use client';
 
+import { useMemo } from 'react';
 import { SectionCard } from '../section-card';
 import { formatCurrency } from '../../utils/formatting';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
@@ -15,121 +14,129 @@ interface PortfolioRevenueLeaksProps {
   locale: string;
 }
 
+function impactThb(alert: AlertContract): number {
+  const extended = alert as ExtendedAlertContract;
+  const impact = extended.revenueImpact;
+  if (typeof impact !== 'number' || !isFinite(impact) || isNaN(impact) || impact < 0) return 0;
+  return impact;
+}
+
 export function PortfolioRevenueLeaks({ alerts, locale }: PortfolioRevenueLeaksProps) {
-  // PART 4: Top 3 Revenue Leaks (Company Level)
-  // Must:
-  // - Combine all branch revenue leaks
-  // - Sort by revenueImpact descending
-  // - Return top 3 globally
-  // - Ensure: No duplicate alert types per branch
-  // - Ensure: No 0-impact leaks
-  // - Rolling 30-day calculation only
-  
-  // PART 4: Filter to alerts with positive revenue impact (no 0-impact leaks)
-  const alertsWithImpact = alerts.filter((alert): alert is ExtendedAlertContract => {
-    const extended = alert as ExtendedAlertContract;
-    const impact = extended.revenueImpact;
-    // PART 9: Numerical Stability - ensure impact is valid
-    if (typeof impact !== 'number' || !isFinite(impact) || isNaN(impact) || impact <= 0) {
-      return false;
+  const branchNamesMap = useMemo(() => {
+    if (typeof window === 'undefined') return new Map<string, string>();
+    try {
+      const { businessGroupService } = require('../../services/business-group-service');
+      const map = new Map<string, string>();
+      businessGroupService.getAllBranches().forEach((b: { id: string; branchName?: string }) => {
+        if (b.id && b.branchName) map.set(b.id, b.branchName);
+      });
+      return map;
+    } catch {
+      return new Map<string, string>();
     }
-    return true;
-  });
+  }, [alerts]);
 
-  // PART 4: Deduplicate by alert code + branchId (no duplicate alert types per branch)
-  // Use Map with key = code + branchId to keep separate alerts per branch
-  const uniqueAlertsMap = new Map<string, ExtendedAlertContract>();
-  alertsWithImpact.forEach(alert => {
-    const code = (alert as any).code || alert.id;
-    const branchId = alert.branchId || 'unknown';
-    const uniqueKey = `${code}_${branchId}`;
-    // Keep the alert with highest impact if duplicate exists
-    if (!uniqueAlertsMap.has(uniqueKey)) {
-      uniqueAlertsMap.set(uniqueKey, alert);
-    } else {
-      const existing = uniqueAlertsMap.get(uniqueKey)!;
-      if ((alert.revenueImpact || 0) > (existing.revenueImpact || 0)) {
-        uniqueAlertsMap.set(uniqueKey, alert);
+  const topThree = useMemo(() => {
+    const list = Array.isArray(alerts) ? [...alerts] : [];
+    const uniqueAlertsMap = new Map<string, ExtendedAlertContract>();
+    list.forEach((alert) => {
+      const ext = alert as ExtendedAlertContract;
+      const code = (alert as { code?: string }).code || alert.id;
+      const branchId = alert.branchId || 'unknown';
+      const uniqueKey = `${code}_${branchId}`;
+      if (!uniqueAlertsMap.has(uniqueKey)) {
+        uniqueAlertsMap.set(uniqueKey, ext);
+      } else {
+        const existing = uniqueAlertsMap.get(uniqueKey)!;
+        if (impactThb(ext) > impactThb(existing)) uniqueAlertsMap.set(uniqueKey, ext);
       }
-    }
-  });
+    });
 
-  // PART 4: Sort by revenueImpact descending, return top 3 globally
-  const revenueLeakAlerts = Array.from(uniqueAlertsMap.values())
-    .map(alert => ({
-      ...alert,
-      // moneyLeakTHB is the same as revenueImpact (already in THB)
-      moneyLeakTHB: alert.revenueImpact || 0,
-    }))
-    .sort((a, b) => {
-      // PART 9: Numerical Stability - ensure values are valid
-      const aImpact = isFinite(a.moneyLeakTHB) && !isNaN(a.moneyLeakTHB) ? a.moneyLeakTHB : 0;
-      const bImpact = isFinite(b.moneyLeakTHB) && !isNaN(b.moneyLeakTHB) ? b.moneyLeakTHB : 0;
-      return bImpact - aImpact;
-    })
-    .slice(0, 3);
-
-  if (revenueLeakAlerts.length === 0) {
-    return (
-      <SectionCard title={locale === 'th' ? '3 รายการที่ทำให้สูญเสียรายได้มากที่สุด' : 'Top 3 Revenue Leaks'}>
-        <div style={{ 
-          padding: '2rem', 
-          textAlign: 'center', 
-          backgroundColor: '#f0fdf4',
-          border: '1px solid #bbf7d0',
-          borderRadius: '6px',
-        }}>
-          <div style={{ fontSize: '16px', fontWeight: 600, color: '#166534', marginBottom: '0.5rem' }}>
-            {locale === 'th' ? '✓ ไม่พบความเสี่ยงการสูญเสียรายได้' : '✓ No concentration risk detected'}
-          </div>
-          <div style={{ fontSize: '14px', color: '#6b7280' }}>
-            {locale === 'th' 
-              ? 'ระบบไม่พบการสูญเสียรายได้ที่สำคัญในเดือนนี้'
-              : 'No significant revenue leaks or concentration risks detected this month.'}
-          </div>
-        </div>
-      </SectionCard>
+    const ranked = Array.from(uniqueAlertsMap.values()).sort(
+      (a, b) => impactThb(b as AlertContract) - impactThb(a as AlertContract)
     );
-  }
+
+    const take = ranked.slice(0, 3);
+    const pad: Array<{ alert: ExtendedAlertContract | null; filler: boolean }> = take.map((a) => ({
+      alert: a,
+      filler: false,
+    }));
+    while (pad.length < 3) {
+      pad.push({ alert: null, filler: true });
+    }
+    return pad;
+  }, [alerts]);
+
+  const title = locale === 'th' ? '3 รายการเสี่ยงรายได้สูงสุด' : 'Top 3 Revenue Leaks';
 
   return (
-    <SectionCard title={locale === 'th' ? '3 รายการที่ทำให้สูญเสียรายได้มากที่สุด' : 'Top 3 Revenue Leaks'}>
+    <SectionCard title={title}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        {revenueLeakAlerts.map((alert, idx) => {
-          const actionHint = alert.conditions?.find(c => c.toLowerCase().includes('recommend')) 
-            || alert.conditions?.find(c => c.toLowerCase().includes('action'))
-            || alert.conditions?.[alert.conditions.length - 1]
-            || (locale === 'th' ? 'ตรวจสอบรายละเอียดการแจ้งเตือนสำหรับแนวทางที่แนะนำ' : 'Review alert details for suggested actions');
+        {topThree.map((row, idx) => {
+          if (row.filler || !row.alert) {
+            return (
+              <div
+                key={`filler-${idx}`}
+                style={{
+                  padding: '1rem',
+                  backgroundColor: '#f9fafb',
+                  border: '1px dashed #e5e7eb',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: '#6b7280',
+                }}
+              >
+                {locale === 'th'
+                  ? `${idx + 1}. ยังไม่มีสัญญาณเสี่ยงอันดับถัดไป — บันทึกข้อมูลต่อเนื่องเพื่อให้ระบบแสดงความเสี่ยงที่เหลือ`
+                  : `${idx + 1}. No further ranked risk in the top 3 — keep logging to surface additional signals.`}
+              </div>
+            );
+          }
+          const alert = row.alert;
+          const bid = alert.branchId;
+          const branchLabel =
+            bid && branchNamesMap.has(bid)
+              ? branchNamesMap.get(bid)!
+              : locale === 'th'
+                ? 'ทั้งองค์กร'
+                : 'Organization';
+          const issue = alert.revenueImpactTitle || alert.message?.split('.')[0] || alert.id;
+          const imp = impactThb(alert as AlertContract);
+          const reason =
+            alert.contributingFactors?.[0]?.factor ||
+            alert.message?.split('.').slice(0, 2).join('.').trim() ||
+            '—';
+          const action =
+            alert.revenueImpactDescription ||
+            alert.conditions?.find((c) => /recommend|action|review/i.test(c)) ||
+            (alert.conditions?.length ? alert.conditions[alert.conditions.length - 1] : null) ||
+            (locale === 'th' ? 'ดูหน้าการแจ้งเตือนสำหรับขั้นตอนถัดไป' : 'See Alerts for recommended next steps.');
 
           return (
             <div
-              key={alert.id}
+              key={`${alert.id}-${bid ?? idx}`}
               style={{
                 padding: '1rem',
                 backgroundColor: '#ffffff',
                 border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                display: 'flex',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                gap: '1rem',
+                borderRadius: '8px',
               }}
             >
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '15px', fontWeight: 600, color: '#0a0a0a', marginBottom: '0.25rem' }}>
-                  {alert.revenueImpactTitle || alert.message.split('.')[0]}
-                </div>
-                <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '0.5rem', lineHeight: '1.5' }}>
-                  {alert.revenueImpactDescription || alert.message}
-                </div>
-                <div style={{ fontSize: '12px', color: '#6b7280', fontStyle: 'italic' }}>
-                  💡 {actionHint}
-                </div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '0.5rem' }}>
+                {idx + 1}. {branchLabel} — {issue}
               </div>
-              <div style={{ textAlign: 'right', minWidth: '120px' }}>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: '#ef4444' }}>
-                  ฿{formatCurrency(alert.revenueImpact)}/mo
-                </div>
+              <div style={{ fontSize: '13px', color: '#b91c1c', fontWeight: 600, marginBottom: '0.35rem' }}>
+                {locale === 'th' ? 'ผลกระทบ: ' : 'Impact: '}
+                ฿{formatCurrency(imp)}
+                {locale === 'th' ? ' ต่อเดือน (ประมาณการ)' : '/mo (est.)'}
+              </div>
+              <div style={{ fontSize: '13px', color: '#4b5563', marginBottom: '0.35rem', lineHeight: 1.45 }}>
+                <span style={{ fontWeight: 600 }}>{locale === 'th' ? 'เหตุผล: ' : 'Reason: '}</span>
+                {reason}
+              </div>
+              <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.45 }}>
+                <span style={{ fontWeight: 600 }}>{locale === 'th' ? 'แนะนำ: ' : 'Recommended action: '}</span>
+                {action}
               </div>
             </div>
           );

@@ -21,9 +21,41 @@ interface CriticalAlertsSnapshotProps {
   locale?: string;
   /** When true and no alerts: show init message instead of "System Stable". */
   alertsInitializing?: boolean;
+  /** Company Today page: severity-3 / critical first, impact sort, backfill, no “System stable” empty. */
+  layoutVariant?: 'default' | 'companyToday';
 }
 
-export function CriticalAlertsSnapshot({ alerts, viewType, locale = 'en', alertsInitializing }: CriticalAlertsSnapshotProps) {
+function isMaxSeverityAlert(alert: AlertContract): boolean {
+  if (alert.severity === 'critical') return true;
+  const ext = alert as unknown as Record<string, unknown>;
+  const n = ext.severityNumeric ?? ext.severity_level ?? ext.severityLevel;
+  return n === 3 || n === '3';
+}
+
+function alertUniqueKey(alert: AlertContract): string {
+  const code = (alert as { code?: string }).code || alert.id;
+  return `${code}_${alert.branchId || 'unknown'}`;
+}
+
+function isAlertRecent(alert: AlertContract, now: Date): boolean {
+  if (!alert.timestamp) return true;
+  try {
+    const alertDate = new Date(alert.timestamp);
+    if (isNaN(alertDate.getTime())) return true;
+    const alertAgeDays = (now.getTime() - alertDate.getTime()) / (1000 * 60 * 60 * 24);
+    return alertAgeDays <= 30;
+  } catch {
+    return true;
+  }
+}
+
+export function CriticalAlertsSnapshot({
+  alerts,
+  viewType,
+  locale = 'en',
+  alertsInitializing,
+  layoutVariant = 'default',
+}: CriticalAlertsSnapshotProps) {
   const router = useRouter();
   const paths = useOrgBranchPaths();
 
@@ -88,10 +120,37 @@ export function CriticalAlertsSnapshot({ alerts, viewType, locale = 'en', alerts
       }
     });
     const deduplicatedAlerts = Array.from(uniqueAlertsMap.values());
+    const now = new Date();
+    const recentDeduped = deduplicatedAlerts.filter((a) => isAlertRecent(a, now));
+
+    if (layoutVariant === 'companyToday' && viewType === 'company') {
+      const byImpactDesc = (a: AlertContract, b: AlertContract) =>
+        safeRevenueImpact(b) - safeRevenueImpact(a);
+      const maxSev = recentDeduped.filter(isMaxSeverityAlert).sort(byImpactDesc);
+      let picked: AlertContract[] = maxSev.slice(0, 5);
+      if (picked.length < 3) {
+        const keys = new Set(picked.map(alertUniqueKey));
+        for (const a of [...recentDeduped].sort(byImpactDesc)) {
+          if (picked.length >= 5) break;
+          const k = alertUniqueKey(a);
+          if (keys.has(k)) continue;
+          picked.push(a);
+          keys.add(k);
+        }
+      }
+      if (picked.length === 0) {
+        picked = [...recentDeduped].sort(byImpactDesc).slice(0, 5);
+      }
+      return picked.map((alert) => ({
+        ...alert,
+        estimatedRevenueImpact: safeRevenueImpact(alert),
+        moneyImpactTHB: safeRevenueImpact(alert),
+        branchId: alert.branchId,
+      }));
+    }
 
     // PART 1.3: Only alerts with severity === 'critical' appear (not warning)
     // Filter out ghost alerts from old scenarios by checking timestamp
-    const now = new Date();
     const criticalAlerts = deduplicatedAlerts.filter(alert => {
       // PART 1.3: Only include critical severity (not warning)
       if (alert.severity !== 'critical') {
@@ -174,57 +233,173 @@ export function CriticalAlertsSnapshot({ alerts, viewType, locale = 'en', alerts
       estimatedRevenueImpact: 0,
       moneyImpactTHB: 0,
     }));
-  }, [safeAlerts]);
+  }, [safeAlerts, layoutVariant, viewType]);
 
   const handleViewAll = () => {
     const href = viewType === 'company' ? paths.companyAlerts : paths.branchAlerts;
     if (href) router.push(href);
   };
 
-  return (
-    <SectionCard title={locale === 'th' ? 'ภาพรวมการแจ้งเตือนที่สำคัญ' : 'Critical Alerts Snapshot'}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {/* Subtitle */}
-        <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '0.5rem' }}>
-          {locale === 'th' 
-            ? 'ปัญหาที่อาจทำให้คุณสูญเสียเงินในขณะนี้'
-            : 'These issues may be costing you money right now.'}
-        </div>
+  const isCompanyToday = layoutVariant === 'companyToday' && viewType === 'company';
+  const sectionTitle = isCompanyToday
+    ? locale === 'th'
+      ? 'การแจ้งเตือนวิกฤติ'
+      : 'Critical Alerts'
+    : locale === 'th'
+      ? 'ภาพรวมการแจ้งเตือนที่สำคัญ'
+      : 'Critical Alerts Snapshot';
 
-        {/* Alerts List */}
-        {/* PHASE 3: Show init message when coverage < 7 days, else green status when no alerts */}
+  const resolveAlertTitle = (alert: AlertContract, extended: ExtendedAlertContract): string => {
+    let alertTitle = extended.revenueImpactTitle;
+    if (!alertTitle && alert.message) {
+      const firstSentence = alert.message.split('.')[0].trim();
+      alertTitle = firstSentence.replace(/:\s*0(\.\d+)?\s*$/, '').trim() || firstSentence;
+      if (alertTitle.includes(':') && alertTitle.split(':').length > 1) {
+        const parts = alertTitle.split(':');
+        alertTitle = parts[parts.length - 1].trim() || parts[0].trim();
+      }
+    }
+    if (!alertTitle || alertTitle === alert.id) {
+      alertTitle = alert.id
+        .replace(/-/g, ' ')
+        .replace(/\b\w/g, (l) => l.toUpperCase())
+        .replace(/liquidity runway risk/gi, 'Liquidity Runway Risk');
+    }
+    return alertTitle;
+  };
+
+  const inner = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {!isCompanyToday && (
+          <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '0.5rem' }}>
+            {locale === 'th'
+              ? 'ปัญหาที่อาจทำให้คุณสูญเสียเงินในขณะนี้'
+              : 'These issues may be costing you money right now.'}
+          </div>
+        )}
+
         {topAlerts.length === 0 ? (
-          <div style={{ 
-            padding: '2rem', 
-            textAlign: 'center', 
-            backgroundColor: alertsInitializing ? '#fefce8' : '#f0fdf4',
-            border: alertsInitializing ? '1px solid #fef08a' : '1px solid #bbf7d0',
-            borderRadius: '6px',
-          }}>
+          <div
+            style={{
+              padding: '1.25rem',
+              textAlign: 'center',
+              backgroundColor: alertsInitializing ? '#fefce8' : isCompanyToday ? '#f9fafb' : '#f0fdf4',
+              border: alertsInitializing
+                ? '1px solid #fef08a'
+                : isCompanyToday
+                  ? '1px solid #e5e7eb'
+                  : '1px solid #bbf7d0',
+              borderRadius: '6px',
+            }}
+          >
             {alertsInitializing ? (
               <>
                 <div style={{ fontSize: '16px', fontWeight: 600, color: '#854d0e', marginBottom: '0.5rem' }}>
                   {locale === 'th' ? 'กำลังเตรียมความพร้อมของระบบ' : 'Operational Intelligence initializing'}
                 </div>
                 <div style={{ fontSize: '14px', color: '#6b7280' }}>
-                  {locale === 'th' 
+                  {locale === 'th'
                     ? 'บันทึกข้อมูลอย่างน้อย 7 วันเพื่อเปิดใช้งานการแจ้งเตือน'
                     : 'Log 7 days of data to activate alerts.'}
                 </div>
               </>
+            ) : isCompanyToday ? (
+              <div style={{ fontSize: '14px', color: '#6b7280' }}>
+                {locale === 'th'
+                  ? 'ยังไม่มีการแจ้งเตือน — บันทึกข้อมูลรายวันเพื่อให้ระบบประเมินความเสี่ยง'
+                  : 'No alerts yet — keep logging daily metrics so the system can surface risks.'}
+              </div>
             ) : (
               <>
                 <div style={{ fontSize: '16px', fontWeight: 600, color: '#166534', marginBottom: '0.5rem' }}>
                   {locale === 'th' ? '✓ ระบบเสถียร' : '✓ System Stable'}
                 </div>
                 <div style={{ fontSize: '14px', color: '#6b7280' }}>
-                  {locale === 'th' 
-                    ? 'ยังไม่พบความเสี่ยงที่ต้องดำเนินการ'
-                    : 'No risks requiring action at this time.'}
+                  {locale === 'th' ? 'ยังไม่พบความเสี่ยงที่ต้องดำเนินการ' : 'No risks requiring action at this time.'}
                 </div>
               </>
             )}
           </div>
+        ) : isCompanyToday ? (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {topAlerts.map((alert) => {
+                const extended = alert as ExtendedAlertContract;
+                const impact = safeRevenueImpact(alert);
+                const alertTitle = resolveAlertTitle(alert, extended);
+                const branchName =
+                  alert.branchId && branchNamesMap.has(alert.branchId)
+                    ? branchNamesMap.get(alert.branchId)!
+                    : locale === 'th'
+                      ? 'ทั้งองค์กร'
+                      : 'Organization';
+                const cause =
+                  alert.contributingFactors?.[0]?.factor ||
+                  alert.message?.split('.').slice(0, 2).join('.').trim() ||
+                  '—';
+                const actionLine =
+                  extended.revenueImpactDescription ||
+                  alert.conditions?.find((c) => /recommend|action|review/i.test(c)) ||
+                  alert.conditions?.[alert.conditions.length - 1] ||
+                  (locale === 'th' ? 'ดูรายละเอียดในหน้าการแจ้งเตือน' : 'Review full alerts for next steps.');
+                return (
+                  <div
+                    key={`${alert.id}-${alert.branchId ?? ''}`}
+                    style={{
+                      padding: '1rem',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '0.35rem' }}>
+                      {branchName}
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#111827', marginBottom: '0.5rem' }}>
+                      {alertTitle}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#4b5563', marginBottom: '0.35rem', lineHeight: 1.45 }}>
+                      <span style={{ fontWeight: 600 }}>Cause:</span> {cause}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#4b5563', marginBottom: '0.35rem' }}>
+                      <span style={{ fontWeight: 600 }}>Impact:</span>{' '}
+                      {impact > 0 ? (
+                        <span style={{ fontWeight: 600, color: '#b91c1c' }}>
+                          ฿{formatCurrency(impact)} {locale === 'th' ? 'ต่อเดือน ความเสี่ยงต่อรายได้' : 'THB/mo at risk'}
+                        </span>
+                      ) : (
+                        <span>{locale === 'th' ? 'ประเมินผลกระทบเมื่อมีข้อมูลเพิ่ม' : 'Impact TBD as data fills in'}</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#374151', lineHeight: 1.45 }}>
+                      <span style={{ fontWeight: 600 }}>Action:</span> {actionLine}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              onClick={handleViewAll}
+              style={{
+                marginTop: '0.5rem',
+                padding: '0.625rem 1rem',
+                backgroundColor: 'transparent',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: 500,
+                color: '#374151',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+              }}
+            >
+              {locale === 'th' ? 'ดูการแจ้งเตือนทั้งหมด' : 'View All Alerts'}
+              <span>→</span>
+            </button>
+          </>
         ) : (
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -383,6 +558,11 @@ export function CriticalAlertsSnapshot({ alerts, viewType, locale = 'en', alerts
           </>
         )}
       </div>
-    </SectionCard>
   );
+
+  if (isCompanyToday) {
+    return inner;
+  }
+
+  return <SectionCard title={sectionTitle}>{inner}</SectionCard>;
 }

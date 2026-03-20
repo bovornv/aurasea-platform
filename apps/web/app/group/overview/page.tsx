@@ -16,7 +16,6 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { PageLayout } from '../../components/page-layout';
 import { useOrgBranchPaths } from '../../hooks/use-org-branch-paths';
 import { LoadingSpinner } from '../../components/loading-spinner';
-import { ErrorState } from '../../components/error-state';
 import { useHealthScore } from '../../hooks/use-health-score';
 import { useHospitalityAlerts } from '../../hooks/use-hospitality-alerts';
 import { useUserSession } from '../../contexts/user-session-context';
@@ -26,19 +25,10 @@ import { useCurrentBranch } from '../../hooks/use-current-branch';
 import { useI18n } from '../../hooks/use-i18n';
 import { useTestMode } from '../../providers/test-mode-provider';
 import { businessGroupService } from '../../services/business-group-service';
-import { getBranchHealthScores, getGroupHealthScore } from '../../services/health-score-service';
-import { operationalSignalsService } from '../../services/operational-signals-service';
-import { ModuleType } from '../../models/business-group';
-import { PortfolioHealthOverview } from '../../components/portfolio/portfolio-health-overview';
-import { PortfolioAlertSummary } from '../../components/portfolio/portfolio-alert-summary';
-import { PortfolioAlertMovement } from '../../components/portfolio/portfolio-alert-movement';
+import { getBranchHealthScores } from '../../services/health-score-service';
 import { PortfolioRevenueLeaks } from '../../components/portfolio/portfolio-revenue-leaks';
-import { PortfolioRecommendedActions } from '../../components/portfolio/portfolio-recommended-actions';
-import { PortfolioBranchTable } from '../../components/portfolio/portfolio-branch-table';
 import { CriticalAlertsSnapshot } from '../../components/alerts/critical-alerts-snapshot';
 import { MonitoringErrorBoundary } from '../../components/monitoring-error-boundary';
-import { HealthScoreFallback } from '../../components/health-score-fallback';
-import { AlertsFallback } from '../../components/alerts-fallback';
 import { useOrganization } from '../../contexts/organization-context';
 import { useRbacReady } from '../../hooks/use-route-guard';
 import { calculateRevenueExposureFromAlerts } from '../../utils/revenue-exposure-calculator';
@@ -52,13 +42,10 @@ import { ActivationBlock } from '../../components/activation-block';
 import { useIntelligenceStageOrganization } from '../../hooks/use-intelligence-stage';
 import { validateOrganizationScenario } from '../../utils/validation-logger';
 import { useSystemValidation } from '../../hooks/use-system-validation';
-import { OperatingHeader } from '../../components/operating-layer/operating-header';
 import { OperatingSection } from '../../components/operating-layer/operating-section';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
-import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
-import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
-import type { ExtendedAlertContract } from '../../services/monitoring-service';
-
+import { CompanyLastUpdated } from '../../components/company/company-last-updated';
+import { CompanyBusinessStatusTables } from '../../components/company/company-business-status-tables';
 function OwnerSummaryContent() {
   // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONALS, NO EARLY RETURNS
   const router = useRouter();
@@ -227,69 +214,6 @@ function OwnerSummaryContent() {
     testMode.simulationScenario,
   ]);
 
-  // Calculate health scores by business type using getGroupHealthScore
-  // Excludes branches with no metrics (hasSufficientData = false)
-  // STEP 1: Recalculates on: metrics update, branch change, testMode change, simulation change
-  const accommodationHealthScore = useMemo(() => {
-    if (!mounted || !businessGroup || !rawAlerts) return null;
-    
-    const allBranches = businessGroupService.getAllBranches();
-    const accommodationBranches = allBranches.filter(b => 
-      b.modules?.includes(ModuleType.ACCOMMODATION) ?? false
-    );
-    
-    if (accommodationBranches.length === 0) return null;
-    
-    const accommodationBranchIds = accommodationBranches.map(b => b.id);
-    const accommodationBranchScores = branchScores.filter(bs => 
-      accommodationBranchIds.includes(bs.branchId)
-    );
-    
-    if (accommodationBranchScores.length === 0) return null;
-    
-    // Use getGroupHealthScore: weighted average, excludes branches with no metrics
-    return getGroupHealthScore(accommodationBranchScores);
-  }, [
-    branchScores, 
-    businessGroup, 
-    mounted, 
-    refreshTrigger, 
-    testMode.version,
-    // STEP 1: Add simulation dependencies
-    testMode.simulationType,
-    testMode.simulationScenario,
-  ]);
-
-  const fnbHealthScore = useMemo(() => {
-    if (!mounted || !businessGroup || !rawAlerts) return null;
-    
-    const allBranches = businessGroupService.getAllBranches();
-    const fnbBranches = allBranches.filter(b => 
-      b.modules?.includes(ModuleType.FNB) ?? false
-    );
-    
-    if (fnbBranches.length === 0) return null;
-    
-    const fnbBranchIds = fnbBranches.map(b => b.id);
-    const fnbBranchScores = branchScores.filter(bs => 
-      fnbBranchIds.includes(bs.branchId)
-    );
-    
-    if (fnbBranchScores.length === 0) return null;
-    
-    // Use getGroupHealthScore: weighted average, excludes branches with no metrics
-    return getGroupHealthScore(fnbBranchScores);
-  }, [
-    branchScores, 
-    businessGroup, 
-    mounted, 
-    refreshTrigger, 
-    testMode.version,
-    // STEP 1: Add simulation dependencies
-    testMode.simulationType,
-    testMode.simulationScenario,
-  ]);
-
   const loading = healthScoreLoading || alertsLoading;
   
   // PART 4: Fix Alert Engine Null Case - ensure rawAlerts is always array
@@ -319,42 +243,6 @@ function OwnerSummaryContent() {
       source: merged.source,
     };
   }, [dailySummaryDb, safeRawAlerts]);
-
-  // PART 6: Prevent 500 Error - wrap aggregation logic
-  // PART 3: Calculate total company revenue (sum of all branch revenues)
-  const totalCompanyRevenue = useMemo(() => {
-    try {
-      if (!mounted || !businessGroup) return 0;
-      
-      const allBranches = businessGroupService.getAllBranches();
-      let total = 0;
-      
-      allBranches.forEach(branch => {
-        try {
-          const branchSignals = operationalSignalsService.getAllSignals(branch.id, businessGroup.id);
-          const latestSignal = branchSignals[0];
-          const revenue30Days = latestSignal?.revenue30Days || 0;
-          
-          // PART 9: Numerical Stability - guard against NaN/Infinity
-          if (isFinite(revenue30Days) && !isNaN(revenue30Days) && revenue30Days > 0) {
-            total += revenue30Days;
-          }
-        } catch (e) {
-          // Skip branches that cause errors
-          if (process.env.NODE_ENV === 'development') {
-            console.warn(`[OwnerSummary] Error getting revenue for branch ${branch.id}:`, e);
-          }
-        }
-      });
-      
-      // PART 9: Ensure result is valid
-      return isFinite(total) && !isNaN(total) ? total : 0;
-    } catch (err) {
-      console.error('[GROUP OVERVIEW ERROR] Failed to calculate total company revenue:', err);
-      return 0; // Safe fallback
-    }
-  }, [mounted, businessGroup, refreshTrigger]);
-
 
   // PART 5: Validate organization scenario (MUST be before conditional returns)
   // Skip validation if healthScore is 0 or null (indicates no data, not a scenario issue)
@@ -387,52 +275,6 @@ function OwnerSummaryContent() {
     }
   }, [activeOrganizationId, activeOrganization?.name, groupHealthScore?.healthScore, safeRawAlerts, revenueExposure]);
   
-  // Filter group-level alerts (top 5)
-  // MUST be defined before any useEffect or render code that references it
-  const topGroupAlerts = useMemo(() => {
-    if (!mounted || !safeRawAlerts) return [];
-    
-    const alertsByBranch = new Map<string, AlertContract[]>();
-    safeRawAlerts.forEach(alert => {
-      if (alert.branchId) {
-        const existing = alertsByBranch.get(alert.branchId) || [];
-        existing.push(alert);
-        alertsByBranch.set(alert.branchId, existing);
-      }
-    });
-
-    const branchCounts = new Map<string, number>();
-    safeRawAlerts.forEach(alert => {
-      if (alert.id) {
-        branchCounts.set(alert.id, (branchCounts.get(alert.id) || 0) + 1);
-      }
-    });
-
-    const groupAlerts = safeRawAlerts.filter(alert => {
-      if (alert.id && branchCounts.get(alert.id) && branchCounts.get(alert.id)! > 1) {
-        return true;
-      }
-      if (!alert.branchId) {
-        return true;
-      }
-      return false;
-    });
-
-    // Sort by severity and take top 5
-    const severityWeight = { critical: 3, warning: 2, informational: 1 };
-    return groupAlerts
-      .sort((a, b) => {
-        const weightA = severityWeight[a.severity as keyof typeof severityWeight] || 0;
-        const weightB = severityWeight[b.severity as keyof typeof severityWeight] || 0;
-        return weightB - weightA;
-      })
-      .slice(0, 5);
-  }, [safeRawAlerts, mounted]);
-  
-  // Ensure topGroupAlerts is always an array (defensive)
-  const safeTopGroupAlerts = topGroupAlerts || [];
-  
-  // Log loading states for debugging in dev only (after topGroupAlerts is defined)
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
       console.log('[OwnerSummary] Loading states:', {
@@ -443,29 +285,11 @@ function OwnerSummaryContent() {
         groupHealthScoreValue: groupHealthScore?.healthScore,
         alertsCount: alerts.length,
         rawAlertsCount: safeRawAlerts?.length || 0,
-        topGroupAlertsCount: safeTopGroupAlerts.length,
         businessGroupId: businessGroup?.id,
         branchScoresCount: branchScores.length,
       });
     }
-    if (rawAlerts && rawAlerts.length > 0 && process.env.NODE_ENV === 'development') {
-      const criticalAlerts = rawAlerts.filter(a => a.severity === 'critical');
-      console.log('[OwnerSummary] Critical alerts:', {
-        count: criticalAlerts.length,
-        alerts: criticalAlerts.map(a => ({ id: a.id, type: a.type, branchId: a.branchId })),
-      });
-      console.log('[OwnerSummary] Top group alerts:', {
-        count: safeTopGroupAlerts.length,
-        alerts: safeTopGroupAlerts.map(a => ({ id: a.id, type: a.type, severity: a.severity, branchId: a.branchId })),
-      });
-    } else if (process.env.NODE_ENV === 'development' && !Array.isArray(safeRawAlerts)) {
-      console.warn('[OwnerSummary] rawAlerts is not an array - possible data fetching issue', {
-        rawAlertsType: typeof safeRawAlerts,
-        setupIsCompleted: setup.isCompleted,
-      });
-    }
-    // Zero alerts is valid (no alerts generated yet); only warn when rawAlerts is missing or wrong type
-  }, [healthScoreLoading, alertsLoading, loading, groupHealthScore, alerts, safeRawAlerts, safeTopGroupAlerts, testMode, businessGroup, branchScores, setup.isCompleted]);
+  }, [healthScoreLoading, alertsLoading, loading, groupHealthScore, alerts, safeRawAlerts, businessGroup, branchScores]);
 
   // NOW we can do conditional returns AFTER all hooks
   // Show consistent loading state until mounted (prevents hydration mismatch)
@@ -564,8 +388,8 @@ function OwnerSummaryContent() {
     } else if (underperformingCount === 0) {
       sentence =
         locale === 'th'
-          ? 'ทุกสาขาอยู่ในเกณฑ์ปกติ ไม่พบความเสี่ยงรายได้ในขณะนี้'
-          : 'All branches stable. No immediate revenue risk detected.';
+          ? 'ไม่มีสาขาที่ถูกทำเครื่องหมายว่าต่ำกว่าเกณฑ์จากสัญญาณล่าสุด'
+          : 'No branches flagged below threshold from the latest signals.';
     } else {
       const n = underperformingCount;
       sentence =
@@ -581,7 +405,7 @@ function OwnerSummaryContent() {
           </>
         );
     }
-    const isStable = underperformingCount === 0 && !noData;
+    const bodyColor = noData ? '#6b7280' : '#374151';
     return (
       <div
         style={{
@@ -593,14 +417,14 @@ function OwnerSummaryContent() {
         }}
       >
         <div style={{ fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>
-          🧠 {locale === 'th' ? 'สรุปรายวัน' : 'Daily Summary'}
+          {locale === 'th' ? 'สรุปรายวัน' : 'Daily Summary'}
         </div>
         <p
           style={{
             margin: 0,
             fontSize: '14px',
             fontWeight: 500,
-            color: isStable ? '#15803d' : '#374151',
+            color: bodyColor,
             lineHeight: 1.4,
           }}
         >
@@ -629,64 +453,24 @@ function OwnerSummaryContent() {
           </div>
         )}
 
-        <OperatingHeader />
-        <DailyPrompt lastUpdated={lastUpdated?.toISOString?.()} logTodayHref={paths.branchLog} />
+        <CompanyLastUpdated iso={lastUpdated?.toISOString?.()} locale={locale} />
 
-        {/* 🧠 Daily Summary — always visible (including activation / no health score yet) */}
         {dailySummaryCard}
 
-        {!groupHealthScore ? (
-          <>
-            <ActivationBlock />
-            {safeRawAlerts && safeRawAlerts.length > 0 && (
-              <MonitoringErrorBoundary componentName="Portfolio Alert Summary">
-                <PortfolioAlertSummary
-                  alerts={safeTopGroupAlerts}
-                  totalCompanyRevenue={totalCompanyRevenue}
-                  locale={locale}
-                />
-              </MonitoringErrorBoundary>
-            )}
-          </>
-        ) : (
-          <>
-        {/* Section A — สถานะธุรกิจวันนี้ */}
-        <OperatingSection title="สถานะธุรกิจวันนี้">
-            <MonitoringErrorBoundary componentName="Portfolio Health Overview">
-              {businessGroup && (
-                <PortfolioHealthOverview
-                  businessGroupId={businessGroup.id}
-                  branchScores={branchScores}
-                  overallHealthScore={groupHealthScore}
-                  accommodationHealthScore={accommodationHealthScore}
-                  fnbHealthScore={fnbHealthScore}
-                  locale={locale}
-                  showTrends={false}
-                />
-              )}
+        {!groupHealthScore && <ActivationBlock />}
+
+        {businessGroup && (
+          <OperatingSection title="สถานะธุรกิจวันนี้">
+            <MonitoringErrorBoundary componentName="Company Business Status">
+              <CompanyBusinessStatusTables
+                businessGroupId={businessGroup.id}
+                branchScores={branchScores}
+                refreshKey={refreshTrigger}
+              />
             </MonitoringErrorBoundary>
-        </OperatingSection>
+          </OperatingSection>
+        )}
 
-        {/* Section B — ระบบเตือนความเสี่ยง */}
-        <OperatingSection title="ระบบเตือนความเสี่ยง">
-          <MonitoringErrorBoundary componentName="Critical Alerts Snapshot">
-            <CriticalAlertsSnapshot
-              alerts={safeRawAlerts || []}
-              viewType="company"
-              locale={locale}
-              alertsInitializing={alertsInitializing}
-            />
-          </MonitoringErrorBoundary>
-          <MonitoringErrorBoundary componentName="Portfolio Alert Summary">
-            <PortfolioAlertSummary
-              alerts={safeTopGroupAlerts}
-              totalCompanyRevenue={totalCompanyRevenue}
-              locale={locale}
-            />
-          </MonitoringErrorBoundary>
-        </OperatingSection>
-
-        {/* Section C — แนวโน้มธุรกิจ */}
         <OperatingSection title="แนวโน้มธุรกิจ">
           {coverageDays < 7 ? (
             <p style={{ margin: 0, fontSize: '14px', color: '#6b7280' }}>
@@ -694,40 +478,28 @@ function OwnerSummaryContent() {
             </p>
           ) : (
             <p style={{ margin: 0, fontSize: '14px', color: '#374151' }}>
-              {locale === 'th' ? 'รายได้ 7 วัน · อัตราการเข้าพัก/ยอดขาย · แนวโน้มต้นทุน — ดูรายละเอียดในหน้าแนวโน้ม' : '7-day revenue · Occupancy/sales · Cost trend — see Trends page for details.'}
+              {locale === 'th'
+                ? 'รายได้ 7 วัน · อัตราการเข้าพัก/ยอดขาย · แนวโน้มต้นทุน — ดูรายละเอียดในหน้าแนวโน้ม'
+                : '7-day revenue · Occupancy/sales · Cost trend — see Trends page for details.'}
             </p>
           )}
         </OperatingSection>
 
-        {/* Section D — คำแนะนำจากระบบ (always show insight lines when stable so panel never feels empty) */}
-        <OperatingSection title="คำแนะนำจากระบบ">
-          <MonitoringErrorBoundary componentName="Portfolio Recommended Actions">
-            <PortfolioRecommendedActions alerts={safeRawAlerts || []} locale={locale} />
+        <OperatingSection title={locale === 'th' ? 'การแจ้งเตือนวิกฤติ' : 'Critical Alerts'}>
+          <MonitoringErrorBoundary componentName="Critical Alerts Snapshot">
+            <CriticalAlertsSnapshot
+              alerts={safeRawAlerts || []}
+              viewType="company"
+              locale={locale}
+              alertsInitializing={alertsInitializing}
+              layoutVariant="companyToday"
+            />
           </MonitoringErrorBoundary>
-          {(!safeRawAlerts || safeRawAlerts.length === 0) && (
-            <div style={{ marginTop: '0.75rem' }}>
-              <p style={{ marginBottom: '0.5rem', fontSize: '13px', color: '#6b7280' }}>
-                แนวโน้มรายได้คงที่ — บันทึกข้อมูลสม่ำเสมอเพื่อให้ระบบวิเคราะห์ได้แม่นยำ
-              </p>
-              <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '13px', color: '#6b7280', lineHeight: 1.6 }}>
-                <li>ตรวจสอบแนวโน้มและต้นทุนเป็นระยะ</li>
-                <li>วันหยุดสุดสัปดาห์มีโอกาสเพิ่มยอดขาย — พิจารณาโปรโมชันหรือการตลาด</li>
-              </ul>
-            </div>
-          )}
         </OperatingSection>
 
-        {/* Revenue Leaks */}
         <MonitoringErrorBoundary componentName="Portfolio Revenue Leaks">
           <PortfolioRevenueLeaks alerts={safeRawAlerts || []} locale={locale} />
         </MonitoringErrorBoundary>
-
-        {/* Branch breakdown */}
-        <MonitoringErrorBoundary componentName="Portfolio Branch Table">
-          <PortfolioBranchTable branchScores={branchScores} alerts={safeRawAlerts || []} locale={locale} />
-        </MonitoringErrorBoundary>
-          </>
-        )}
 
         <OperatingFooterTrust />
       </div>
