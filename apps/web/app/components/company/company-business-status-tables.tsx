@@ -30,12 +30,50 @@ const tdStyle: CSSProperties = {
   color: '#0f172a',
 };
 
+function branchFreshnessLine(
+  row: NormalizedBusinessRow,
+  locale: string
+): { text: string; stale: boolean } | null {
+  const days = row.daysSinceUpdate;
+  if (days == null || isNaN(days)) return null;
+  const d = Math.floor(Math.max(0, days));
+  const th = locale === 'th';
+  if (d === 0) return { text: th ? 'อัปเดตล่าสุด: วันนี้' : 'Last updated: Today', stale: false };
+  if (d === 1) return { text: th ? 'อัปเดตล่าสุด: เมื่อวาน' : 'Last updated: Yesterday', stale: false };
+  return {
+    text: th ? `อัปเดตล่าสุด: ${d} วันก่อน` : `Last updated: ${d} days ago`,
+    stale: true,
+  };
+}
+
+function BranchNameCell({ row, locale }: { row: NormalizedBusinessRow; locale: string }) {
+  const line = branchFreshnessLine(row, locale);
+  return (
+    <div>
+      <div>{row.branchName}</div>
+      {line ? (
+        <div
+          style={{
+            fontSize: '12px',
+            marginTop: '2px',
+            lineHeight: 1.35,
+            color: line.stale ? '#c2410c' : '#6b7280',
+          }}
+        >
+          {line.text}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 interface Props {
   /** From `branch_business_status` (normalized). */
   rows: NormalizedBusinessRow[];
+  locale?: string;
 }
 
-export function CompanyBusinessStatusTables({ rows }: Props) {
+export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
   const { accommodationRows, fnbRows } = useMemo(() => {
     const acc = rows.filter((r) => r.branchType === 'accommodation');
     const fnb = rows.filter((r) => r.branchType === 'fnb');
@@ -76,11 +114,13 @@ export function CompanyBusinessStatusTables({ rows }: Props) {
             </thead>
             <tbody>
               {accommodationRows.map((r) => (
-                <tr key={r.branchId}>
+                <tr key={`${r.branchId}-${r.branchType}`}>
                   <td style={{ ...tdStyle, fontWeight: 600, color: healthColor(r.healthScore) }}>
                     {r.healthScore != null ? Math.round(r.healthScore) : '—'}
                   </td>
-                  <td style={tdStyle}>{r.branchName}</td>
+                  <td style={tdStyle}>
+                    <BranchNameCell row={r} locale={locale} />
+                  </td>
                   <td style={tdStyle}>{r.occupancyPct.toFixed(1)}%</td>
                   <td style={tdStyle}>฿{formatCurrency(r.revenueThb)}</td>
                   <td style={tdStyle}>฿{formatCurrency(r.adrThb)}</td>
@@ -114,11 +154,13 @@ export function CompanyBusinessStatusTables({ rows }: Props) {
             </thead>
             <tbody>
               {fnbRows.map((r) => (
-                <tr key={r.branchId}>
+                <tr key={`${r.branchId}-${r.branchType}`}>
                   <td style={{ ...tdStyle, fontWeight: 600, color: healthColor(r.healthScore) }}>
                     {r.healthScore != null ? Math.round(r.healthScore) : '—'}
                   </td>
-                  <td style={tdStyle}>{r.branchName}</td>
+                  <td style={tdStyle}>
+                    <BranchNameCell row={r} locale={locale} />
+                  </td>
                   <td style={tdStyle}>฿{formatCurrency(r.revenueThb)}</td>
                   <td style={tdStyle}>{formatCurrency(r.customers, 'en-US')}</td>
                   <td style={tdStyle}>฿{formatCurrency(r.avgTicketThb)}</td>

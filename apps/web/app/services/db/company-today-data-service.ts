@@ -17,6 +17,12 @@ export interface NormalizedBusinessRow {
   revparThb: number;
   customers: number;
   avgTicketThb: number;
+  /** From branch_business_status (YYYY-MM-DD or ISO). */
+  metricDate: string | null;
+  /** Calendar days since metric / last update; null if unknown. */
+  daysSinceUpdate: number | null;
+  /** Raw status from view (e.g. fresh | stale); reserved for styling hooks. */
+  freshnessStatus: string | null;
 }
 
 export interface NormalizedCriticalAlertRow {
@@ -66,6 +72,40 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number {
     }
   }
   return 0;
+}
+
+/** Like pickNum but returns null when the field is absent / null (0 is valid). */
+function pickNumOrNull(r: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const k of keys) {
+    if (!(k in r)) continue;
+    const v = r[k];
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'number' && isFinite(v) && !isNaN(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '') {
+      const n = Number(v.replace(/,/g, ''));
+      if (!isNaN(n) && isFinite(n)) return n;
+    }
+  }
+  return null;
+}
+
+/** Local calendar days from metric_date to today (>= 0). */
+function daysSinceMetricDate(metricDateStr: string): number | null {
+  const trimmed = metricDateStr.trim();
+  const ymd = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  let metric: Date;
+  if (ymd) {
+    metric = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+  } else {
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return null;
+    metric = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  if (isNaN(metric.getTime())) return null;
+  const today = new Date();
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diff = Math.round((t0.getTime() - metric.getTime()) / 86400000);
+  return Math.max(0, diff);
 }
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
@@ -141,6 +181,18 @@ function normalizeBusinessRow(r: Record<string, unknown>, branchNameFallback: st
   const healthRaw = pickNum(r, 'health_score', 'healthScore');
   const healthScore = healthRaw > 0 || r.health_score != null || r.healthScore != null ? healthRaw : null;
 
+  const metricDateRaw = pickStr(r, 'metric_date', 'as_of_date', 'snapshot_date', 'data_date', 'metric_as_of');
+  let daysSinceUpdate = pickNumOrNull(
+    r,
+    'days_since_update',
+    'days_since_metric',
+    'days_since_snapshot',
+    'stale_days'
+  );
+  if (daysSinceUpdate == null && metricDateRaw) {
+    daysSinceUpdate = daysSinceMetricDate(metricDateRaw);
+  }
+
   return {
     branchId,
     branchName: pickStr(r, 'branch_name', 'branchName', 'name') || branchNameFallback,
@@ -154,6 +206,9 @@ function normalizeBusinessRow(r: Record<string, unknown>, branchNameFallback: st
     revparThb,
     customers: Math.round(pickNum(r, 'customers', 'total_customers', 'customers_7d', 'customer_count')),
     avgTicketThb: pickNum(r, 'avg_ticket', 'average_ticket', 'avg_ticket_thb'),
+    metricDate: metricDateRaw || null,
+    daysSinceUpdate,
+    freshnessStatus: pickStr(r, 'freshness_status', 'data_freshness', 'freshness') || null,
   };
 }
 

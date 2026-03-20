@@ -476,7 +476,7 @@ function OwnerSummaryContent() {
             }
           >
             <MonitoringErrorBoundary componentName="Company Business Status">
-              <CompanyBusinessStatusTables rows={companyTodayBundle?.businessStatus ?? []} />
+              <CompanyBusinessStatusTables rows={companyTodayBundle?.businessStatus ?? []} locale={locale} />
             </MonitoringErrorBoundary>
           </OperatingSection>
         )}

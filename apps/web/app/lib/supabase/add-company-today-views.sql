@@ -4,7 +4,8 @@
 -- 1) branch_business_status
 --    branch_id (uuid), organization_id (uuid, optional), branch_name, branch_type ('accommodation'|'fnb'),
 --    health_score, occupancy_pct | occupancy_rate, revenue | revenue_thb, adr, rooms_sold, rooms_total | rooms_available,
---    revpar, customers, avg_ticket
+--    revpar, customers, avg_ticket,
+--    metric_date, days_since_update, freshness_status (optional UI: per-branch freshness under name)
 --
 -- 2) alerts_today
 --    branch_id, impact_estimate_thb (or estimated_revenue_impact), …
