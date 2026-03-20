@@ -26,18 +26,17 @@ import { useI18n } from '../../hooks/use-i18n';
 import { useTestMode } from '../../providers/test-mode-provider';
 import { businessGroupService } from '../../services/business-group-service';
 import { getBranchHealthScores } from '../../services/health-score-service';
-import { PortfolioRevenueLeaks } from '../../components/portfolio/portfolio-revenue-leaks';
-import { CriticalAlertsSnapshot } from '../../components/alerts/critical-alerts-snapshot';
+import { CompanyCriticalAlertsDb } from '../../components/company/company-critical-alerts-db';
+import { CompanyRevenueLeaksDb } from '../../components/company/company-revenue-leaks-db';
 import { MonitoringErrorBoundary } from '../../components/monitoring-error-boundary';
 import { useOrganization } from '../../contexts/organization-context';
 import { useRbacReady } from '../../hooks/use-route-guard';
 import { calculateRevenueExposureFromAlerts } from '../../utils/revenue-exposure-calculator';
+import { formatDailySummaryCompactThb } from '../../services/daily-summary-service';
 import {
-  fetchGroupDailySummaryDbPartial,
-  mergeGroupDailySummary,
-  formatDailySummaryCompactThb,
-  invalidateDailySummaryCache,
-} from '../../services/daily-summary-service';
+  fetchCompanyTodayBundle,
+  type CompanyTodayBundle,
+} from '../../services/db/company-today-data-service';
 import { ActivationBlock } from '../../components/activation-block';
 import { useIntelligenceStageOrganization } from '../../hooks/use-intelligence-stage';
 import { validateOrganizationScenario } from '../../utils/validation-logger';
@@ -57,7 +56,7 @@ function OwnerSummaryContent() {
   const { branch: currentBranch } = useCurrentBranch();
   const { t, locale } = useI18n();
   const { groupHealthScore, isLoading: healthScoreLoading } = useHealthScore();
-  const { alerts, loading: alertsLoading, alertsInitializing, lastUpdated } = useHospitalityAlerts();
+  const { alerts, loading: alertsLoading, lastUpdated } = useHospitalityAlerts();
   const { alerts: rawAlerts } = useAlertStore();
   const { testMode } = useTestMode();
   const { activeOrganizationId, activeOrganization } = useOrganization();
@@ -67,9 +66,8 @@ function OwnerSummaryContent() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [showAccessDenied, setShowAccessDenied] = useState(false);
-  const [dailySummaryDb, setDailySummaryDb] = useState<Awaited<
-    ReturnType<typeof fetchGroupDailySummaryDbPartial>
-  > | null>(null);
+  const [companyTodayBundle, setCompanyTodayBundle] = useState<CompanyTodayBundle | null>(null);
+  const [companyTodayLoading, setCompanyTodayLoading] = useState(false);
   
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
@@ -79,7 +77,10 @@ function OwnerSummaryContent() {
     setMounted(true);
     const timeoutId = setTimeout(() => {
       if (healthScoreLoading || alertsLoading) {
-        const hasComputedData = groupHealthScore !== null || (rawAlerts && rawAlerts.length > 0);
+        const hasComputedData =
+          groupHealthScore !== null ||
+          (rawAlerts && rawAlerts.length > 0) ||
+          companyTodayBundle !== null;
         if (hasComputedData) {
           if (process.env.NODE_ENV === 'development') {
             console.warn('[OwnerSummary] Loading timeout exceeded - showing fallback UI');
@@ -92,19 +93,17 @@ function OwnerSummaryContent() {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [healthScoreLoading, alertsLoading, groupHealthScore, rawAlerts]);
+  }, [healthScoreLoading, alertsLoading, groupHealthScore, rawAlerts, companyTodayBundle]);
 
   // Listen for branch/organization/metrics changes to reload data
   useEffect(() => {
     if (!mounted) return;
 
     const handleBranchOrOrganizationChange = () => {
-      invalidateDailySummaryCache();
       setRefreshTrigger((prev) => prev + 1);
     };
 
     const handleMetricsUpdate = () => {
-      invalidateDailySummaryCache();
       setRefreshTrigger((prev) => prev + 1);
     };
 
@@ -167,22 +166,27 @@ function OwnerSummaryContent() {
 
   useEffect(() => {
     if (!mounted || groupBranchIds.length === 0) {
-      setDailySummaryDb(null);
+      setCompanyTodayBundle(null);
+      setCompanyTodayLoading(false);
       return;
     }
     let cancelled = false;
+    setCompanyTodayLoading(true);
     (async () => {
       try {
-        const partial = await fetchGroupDailySummaryDbPartial(groupBranchIds);
-        if (!cancelled) setDailySummaryDb(partial);
+        const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
+        const bundle = await fetchCompanyTodayBundle(orgId, groupBranchIds);
+        if (!cancelled) setCompanyTodayBundle(bundle);
       } catch {
-        if (!cancelled) setDailySummaryDb(null);
+        if (!cancelled) setCompanyTodayBundle(null);
+      } finally {
+        if (!cancelled) setCompanyTodayLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [mounted, groupBranchIds, refreshTrigger, activeOrganizationId]);
+  }, [mounted, groupBranchIds, refreshTrigger, activeOrganizationId, permissions.organizationId]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get branch scores sorted by lowest health score first
@@ -235,14 +239,20 @@ function OwnerSummaryContent() {
   }, [safeRawAlerts]);
 
   const dailySummary = useMemo(() => {
-    const merged = mergeGroupDailySummary(dailySummaryDb, safeRawAlerts);
+    const b = companyTodayBundle;
+    if (!b) {
+      return {
+        underperformingCount: 0,
+        revenueAtRisk: 0,
+        ready: false as const,
+      };
+    }
     return {
-      underperformingCount: merged.underperformingCount,
-      revenueAtRisk: merged.revenueAtRiskThb,
-      hasData: merged.hasAlertData,
-      source: merged.source,
+      underperformingCount: b.dailySummary.underperformingBelow80,
+      revenueAtRisk: b.dailySummary.revenueAtRiskFromAlertsTodayThb,
+      ready: true as const,
     };
-  }, [dailySummaryDb, safeRawAlerts]);
+  }, [companyTodayBundle]);
 
   // PART 5: Validate organization scenario (MUST be before conditional returns)
   // Skip validation if healthScore is 0 or null (indicates no data, not a scenario issue)
@@ -330,7 +340,10 @@ function OwnerSummaryContent() {
   // If metrics fetch fails, show computed values instead of infinite loading
   if (loading) {
     // PART 4: If we have computed data, show it instead of spinner
-    const hasComputedData = groupHealthScore !== null || (safeRawAlerts && safeRawAlerts.length > 0);
+    const hasComputedData =
+      groupHealthScore !== null ||
+      (safeRawAlerts && safeRawAlerts.length > 0) ||
+      companyTodayBundle !== null;
     if (hasComputedData) {
       // Continue to render the page below
     } else if (loadingTimeout) {
@@ -373,39 +386,33 @@ function OwnerSummaryContent() {
   // All aggregation logic is already wrapped in try-catch above
 
   const dailySummaryCard = (() => {
-    const { underperformingCount, revenueAtRisk, hasData } = dailySummary;
-    const noData =
-      !hasData &&
-      (!branchScores || branchScores.length === 0) &&
-      dailySummary.source === 'empty';
+    const { underperformingCount, revenueAtRisk, ready } = dailySummary;
     const amountStr = formatDailySummaryCompactThb(revenueAtRisk);
     let sentence: React.ReactNode;
-    if (noData) {
+    if (!ready && companyTodayLoading) {
+      sentence =
+        locale === 'th' ? 'กำลังโหลดสรุปจาก branch_business_status / alerts_today…' : 'Loading summary from DB…';
+    } else if (!ready) {
       sentence =
         locale === 'th'
-          ? 'ยังไม่มีข้อมูล เริ่มบันทึกข้อมูลรายวัน'
-          : 'No data yet. Start entering daily metrics.';
-    } else if (underperformingCount === 0) {
-      sentence =
-        locale === 'th'
-          ? 'ไม่มีสาขาที่ถูกทำเครื่องหมายว่าต่ำกว่าเกณฑ์จากสัญญาณล่าสุด'
-          : 'No branches flagged below threshold from the latest signals.';
+          ? 'ยังไม่มีข้อมูลสรุป (ไม่มีสาขาในกลุ่ม)'
+          : 'No summary yet (no branches in group).';
     } else {
       const n = underperformingCount;
       sentence =
         locale === 'th' ? (
           <>
-            {n} สาขาต่ำกว่าเกณฑ์ ประมาณ{' '}
-            <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span> รายได้มีความเสี่ยงวันนี้
+            {n} สาขาที่ health_score ต่ำกว่า 80 · รวม impact_estimate_thb จาก alerts_today:{' '}
+            <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span>
           </>
         ) : (
           <>
-            {n} branches underperforming. Estimated{' '}
-            <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span> revenue at risk today.
+            {n} branches with health_score below 80. Sum of impact_estimate_thb (alerts_today):{' '}
+            <span style={{ color: '#b91c1c', fontWeight: 600 }}>{amountStr}</span>
           </>
         );
     }
-    const bodyColor = noData ? '#6b7280' : '#374151';
+    const bodyColor = !ready && !companyTodayLoading ? '#6b7280' : '#374151';
     return (
       <div
         style={{
@@ -462,11 +469,7 @@ function OwnerSummaryContent() {
         {businessGroup && (
           <OperatingSection title="สถานะธุรกิจวันนี้">
             <MonitoringErrorBoundary componentName="Company Business Status">
-              <CompanyBusinessStatusTables
-                businessGroupId={businessGroup.id}
-                branchScores={branchScores}
-                refreshKey={refreshTrigger}
-              />
+              <CompanyBusinessStatusTables rows={companyTodayBundle?.businessStatus ?? []} />
             </MonitoringErrorBoundary>
           </OperatingSection>
         )}
@@ -486,19 +489,16 @@ function OwnerSummaryContent() {
         </OperatingSection>
 
         <OperatingSection title={locale === 'th' ? 'การแจ้งเตือนวิกฤติ' : 'Critical Alerts'}>
-          <MonitoringErrorBoundary componentName="Critical Alerts Snapshot">
-            <CriticalAlertsSnapshot
-              alerts={safeRawAlerts || []}
-              viewType="company"
+          <MonitoringErrorBoundary componentName="Critical Alerts DB">
+            <CompanyCriticalAlertsDb
+              rows={(companyTodayBundle?.criticalAlerts ?? []).slice(0, 5)}
               locale={locale}
-              alertsInitializing={alertsInitializing}
-              layoutVariant="companyToday"
             />
           </MonitoringErrorBoundary>
         </OperatingSection>
 
-        <MonitoringErrorBoundary componentName="Portfolio Revenue Leaks">
-          <PortfolioRevenueLeaks alerts={safeRawAlerts || []} locale={locale} />
+        <MonitoringErrorBoundary componentName="Revenue Leaks DB">
+          <CompanyRevenueLeaksDb rows={companyTodayBundle?.revenueLeaks ?? []} locale={locale} />
         </MonitoringErrorBoundary>
 
         <OperatingFooterTrust />

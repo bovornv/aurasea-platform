@@ -1,0 +1,19 @@
+-- Company Today page reads these objects (create in Supabase to match your today_summary_clean pipeline).
+-- Expected columns are flexible; the web app maps common aliases (see company-today-data-service.ts).
+--
+-- 1) branch_business_status
+--    branch_id (uuid), organization_id (uuid, optional), branch_name, branch_type ('accommodation'|'fnb'),
+--    health_score, occupancy_pct | occupancy_rate, revenue | revenue_thb, adr, rooms_sold, rooms_total | rooms_available,
+--    revpar, customers, avg_ticket
+--
+-- 2) alerts_today
+--    branch_id, impact_estimate_thb (or estimated_revenue_impact), …
+--
+-- 3) alerts_critical
+--    branch_id, branch_name?, alert_title | alert_name, cause | alert_message,
+--    impact_estimate_thb, action | recommendation
+--
+-- 4) alerts_top3_revenue_leaks
+--    branch_id, branch_name?, issue | alert_name, impact_estimate_thb, reason | cause, recommended_action
+--
+-- GRANT SELECT ON … TO authenticated;
