@@ -222,32 +222,25 @@ export async function getEarlySignalFromAccommodationEarlySignal(
   }
 }
 
-/** Row from branch_learning_status (preferred) or legacy branch_learning_phase. */
-export interface BranchLearningPhaseRow {
+/** Row from branch_learning_status only (distinct metric_date ∪ acc + fnb). */
+export interface BranchLearningStatusRow {
   branch_id: string;
-  message_th?: string | null;
-  message_en?: string | null;
-  /** Capped at 30 for UI (Learning x/30). */
-  data_days?: number | null;
-  /** Raw distinct-day count from DB (may exceed 30). */
-  learning_days?: number | null;
+  learning_days: number;
   first_day?: string | null;
   last_day?: string | null;
-  confidence_score?: number | null;
-  learning_phase?: string | null;
-  [key: string]: unknown;
 }
 
-function mapLearningStatusRow(branchId: string, row: Record<string, unknown>): BranchLearningPhaseRow {
-  const raw = Number(row.learning_days ?? row.data_days ?? 0);
-  const n = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
-  const capped = Math.min(30, n);
+/** @deprecated Use BranchLearningStatusRow */
+export type BranchLearningPhaseRow = BranchLearningStatusRow;
+
+function parseLearningStatusRow(branchId: string, row: Record<string, unknown>): BranchLearningStatusRow {
+  const raw = row.learning_days;
+  const n = raw != null && Number.isFinite(Number(raw)) ? Math.max(0, Math.floor(Number(raw))) : 0;
   const fd = row.first_day;
   const ld = row.last_day;
   return {
     branch_id: branchId,
     learning_days: n,
-    data_days: capped,
     first_day: fd != null ? String(fd).slice(0, 10) : null,
     last_day: ld != null ? String(ld).slice(0, 10) : null,
   };
@@ -255,47 +248,39 @@ function mapLearningStatusRow(branchId: string, row: Record<string, unknown>): B
 
 /**
  * Learning days = COUNT(DISTINCT metric_date) over accommodation_daily_metrics ∪ fnb_daily_metrics
- * (via branch_learning_status). Falls back to branch_learning_phase if the new view is missing.
+ * (view: branch_learning_status). No branch_learning_phase.
  */
-export async function getBranchLearningPhase(
-  branchId: string
-): Promise<BranchLearningPhaseRow | null> {
+export async function getBranchLearningStatus(branchId: string): Promise<BranchLearningStatusRow | null> {
   try {
     if (!isSupabaseAvailable() || !branchId) return null;
     const supabase = getSupabaseClient();
     if (!supabase) return null;
 
-    const { data: statusRow, error: statusErr } = await supabase
+    const { data, error } = await supabase
       .from('branch_learning_status')
       .select('branch_id, learning_days, first_day, last_day')
       .eq('branch_id', branchId)
       .maybeSingle();
 
-    if (!statusErr && statusRow != null) {
-      return mapLearningStatusRow(branchId, statusRow as Record<string, unknown>);
+    if (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[BranchMetricsInfo] branch_learning_status:', error.message);
+      }
+      return null;
     }
-
-    if (process.env.NODE_ENV === 'development' && statusErr) {
-      console.warn('[BranchMetricsInfo] branch_learning_status:', statusErr.message);
-    }
-
-    const { data, error } = await supabase
-      .from('branch_learning_phase')
-      .select('*')
-      .eq('branch_id', branchId)
-      .limit(1)
-      .maybeSingle();
-    if (error || data == null) return null;
-    const legacy = data as Record<string, unknown>;
-    return mapLearningStatusRow(branchId, {
-      learning_days: legacy.data_days ?? legacy.learning_days,
-      first_day: legacy.first_day,
-      last_day: legacy.last_day,
-    });
+    if (data == null) return null;
+    return parseLearningStatusRow(branchId, data as Record<string, unknown>);
   } catch (e) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[BranchMetricsInfo] getBranchLearningPhase error:', e);
+      console.warn('[BranchMetricsInfo] getBranchLearningStatus error:', e);
     }
     return null;
   }
+}
+
+/** @deprecated Use getBranchLearningStatus */
+export async function getBranchLearningPhase(
+  branchId: string
+): Promise<BranchLearningStatusRow | null> {
+  return getBranchLearningStatus(branchId);
 }

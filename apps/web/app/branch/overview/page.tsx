@@ -45,7 +45,12 @@ import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
-import { getAccommodationConfidenceLevel, getEarlySignalFromAccommodationEarlySignal, getBranchLearningPhase, type BranchLearningPhaseRow } from '../../services/db/branch-metrics-info-service';
+import {
+  getAccommodationConfidenceLevel,
+  getEarlySignalFromAccommodationEarlySignal,
+  getBranchLearningStatus,
+  type BranchLearningStatusRow,
+} from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { getHealthScoreFromAccommodationHealthToday, getHealthScoreFromFnbHealthToday } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
@@ -81,8 +86,8 @@ export default function BranchOverviewPage() {
   const [confidenceLevelFromCoverage, setConfidenceLevelFromCoverage] = useState<string | null>(null);
   // Early Signal card: accommodation uses accommodation_anomaly_signals.early_signal
   const [accommodationEarlySignal, setAccommodationEarlySignal] = useState<string | null>(null);
-  // Learning status from branch_learning_status (union of daily metric dates)
-  const [learningPhase, setLearningPhase] = useState<BranchLearningPhaseRow | null>(null);
+  // Learning: branch_learning_status.learning_days (distinct dates ∪ acc + fnb)
+  const [learningStatus, setLearningStatus] = useState<BranchLearningStatusRow | null>(null);
   // Today summary view (date-based joins): revenue_delta_day, occupancy_delta_week for Latest Performance
   const [todaySummaryRow, setTodaySummaryRow] = useState<TodaySummaryRow | null>(null);
   // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
@@ -373,7 +378,7 @@ export default function BranchOverviewPage() {
         getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
       }
     }
-    getBranchLearningPhase(branch.id).then(setLearningPhase);
+    getBranchLearningStatus(branch.id).then(setLearningStatus);
     getTodaySummary(branch.id).then(setTodaySummaryRow);
     getFreshnessDatesFromRawTable(branch.id, branch.moduleType).then((dates) => {
       setFreshnessDatesFromRaw(dates);
@@ -398,7 +403,7 @@ export default function BranchOverviewPage() {
       const detail = (e as CustomEvent<{ branchId: string }>).detail;
       if (detail?.branchId === branch?.id) {
         refreshOperatingStatus();
-        getBranchLearningPhase(branch.id).then(setLearningPhase);
+        getBranchLearningStatus(branch.id).then(setLearningStatus);
         getAlertsTop(branch.id).then(setAlertsTop);
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
@@ -462,7 +467,7 @@ export default function BranchOverviewPage() {
   // Learning status from branch_learning_status
   useEffect(() => {
     if (!branch?.id) return;
-    getBranchLearningPhase(branch.id).then(setLearningPhase);
+    getBranchLearningStatus(branch.id).then(setLearningStatus);
   }, [branch?.id]);
 
   const isOwnerOrSuperAdmin = role?.isSuperAdmin === true || role?.effectiveRole === 'owner';
@@ -1157,21 +1162,21 @@ export default function BranchOverviewPage() {
           />
         ) : null}
 
-        {/* 2. System Status Strip — thin, muted, below metrics */}
-        {learningPhase?.data_days != null ? (
+        {/* 2. System Status Strip — branch_learning_status.learning_days (capped at 30 for x/30) */}
+        {learningStatus != null ? (
           <div style={{ marginTop: 8, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>
               {locale === 'th'
-                ? `กำลังเรียนรู้ (${learningPhase.data_days}/30 วัน)`
-                : `Learning (${learningPhase.data_days}/30 days)`}
+                ? `กำลังเรียนรู้ (${Math.min(30, learningStatus.learning_days)}/30 วัน)`
+                : `Learning (${Math.min(30, learningStatus.learning_days)}/30 days)`}
             </span>
             <span style={{ color: '#9ca3af', fontSize: 10 }}>●</span>
             <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>
-              {learningPhase.data_days < 7
+              {learningStatus.learning_days < 7
                 ? locale === 'th'
                   ? 'ต่ำ'
                   : 'Low'
-                : learningPhase.data_days <= 20
+                : learningStatus.learning_days <= 20
                   ? locale === 'th'
                     ? 'ปานกลาง'
                     : 'Medium'
@@ -1179,7 +1184,7 @@ export default function BranchOverviewPage() {
                     ? 'สูง'
                     : 'High'}
             </span>
-            {learningPhase.data_days < 30 && (
+            {Math.min(30, learningStatus.learning_days) < 30 && (
               <span
                 style={{
                   display: 'inline-flex',
@@ -1193,7 +1198,7 @@ export default function BranchOverviewPage() {
               >
                 <span
                   style={{
-                    width: `${Math.min(100, (learningPhase.data_days / 30) * 100)}%`,
+                    width: `${Math.min(100, (Math.min(30, learningStatus.learning_days) / 30) * 100)}%`,
                     height: '100%',
                     backgroundColor: '#9ca3af',
                   }}
@@ -1204,7 +1209,7 @@ export default function BranchOverviewPage() {
         ) : null}
 
         {/* 3. Alerts & Recommendations (action layer) */}
-        <div style={{ marginTop: learningPhase?.data_days != null ? 0 : 24 }}>
+        <div style={{ marginTop: learningStatus != null ? 0 : 24 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 12 }}>
             {locale === 'th' ? 'การแจ้งเตือนและคำแนะนำ' : 'Alerts & Recommendations'}
           </h2>

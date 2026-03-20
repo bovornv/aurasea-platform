@@ -1,5 +1,5 @@
 -- Learning indicator: distinct calendar days with any daily metrics (accommodation ∪ F&B).
--- App: getBranchLearningPhase() → branch_learning_status (fallback: branch_learning_phase).
+-- App: getBranchLearningStatus() → branch_learning_status only (field: learning_days).
 --
 -- Logic: COUNT(DISTINCT metric_date) over UNION of both tables (not MAX of per-stream counts).
 
