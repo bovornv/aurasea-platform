@@ -490,10 +490,7 @@ function OwnerSummaryContent() {
 
         <OperatingSection title={locale === 'th' ? 'การแจ้งเตือนวิกฤติ' : 'Critical Alerts'}>
           <MonitoringErrorBoundary componentName="Critical Alerts DB">
-            <CompanyCriticalAlertsDb
-              rows={(companyTodayBundle?.criticalAlerts ?? []).slice(0, 5)}
-              locale={locale}
-            />
+            <CompanyCriticalAlertsDb rows={companyTodayBundle?.criticalAlerts ?? []} locale={locale} maxItems={5} />
           </MonitoringErrorBoundary>
         </OperatingSection>
 

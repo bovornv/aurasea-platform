@@ -22,10 +22,14 @@ export interface NormalizedBusinessRow {
 export interface NormalizedCriticalAlertRow {
   branchId: string;
   branchName: string;
-  title: string;
+  /** Display line 2 — from alert_type (then title aliases). */
+  alertType: string;
   cause: string;
   impactThb: number;
-  action: string;
+  /** Null/empty from DB → UI shows “Review performance”. */
+  action: string | null;
+  /** Stable list key */
+  rowKey: string;
 }
 
 export interface NormalizedRevenueLeakRow {
@@ -70,6 +74,27 @@ function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
     if (v != null && String(v).trim() !== '') return String(v).trim();
   }
   return '';
+}
+
+function slugDedupePart(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+}
+
+/** Collapse accidental duplicates if the view returns more than one row per logical alert. */
+function dedupeCriticalAlertsByBranchTypeCause(rows: NormalizedCriticalAlertRow[]): NormalizedCriticalAlertRow[] {
+  const seen = new Set<string>();
+  const out: NormalizedCriticalAlertRow[] = [];
+  for (const row of rows) {
+    const key = `${row.branchId}|${slugDedupePart(row.alertType)}|${slugDedupePart(row.cause)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
 }
 
 function normalizeBranchType(raw: string): 'accommodation' | 'fnb' | null {
@@ -230,9 +255,19 @@ export async function fetchCompanyTodayBundle(
     if (h != null && !isNaN(h) && h < 80) underperformingBelow80.add(row.branchId);
   }
 
-  const criticalAlerts: NormalizedCriticalAlertRow[] = asRecordArray(critRes.data)
+  const criticalAlertsRaw: NormalizedCriticalAlertRow[] = asRecordArray(critRes.data)
     .map((r) => {
       const branchId = pickStr(r, 'branch_id', 'branchId');
+      const alertType = pickStr(
+        r,
+        'alert_type',
+        'type',
+        'alert_title',
+        'alert_name',
+        'title',
+        'name'
+      );
+      const cause = pickStr(r, 'cause', 'alert_message', 'message', 'description', 'detail');
       const impactThb = pickNum(
         r,
         'impact_estimate_thb',
@@ -240,17 +275,33 @@ export async function fetchCompanyTodayBundle(
         'estimated_revenue_impact',
         'money_impact_thb'
       );
+      const actionStr = pickStr(
+        r,
+        'action',
+        'next_action',
+        'recommended_action',
+        'recommendation',
+        'suggested_action',
+        'expected_recovery',
+        'remediation'
+      );
+      const rowKey =
+        pickStr(r, 'id', 'alert_id', 'uuid', 'row_id') ||
+        `${branchId}:${slugDedupePart(alertType)}:${slugDedupePart(cause)}`;
       return {
         branchId,
         branchName: pickStr(r, 'branch_name', 'branchName') || branchNameFromLocal(branchId),
-        title: pickStr(r, 'alert_title', 'alert_name', 'title', 'alert_type'),
-        cause: pickStr(r, 'cause', 'alert_message', 'message', 'description'),
+        alertType: alertType || pickStr(r, 'alert_title', 'alert_name', 'title') || '—',
+        cause,
         impactThb,
-        action: pickStr(r, 'action', 'recommendation', 'suggested_action', 'expected_recovery'),
+        action: actionStr || null,
+        rowKey,
       };
     })
     .filter((x) => x.branchId)
     .sort((a, b) => b.impactThb - a.impactThb);
+
+  const criticalAlerts = dedupeCriticalAlertsByBranchTypeCause(criticalAlertsRaw);
 
   const revenueLeaks: NormalizedRevenueLeakRow[] = asRecordArray(leaksRes.data)
     .map((r, i) => {
