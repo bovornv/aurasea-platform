@@ -1,14 +1,18 @@
 -- Company Today page reads these objects (create in Supabase to match your today_summary_clean pipeline).
 -- Expected columns are flexible; the web app maps common aliases (see company-today-data-service.ts).
 --
+-- **Recommended:** run `add-branch-performance-signal-and-business-status.sql` (in order: drop views →
+-- branch_performance_signal → branch_business_status). Requires accommodation_profitability_signal,
+-- fnb_profitability_signal, today_summary_clean, branches.
+--
 -- Unified alerts pipeline (recommended): run rebuild-alerts-enriched-engine.sql
 --   alerts_enriched (engine) → alerts_today (passthrough) → alerts_critical, alerts_top3_revenue_leaks
 --
--- 1) branch_business_status
---    branch_id (uuid), organization_id (uuid, optional), branch_name, branch_type ('accommodation'|'fnb'),
---    health_score, occupancy_pct | occupancy_rate, revenue | revenue_thb, adr, rooms_sold, rooms_total | rooms_available,
---    revpar, customers, avg_ticket,
---    metric_date, days_since_update, freshness_status (optional UI: per-branch freshness under name)
+-- 1) branch_business_status (see add-branch-performance-signal-and-business-status.sql for full definition)
+--    branch_id, organization_id, branch_name, branch_type,
+--    health_score, occupancy_pct, revenue_thb, adr, rooms_sold, rooms_total, revpar, customers, avg_ticket,
+--    profitability_trend (accommodation), margin_trend + avg_daily_cost (F&B),
+--    metric_date, days_since_update, freshness_status
 --
 -- 2) alerts_today
 --    branch_id, impact_estimate_thb (or estimated_revenue_impact), …

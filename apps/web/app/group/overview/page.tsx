@@ -35,6 +35,7 @@ import { calculateRevenueExposureFromAlerts } from '../../utils/revenue-exposure
 import { formatDailySummaryCompactThb } from '../../services/daily-summary-service';
 import {
   fetchCompanyTodayBundle,
+  createEmptyCompanyTodayBundle,
   type CompanyTodayBundle,
 } from '../../services/db/company-today-data-service';
 import { fetchCompanyDailySummary } from '../../services/db/company-daily-summary-service';
@@ -181,11 +182,20 @@ function OwnerSummaryContent() {
       return;
     }
     let cancelled = false;
+    const COMPANY_BUNDLE_TIMEOUT_MS = 28000;
     setCompanyTodayLoading(true);
     (async () => {
       try {
         const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
-        const bundle = await fetchCompanyTodayBundle(orgId, groupBranchIds);
+        const bundle = await Promise.race([
+          fetchCompanyTodayBundle(orgId, groupBranchIds),
+          new Promise<CompanyTodayBundle>((resolve) =>
+            setTimeout(
+              () => resolve(createEmptyCompanyTodayBundle(['client_timeout'])),
+              COMPANY_BUNDLE_TIMEOUT_MS
+            )
+          ),
+        ]);
         if (!cancelled) setCompanyTodayBundle(bundle);
       } catch {
         if (!cancelled) setCompanyTodayBundle(null);
@@ -209,10 +219,18 @@ function OwnerSummaryContent() {
     let cancelled = false;
     setAiDailySummaryLoading(true);
     (async () => {
-      const { summaryText } = await fetchCompanyDailySummary(orgId);
-      if (!cancelled) {
-        setAiDailySummaryText(summaryText);
-        setAiDailySummaryLoading(false);
+      try {
+        const summaryResult = await Promise.race([
+          fetchCompanyDailySummary(orgId),
+          new Promise<{ summaryText: string | null; error: string | null }>((resolve) =>
+            setTimeout(() => resolve({ summaryText: null, error: 'timeout' }), 12000)
+          ),
+        ]);
+        if (!cancelled) {
+          setAiDailySummaryText(summaryResult.summaryText);
+        }
+      } finally {
+        if (!cancelled) setAiDailySummaryLoading(false);
       }
     })();
     return () => {

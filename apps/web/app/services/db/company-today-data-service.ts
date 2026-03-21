@@ -3,6 +3,7 @@
  * Views: branch_business_status, alerts_critical, alerts_top3_revenue_leaks, alerts_today
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import { normalizeProfitabilityTrend, type ProfitabilityTrend } from './latest-metrics-service';
 
 export interface NormalizedBusinessRow {
   branchId: string;
@@ -17,6 +18,12 @@ export interface NormalizedBusinessRow {
   revparThb: number;
   customers: number;
   avgTicketThb: number;
+  /** Accommodation: ↑ / → / ↓ from branch_business_status.profitability_trend */
+  profitabilityTrend: ProfitabilityTrend | null;
+  /** F&B: ↑ / → / ↓ from margin_trend */
+  marginTrend: ProfitabilityTrend | null;
+  /** F&B: avg daily cost (฿) */
+  avgDailyCostThb: number | null;
   /** From branch_business_status (YYYY-MM-DD or ISO). */
   metricDate: string | null;
   /** Calendar days since metric / last update; null if unknown. */
@@ -117,6 +124,15 @@ function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
     if (v != null && String(v).trim() !== '') return String(v).trim();
   }
   return '';
+}
+
+function pickTrendRaw(r: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const k of keys) {
+    if (!(k in r)) continue;
+    const v = r[k];
+    if (v !== null && v !== undefined && v !== '') return v;
+  }
+  return null;
 }
 
 function slugDedupePart(s: string): string {
@@ -221,6 +237,38 @@ function normalizeBusinessRow(r: Record<string, unknown>, branchNameFallback: st
     daysSinceUpdate = daysSinceMetricDate(metricDateRaw);
   }
 
+  const profitabilityTrend =
+    bt === 'accommodation'
+      ? normalizeProfitabilityTrend(
+          pickTrendRaw(
+            r,
+            'profitability_trend',
+            'profit_margin_trend',
+            'profitabilityTrend',
+            'accommodation_profitability_trend'
+          )
+        )
+      : null;
+
+  const marginTrend =
+    bt === 'fnb'
+      ? normalizeProfitabilityTrend(
+          pickTrendRaw(r, 'margin_trend', 'marginTrend', 'profit_margin_trend', 'fnb_margin_trend')
+        )
+      : null;
+
+  const avgDailyCostThb =
+    bt === 'fnb'
+      ? pickNumOrNull(
+          r,
+          'avg_daily_cost',
+          'avgDailyCost',
+          'average_daily_cost',
+          'daily_cost',
+          'avg_cost'
+        )
+      : null;
+
   return {
     branchId,
     branchName: pickStr(r, 'branch_name', 'branchName', 'name') || branchNameFallback,
@@ -236,6 +284,9 @@ function normalizeBusinessRow(r: Record<string, unknown>, branchNameFallback: st
     revparThb,
     customers: Math.round(pickNum(r, 'customers', 'total_customers', 'customers_7d', 'customer_count')),
     avgTicketThb: pickNum(r, 'avg_ticket', 'average_ticket', 'avg_ticket_thb'),
+    profitabilityTrend,
+    marginTrend,
+    avgDailyCostThb,
     metricDate: metricDateRaw || null,
     daysSinceUpdate,
     freshnessStatus: pickStr(r, 'freshness_status', 'data_freshness', 'freshness') || null,
@@ -251,6 +302,110 @@ function branchNameFromLocal(branchId: string): string {
   } catch {
     return branchId;
   }
+}
+
+function inferBranchTypeFromClient(branchId: string): 'accommodation' | 'fnb' {
+  if (typeof window === 'undefined') return 'accommodation';
+  try {
+    const { businessGroupService } = require('../business-group-service');
+    const b = businessGroupService.getBranchById(branchId);
+    return b?.moduleType === 'fnb' ? 'fnb' : 'accommodation';
+  } catch {
+    return 'accommodation';
+  }
+}
+
+/** When `branch_business_status` is missing, errors, or returns no normalized rows (e.g. strict INNER JOIN). */
+function syntheticRowForFallback(
+  branchId: string,
+  branchName: string,
+  branchType: 'accommodation' | 'fnb',
+  ts: Record<string, unknown> | null
+): Record<string, unknown> {
+  if (!ts) {
+    return {
+      branch_id: branchId,
+      branch_name: branchName,
+      branch_type: branchType,
+    };
+  }
+  const occRaw = pickNumOrNull(ts, 'occupancy_rate', 'occupancy_pct');
+  let occPct = occRaw ?? 0;
+  if (occRaw != null && occRaw > 0 && occRaw <= 1) occPct = occRaw * 100;
+
+  const revenueThb =
+    branchType === 'fnb'
+      ? pickNum(ts, 'fnb_revenue', 'total_revenue', 'revenue')
+      : pickNum(ts, 'accommodation_revenue', 'total_revenue', 'revenue');
+
+  return {
+    branch_id: branchId,
+    branch_name: branchName,
+    branch_type: branchType,
+    metric_date: ts.metric_date,
+    health_score: ts.health_score,
+    occupancy_pct: occPct,
+    occupancy_rate: occPct,
+    revenue_thb: revenueThb,
+    revenue: revenueThb,
+    adr: pickNum(ts, 'adr'),
+    revpar: pickNum(ts, 'revpar', 'rev_par'),
+    rooms_sold: pickNum(ts, 'utilized', 'rooms_sold', 'roomsSold'),
+    rooms_total: pickNum(ts, 'capacity', 'rooms_available', 'roomsTotal', 'total_rooms'),
+    rooms_available: pickNum(ts, 'capacity', 'rooms_available'),
+    customers: pickNum(ts, 'customers', 'total_customers'),
+    avg_ticket: pickNum(ts, 'avg_ticket', 'average_ticket'),
+    accommodation_revenue: ts.accommodation_revenue,
+    fnb_revenue: ts.fnb_revenue,
+    total_revenue: ts.total_revenue,
+  };
+}
+
+async function buildBusinessStatusFromTodaySummaryFallback(
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  branchIds: string[]
+): Promise<NormalizedBusinessRow[]> {
+  if (branchIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('today_summary_clean')
+    .select('*')
+    .in('branch_id', branchIds)
+    .order('metric_date', { ascending: false });
+
+  if (error && process.env.NODE_ENV === 'development') {
+    console.warn('[CompanyToday] today_summary_clean fallback:', error.message);
+  }
+
+  const latestByBranch = new Map<string, Record<string, unknown>>();
+  if (!error && data) {
+    for (const raw of asRecordArray(data)) {
+      const bid = pickStr(raw, 'branch_id', 'branchId');
+      if (bid && !latestByBranch.has(bid)) latestByBranch.set(bid, raw);
+    }
+  }
+
+  const out: NormalizedBusinessRow[] = [];
+  for (const bid of branchIds) {
+    const ts = latestByBranch.get(bid) ?? null;
+    const bt = inferBranchTypeFromClient(bid);
+    const name = branchNameFromLocal(bid);
+    const syn = syntheticRowForFallback(bid, name, bt, ts);
+    const normalized = normalizeBusinessRow(syn, name);
+    if (normalized) out.push(normalized);
+  }
+  return out;
+}
+
+export function createEmptyCompanyTodayBundle(errorTags: string[]): CompanyTodayBundle {
+  return {
+    businessStatus: [],
+    criticalAlerts: [],
+    revenueLeaks: [],
+    alertsTodayRaw: [],
+    dailySummary: { underperformingBelow80: 0, revenueAtRiskFromAlertsTodayThb: 0 },
+    errors: errorTags,
+  };
 }
 
 /**
@@ -320,6 +475,21 @@ export async function fetchCompanyTodayBundle(
     const bid = pickStr(r, 'branch_id', 'branchId');
     const normalized = normalizeBusinessRow(r, branchNameFromLocal(bid));
     if (normalized) businessStatus.push(normalized);
+  }
+
+  if (businessStatus.length === 0 && idFilter.length > 0) {
+    try {
+      const fb = await buildBusinessStatusFromTodaySummaryFallback(supabase, idFilter);
+      businessStatus.push(...fb);
+      if (fb.length > 0) {
+        errors.push('branch_business_status_fallback_today_summary_clean');
+      }
+      if (bsRes.error) {
+        errors.push(`branch_business_status:${bsRes.error.message}`);
+      }
+    } catch (e) {
+      errors.push(`business_status_fallback:${String(e)}`);
+    }
   }
 
   /** Match branch Today: branch_business_status often omits or zeroes health; use latest today_summary_clean per branch. */

@@ -2,6 +2,7 @@
 
 import { useMemo, type CSSProperties } from 'react';
 import type { NormalizedBusinessRow } from '../../services/db/company-today-data-service';
+import type { ProfitabilityTrend } from '../../services/db/latest-metrics-service';
 import { formatCurrency } from '../../utils/formatting';
 
 function healthColor(score: number | null): string {
@@ -9,6 +10,23 @@ function healthColor(score: number | null): string {
   if (score <= 60) return '#b91c1c';
   if (score <= 80) return '#ca8a04';
   return '#15803d';
+}
+
+function trendGlyph(t: ProfitabilityTrend | null): { glyph: string; color: string } | null {
+  if (t === 'up') return { glyph: '↑', color: '#059669' };
+  if (t === 'flat') return { glyph: '→', color: '#9ca3af' };
+  if (t === 'down') return { glyph: '↓', color: '#dc2626' };
+  return null;
+}
+
+function TrendOnlyCell({ trend }: { trend: ProfitabilityTrend | null }) {
+  const g = trendGlyph(trend);
+  if (!g) {
+    return <span style={{ color: '#9ca3af', fontWeight: 600 }}>—</span>;
+  }
+  return (
+    <span style={{ color: g.color, fontWeight: 600, fontSize: '16px', lineHeight: 1 }}>{g.glyph}</span>
+  );
 }
 
 const tableStyle: CSSProperties = {
@@ -106,31 +124,31 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>Health</th>
                 <th style={thStyle}>{isTh ? 'สาขา' : 'Branch'}</th>
                 <th style={thStyle}>Occupancy (%)</th>
                 <th style={thStyle}>Revenue (฿)</th>
                 <th style={thStyle}>ADR (฿)</th>
-                <th style={thStyle}>Rooms</th>
                 <th style={thStyle}>RevPAR (฿)</th>
+                <th style={thStyle}>{isTh ? 'กำไร' : 'Profitability'}</th>
+                <th style={thStyle}>Health</th>
               </tr>
             </thead>
             <tbody>
               {accommodationRows.map((r) => (
                 <tr key={`${r.branchId}-${r.branchType}`}>
-                  <td style={{ ...tdStyle, fontWeight: 600, color: healthColor(r.healthScore) }}>
-                    {r.healthScore != null ? Math.round(r.healthScore) : '—'}
-                  </td>
                   <td style={tdStyle}>
                     <BranchNameCell row={r} locale={locale} />
                   </td>
                   <td style={tdStyle}>{Math.round(r.occupancyPct)}%</td>
                   <td style={tdStyle}>฿{formatCurrency(r.revenueThb)}</td>
                   <td style={tdStyle}>฿{formatCurrency(r.adrThb)}</td>
-                  <td style={tdStyle}>
-                    {r.roomsTotal > 0 ? `${r.roomsSold}/${r.roomsTotal}` : '—'}
-                  </td>
                   <td style={tdStyle}>฿{formatCurrency(r.revparThb)}</td>
+                  <td style={tdStyle}>
+                    <TrendOnlyCell trend={r.profitabilityTrend} />
+                  </td>
+                  <td style={{ ...tdStyle, fontWeight: 600, color: healthColor(r.healthScore) }}>
+                    {r.healthScore != null ? Math.round(r.healthScore) : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -150,25 +168,35 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>Health</th>
                 <th style={thStyle}>{isTh ? 'สาขา' : 'Branch'}</th>
                 <th style={thStyle}>Revenue (฿)</th>
                 <th style={thStyle}>Customers</th>
                 <th style={thStyle}>Avg ticket (฿)</th>
+                <th style={thStyle}>{isTh ? 'ต้นทุนเฉลี่ย' : 'Avg Cost'}</th>
+                <th style={thStyle}>{isTh ? 'มาร์จิ้น' : 'Margin'}</th>
+                <th style={thStyle}>Health</th>
               </tr>
             </thead>
             <tbody>
               {fnbRows.map((r) => (
                 <tr key={`${r.branchId}-${r.branchType}`}>
-                  <td style={{ ...tdStyle, fontWeight: 600, color: healthColor(r.healthScore) }}>
-                    {r.healthScore != null ? Math.round(r.healthScore) : '—'}
-                  </td>
                   <td style={tdStyle}>
                     <BranchNameCell row={r} locale={locale} />
                   </td>
                   <td style={tdStyle}>฿{formatCurrency(r.revenueThb)}</td>
                   <td style={tdStyle}>{formatCurrency(r.customers, 'en-US')}</td>
                   <td style={tdStyle}>฿{formatCurrency(r.avgTicketThb)}</td>
+                  <td style={tdStyle}>
+                    {r.avgDailyCostThb != null && Number.isFinite(r.avgDailyCostThb)
+                      ? `฿${formatCurrency(r.avgDailyCostThb)}`
+                      : '—'}
+                  </td>
+                  <td style={tdStyle}>
+                    <TrendOnlyCell trend={r.marginTrend} />
+                  </td>
+                  <td style={{ ...tdStyle, fontWeight: 600, color: healthColor(r.healthScore) }}>
+                    {r.healthScore != null ? Math.round(r.healthScore) : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
