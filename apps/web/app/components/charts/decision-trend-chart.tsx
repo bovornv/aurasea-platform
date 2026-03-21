@@ -38,6 +38,10 @@ interface DecisionTrendChartProps {
   /** Small label near right axis. e.g. "ADR (฿)" */
   rightLabel?: string;
   emptyMessage?: string;
+  /** Left (primary) series stroke width */
+  strokeWidthLeft?: number;
+  /** Right (secondary) series stroke width in dual-axis mode */
+  strokeWidthRight?: number;
 }
 
 export function DecisionTrendChart({
@@ -53,6 +57,8 @@ export function DecisionTrendChart({
   leftLabel,
   rightLabel,
   emptyMessage = 'No data',
+  strokeWidthLeft = 2,
+  strokeWidthRight = 2,
 }: DecisionTrendChartProps) {
   const hasData = values && values.length >= 2;
   const dualAxis = hasData && valuesRight && valuesRight.length === values.length;
@@ -225,9 +231,11 @@ export function DecisionTrendChart({
           <polyline points={baselinePoints} fill="none" stroke={BASELINE_COLOR} strokeWidth="1" strokeDasharray="4,4" />
         )}
         {/* Primary line */}
-        <polyline points={pointsL} fill="none" stroke={color} strokeWidth="2" />
+        <polyline points={pointsL} fill="none" stroke={color} strokeWidth={strokeWidthLeft} />
         {/* Secondary line (dual axis) */}
-        {dualAxis && pointsR && <polyline points={pointsR} fill="none" stroke={colorRight} strokeWidth="2" />}
+        {dualAxis && pointsR && (
+          <polyline points={pointsR} fill="none" stroke={colorRight} strokeWidth={strokeWidthRight} />
+        )}
       </svg>
     </div>
   );
