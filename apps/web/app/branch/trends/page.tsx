@@ -338,11 +338,11 @@ export default function BranchTrendsPage() {
 
               {isFnb && (
                 <>
-                  {/* 1. Revenue + Customers — Primary */}
+                  {/* 1. Customers + Revenue — Primary (customers left axis, revenue right) */}
                   <TrendChartCard
                     legend={[
-                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
                       { label: locale === 'th' ? 'จำนวนลูกค้า' : 'Customers', color: '#2563eb' },
+                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
@@ -350,16 +350,18 @@ export default function BranchTrendsPage() {
                     recommendation={locale === 'th' ? 'โปรโมชั่นหรือแพ็กเกจเพื่อดึงลูกค้า' : 'Run promotion or bundle to attract traffic'}
                   >
                     <DecisionTrendChart
-                      values={revenueValues}
-                      valuesRight={customersValues.length === revenueValues.length ? customersValues : undefined}
-                      dates={chartDates.length === revenueValues.length ? chartDates : undefined}
-                      color="#16a34a"
-                      colorRight="#2563eb"
+                      values={customersValues}
+                      valuesRight={
+                        revenueValues.length === customersValues.length ? revenueValues : undefined
+                      }
+                      dates={chartDates.length === customersValues.length ? chartDates : undefined}
+                      color="#2563eb"
+                      colorRight="#16a34a"
                       showBaseline={true}
-                      formatLeft={(v) => `฿${(v / 1000).toFixed(0)}k`}
-                      formatRight={(v) => String(Math.round(v))}
-                      leftLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
-                      rightLabel={locale === 'th' ? 'จำนวนลูกค้า' : 'Customers'}
+                      formatLeft={(v) => String(Math.round(v))}
+                      formatRight={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      leftLabel={locale === 'th' ? 'จำนวนลูกค้า' : 'Customers'}
+                      rightLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
                       emptyMessage={emptyMsg}
                     />
                   </TrendChartCard>
