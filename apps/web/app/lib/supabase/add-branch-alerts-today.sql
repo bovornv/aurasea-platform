@@ -1,6 +1,6 @@
 -- branch_alerts_today — Branch Today “What needs attention” (PostgREST)
--- Same columns as alerts_today (includes branch_type: accommodation | fnb | … from branches.module_type).
--- Filter: branch_id=eq.{id}&branch_type=eq.accommodation|fnb
+-- Same columns as alerts_today (branch_type = branch module bucket; alert_stream = acc vs fnb for this alert row).
+-- Filter: branch_id=eq.{id}&alert_stream=eq.accommodation|fnb
 --
 -- Requires: public.alerts_today (run rebuild-alerts-enriched-engine.sql first).
 --

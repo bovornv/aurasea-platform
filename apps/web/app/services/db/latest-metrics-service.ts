@@ -607,14 +607,32 @@ function pickBranchAlertStr(r: Record<string, unknown>, ...keys: string[]): stri
 /** Normalized row for branch Today “Alerts & Recommendations” (source: branch_alerts_today). */
 export interface BranchTodayOverviewAlertRow {
   branch_id: string;
-  /** Coarse stream from DB: accommodation | fnb | unknown */
+  /** Branch row module bucket from DB (hotel_with_cafe → accommodation). */
   branch_type: string | null;
+  /** Which stream this alert belongs to — use for UI filtering on hybrid branches. */
+  alert_stream: 'accommodation' | 'fnb' | null;
   metric_date: string | null;
   alert_type: string;
   alert_message: string;
   impact_estimate_thb: number;
   recommended_action: string;
   isOpportunity: boolean;
+}
+
+/** When alert_stream column is missing (pre-migration), infer from alert copy + branch_type. */
+function resolveAlertStream(
+  r: Record<string, unknown>,
+  alertType: string,
+  branch_type: string | null
+): 'accommodation' | 'fnb' | null {
+  const raw = pickBranchAlertStr(r, 'alert_stream', 'alertStream').toLowerCase();
+  if (raw === 'accommodation' || raw === 'fnb') return raw;
+  const t = alertType.toLowerCase();
+  if (t.includes('f&b') || t.includes('underperformance')) return 'fnb';
+  if (t.includes('room revenue') || t.includes('low room')) return 'accommodation';
+  if (t.includes('occupancy')) return 'accommodation';
+  if (branch_type === 'accommodation' || branch_type === 'fnb') return branch_type;
+  return null;
 }
 
 export type BranchAlertsTodayStream = 'accommodation' | 'fnb';
@@ -629,7 +647,7 @@ function debugBranchAlertsTodayRestUrl(
   if (!base) return;
   let url = `${base}/rest/v1/branch_alerts_today?select=*&branch_id=eq.${encodeURIComponent(branchId)}`;
   if (stream === 'accommodation' || stream === 'fnb') {
-    url += `&branch_type=eq.${encodeURIComponent(stream)}`;
+    url += `&alert_stream=eq.${encodeURIComponent(stream)}`;
   }
   console.warn(`[LatestMetricsService] branch_alerts_today ${message}:`, url);
 }
@@ -651,7 +669,7 @@ export async function getBranchAlertsTodayForBranchOverview(
 
   let q = supabase.from('branch_alerts_today').select('*').eq('branch_id', branchId);
   if (stream === 'accommodation' || stream === 'fnb') {
-    q = q.eq('branch_type', stream);
+    q = q.eq('alert_stream', stream);
   }
   const { data, error } = await q;
 
@@ -704,11 +722,15 @@ export async function getBranchAlertsTodayForBranchOverview(
       sevStr === 'informational' ||
       /opportunity|high demand|demand is strong/i.test(alertType + msg);
 
+    const at = alertType || 'Alert';
+    const alert_stream = resolveAlertStream(r, at, branch_type);
+
     rows.push({
       branch_id: bid,
       branch_type,
+      alert_stream,
       metric_date: metricDate,
-      alert_type: alertType || 'Alert',
+      alert_type: at,
       alert_message: msg,
       impact_estimate_thb: impact,
       recommended_action: action,
@@ -724,7 +746,7 @@ export async function getBranchAlertsTodayForBranchOverview(
   });
 
   if (stream === 'accommodation' || stream === 'fnb') {
-    return rows.filter((a) => a.branch_type === stream);
+    return rows.filter((a) => a.alert_stream === stream);
   }
   return rows;
 }

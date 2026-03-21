@@ -66,6 +66,14 @@ problems AS (
         organization_id,
         branch_name,
         branch_type,
+        CASE
+            WHEN revenue_delta_day IS NOT NULL AND revenue_delta_day <= -10 THEN
+                CASE
+                    WHEN COALESCE(accommodation_revenue, 0) >= COALESCE(fnb_revenue, 0) THEN 'accommodation'::text
+                    ELSE 'fnb'::text
+                END
+            WHEN occupancy_delta_week IS NOT NULL AND occupancy_delta_week <= -10 THEN 'accommodation'::text
+        END AS alert_stream,
         metric_date,
         CASE
             WHEN revenue_delta_day IS NOT NULL AND revenue_delta_day <= -10 THEN 'Revenue Drop'
@@ -116,6 +124,10 @@ opportunities AS (
         organization_id,
         branch_name,
         branch_type,
+        CASE
+            WHEN COALESCE(accommodation_revenue, 0) >= COALESCE(fnb_revenue, 0) THEN 'accommodation'::text
+            ELSE 'fnb'::text
+        END AS alert_stream,
         metric_date,
         'High Demand Opportunity'::text AS alert_type,
         1 AS severity,
@@ -137,6 +149,13 @@ revenue_split AS (
         organization_id,
         branch_name,
         branch_type,
+        CASE
+            WHEN fnb_revenue IS NOT NULL AND accommodation_revenue IS NOT NULL
+                AND fnb_revenue < accommodation_revenue * 0.2 THEN 'fnb'::text
+            WHEN fnb_revenue IS NOT NULL AND accommodation_revenue IS NOT NULL
+                AND accommodation_revenue < fnb_revenue * 1.5 THEN 'accommodation'::text
+            ELSE NULL
+        END AS alert_stream,
         metric_date,
         CASE
             WHEN fnb_revenue IS NOT NULL AND accommodation_revenue IS NOT NULL
@@ -197,6 +216,7 @@ SELECT
     organization_id,
     branch_name,
     branch_type,
+    alert_stream,
     metric_date,
     alert_type,
     severity,
@@ -207,12 +227,14 @@ SELECT
     alert_category
 FROM problems
 WHERE alert_type IS NOT NULL
+  AND alert_stream IS NOT NULL
 UNION ALL
 SELECT
     branch_id,
     organization_id,
     branch_name,
     branch_type,
+    alert_stream,
     metric_date,
     alert_type,
     severity,
@@ -228,6 +250,7 @@ SELECT
     organization_id,
     branch_name,
     branch_type,
+    alert_stream,
     metric_date,
     alert_type,
     severity,
@@ -238,7 +261,8 @@ SELECT
     alert_category
 FROM revenue_split
 WHERE alert_type IS NOT NULL
-  AND recommended_action IS NOT NULL;
+  AND recommended_action IS NOT NULL
+  AND alert_stream IS NOT NULL;
 
 -- STEP 3 — Passthrough (full enriched set for daily summary / generic consumers)
 CREATE OR REPLACE VIEW alerts_today AS
@@ -343,6 +367,7 @@ SELECT
     x.organization_id,
     x.branch_name,
     x.branch_type,
+    x.alert_stream,
     x.metric_date,
     x.alert_type,
     x.severity,
@@ -359,6 +384,7 @@ FROM (
         e.organization_id,
         e.branch_name,
         e.branch_type,
+        e.alert_stream,
         e.metric_date,
         e.alert_type,
         e.severity,

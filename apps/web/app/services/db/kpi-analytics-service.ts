@@ -287,6 +287,7 @@ export async function getAlertsFromBranchIntelligenceEngine(
 export interface BranchAlertsTodayRow {
   branch_id: string;
   branch_type?: string | null;
+  alert_stream?: string | null;
   metric_date?: string | null;
   alert_message?: string | null;
   alert_type?: string | null;
@@ -323,7 +324,7 @@ export async function getAlertsFromBranchAlertsToday(
   try {
     let q = supabase.from('branch_alerts_today').select('*').eq('branch_id', branchId);
     if (stream === 'accommodation' || stream === 'fnb') {
-      q = q.eq('branch_type', stream);
+      q = q.eq('alert_stream', stream);
     }
     const { data, error } = await q.order('metric_date', { ascending: false });
     if (error) {
@@ -332,7 +333,7 @@ export async function getAlertsFromBranchAlertsToday(
         if (base) {
           const typeQ =
             stream === 'accommodation' || stream === 'fnb'
-              ? `&branch_type=eq.${encodeURIComponent(stream)}`
+              ? `&alert_stream=eq.${encodeURIComponent(stream)}`
               : '';
           console.warn(
             '[kpi-analytics] branch_alerts_today:',
@@ -345,9 +346,7 @@ export async function getAlertsFromBranchAlertsToday(
     }
     let rows = (data ?? []) as BranchAlertsTodayRow[];
     if (stream === 'accommodation' || stream === 'fnb') {
-      rows = rows.filter(
-        (a) => String(a.branch_type ?? '').toLowerCase() === stream
-      );
+      rows = rows.filter((a) => String(a.alert_stream ?? '').toLowerCase() === stream);
     }
     rows.sort((a, b) => {
       const orderA = severityOrder(a.alert_severity);
