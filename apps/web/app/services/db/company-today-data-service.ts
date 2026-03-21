@@ -1,13 +1,8 @@
 /**
- * Company Today — reads rebuilt KPI views.
- * Views: branch_business_status, today_summary_clean_safe (fallback/health), alerts_*
+ * Company Today — branch_business_status + alerts_* (no today_summary_clean_safe).
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
-import {
-  normalizeProfitabilityTrend,
-  type ProfitabilityTrend,
-  TODAY_SUMMARY_VIEW,
-} from './latest-metrics-service';
+import { normalizeProfitabilityTrend, type ProfitabilityTrend } from './latest-metrics-service';
 
 export interface NormalizedBusinessRow {
   branchId: string;
@@ -308,99 +303,6 @@ function branchNameFromLocal(branchId: string): string {
   }
 }
 
-function inferBranchTypeFromClient(branchId: string): 'accommodation' | 'fnb' {
-  if (typeof window === 'undefined') return 'accommodation';
-  try {
-    const { businessGroupService } = require('../business-group-service');
-    const b = businessGroupService.getBranchById(branchId);
-    return b?.moduleType === 'fnb' ? 'fnb' : 'accommodation';
-  } catch {
-    return 'accommodation';
-  }
-}
-
-/** When `branch_business_status` is missing, errors, or returns no normalized rows (e.g. strict INNER JOIN). */
-function syntheticRowForFallback(
-  branchId: string,
-  branchName: string,
-  branchType: 'accommodation' | 'fnb',
-  ts: Record<string, unknown> | null
-): Record<string, unknown> {
-  if (!ts) {
-    return {
-      branch_id: branchId,
-      branch_name: branchName,
-      branch_type: branchType,
-    };
-  }
-  const occRaw = pickNumOrNull(ts, 'occupancy_rate', 'occupancy_pct');
-  let occPct = occRaw ?? 0;
-  if (occRaw != null && occRaw > 0 && occRaw <= 1) occPct = occRaw * 100;
-
-  const revenueThb =
-    branchType === 'fnb'
-      ? pickNum(ts, 'fnb_revenue', 'total_revenue', 'revenue')
-      : pickNum(ts, 'accommodation_revenue', 'total_revenue', 'revenue');
-
-  return {
-    branch_id: branchId,
-    branch_name: branchName,
-    branch_type: branchType,
-    metric_date: ts.metric_date,
-    health_score: ts.health_score,
-    occupancy_pct: occPct,
-    occupancy_rate: occPct,
-    revenue_thb: revenueThb,
-    revenue: revenueThb,
-    adr: pickNum(ts, 'adr'),
-    revpar: pickNum(ts, 'revpar', 'rev_par'),
-    rooms_sold: pickNum(ts, 'utilized', 'rooms_sold', 'roomsSold'),
-    rooms_total: pickNum(ts, 'capacity', 'rooms_available', 'roomsTotal', 'total_rooms'),
-    rooms_available: pickNum(ts, 'capacity', 'rooms_available'),
-    customers: pickNum(ts, 'customers', 'total_customers'),
-    avg_ticket: pickNum(ts, 'avg_ticket', 'average_ticket'),
-    accommodation_revenue: ts.accommodation_revenue,
-    fnb_revenue: ts.fnb_revenue,
-    total_revenue: ts.total_revenue,
-  };
-}
-
-async function buildBusinessStatusFromTodaySummaryFallback(
-  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
-  branchIds: string[]
-): Promise<NormalizedBusinessRow[]> {
-  if (branchIds.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from(TODAY_SUMMARY_VIEW)
-    .select('*')
-    .in('branch_id', branchIds)
-    .order('metric_date', { ascending: false });
-
-  if (error && process.env.NODE_ENV === 'development') {
-    console.warn('[CompanyToday] today_summary_clean_safe fallback:', error.message);
-  }
-
-  const latestByBranch = new Map<string, Record<string, unknown>>();
-  if (!error && data) {
-    for (const raw of asRecordArray(data)) {
-      const bid = pickStr(raw, 'branch_id', 'branchId');
-      if (bid && !latestByBranch.has(bid)) latestByBranch.set(bid, raw);
-    }
-  }
-
-  const out: NormalizedBusinessRow[] = [];
-  for (const bid of branchIds) {
-    const ts = latestByBranch.get(bid) ?? null;
-    const bt = inferBranchTypeFromClient(bid);
-    const name = branchNameFromLocal(bid);
-    const syn = syntheticRowForFallback(bid, name, bt, ts);
-    const normalized = normalizeBusinessRow(syn, name);
-    if (normalized) out.push(normalized);
-  }
-  return out;
-}
-
 export function createEmptyCompanyTodayBundle(errorTags: string[]): CompanyTodayBundle {
   return {
     businessStatus: [],
@@ -479,51 +381,6 @@ export async function fetchCompanyTodayBundle(
     const bid = pickStr(r, 'branch_id', 'branchId');
     const normalized = normalizeBusinessRow(r, branchNameFromLocal(bid));
     if (normalized) businessStatus.push(normalized);
-  }
-
-  if (businessStatus.length === 0 && idFilter.length > 0) {
-    try {
-      const fb = await buildBusinessStatusFromTodaySummaryFallback(supabase, idFilter);
-      businessStatus.push(...fb);
-      if (fb.length > 0) {
-        errors.push('branch_business_status_fallback_today_summary_clean_safe');
-      }
-      if (bsRes.error) {
-        errors.push(`branch_business_status:${bsRes.error.message}`);
-      }
-    } catch (e) {
-      errors.push(`business_status_fallback:${String(e)}`);
-    }
-  }
-
-  /** Match branch Today: branch_business_status often omits or zeroes health; use latest safe summary per branch. */
-  if (idFilter.length > 0) {
-    const tsRes = await supabase
-      .from(TODAY_SUMMARY_VIEW)
-      .select('branch_id, health_score, metric_date')
-      .in('branch_id', idFilter);
-    if (!tsRes.error && tsRes.data) {
-      const healthBest = new Map<string, { md: string; score: number }>();
-      for (const raw of asRecordArray(tsRes.data)) {
-        const bid = pickStr(raw, 'branch_id', 'branchId');
-        if (!bid) continue;
-        const md = pickStr(raw, 'metric_date', 'as_of_date') || '';
-        const hs = pickNumOrNull(raw, 'health_score', 'healthScore');
-        if (hs == null || Number.isNaN(hs)) continue;
-        const score = Math.min(100, Math.max(0, hs));
-        const prev = healthBest.get(bid);
-        if (!prev || md.localeCompare(prev.md) > 0) {
-          healthBest.set(bid, { md, score });
-        }
-      }
-      for (let i = 0; i < businessStatus.length; i++) {
-        const row = businessStatus[i]!;
-        const fb = healthBest.get(row.branchId)?.score;
-        if (fb != null && (row.healthScore == null || row.healthScore === 0)) {
-          businessStatus[i] = { ...row, healthScore: fb };
-        }
-      }
-    }
   }
 
   const alertsTodayRaw = asRecordArray(todayRes.data);

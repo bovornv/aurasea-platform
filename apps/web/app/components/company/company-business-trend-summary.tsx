@@ -143,8 +143,8 @@ export function CompanyBusinessTrendSummary({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
       <p style={{ margin: 0, fontSize: '14px', color: '#6b7280', lineHeight: 1.5 }}>
         {th
-          ? 'ยังไม่พบข้อมูลรายได้รายวันใน today_summary_clean_safe สำหรับสาขาในกลุ่ม — ตรวจสอบการบันทึกเมตริกรายวัน'
-          : 'No daily revenue in today_summary_clean_safe for your branches yet — check daily metrics are being recorded.'}
+          ? 'ยังไม่พบข้อมูลรายได้รายวันจากเมตริกรายวันของสาขาในกลุ่ม — ตรวจสอบการบันทึกข้อมูล'
+          : 'No daily revenue from branch metrics yet — check accommodation / F&B daily metrics are recorded.'}
       </p>
       {linkBtn}
     </div>

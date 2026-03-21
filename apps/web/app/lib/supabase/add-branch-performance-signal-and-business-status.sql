@@ -3,11 +3,12 @@
 --
 -- Requires:
 --   public.branches (id, organization_id, name, module_type)
---   public.today_summary_clean_safe (latest metrics per branch/day; app queries this, not today_summary_clean)
+--   public.today_summary_clean (latest metrics per branch/day; same shape semantics as former today_summary_clean_safe)
 --   public.accommodation_profitability_signal
 --   public.fnb_profitability_signal
 --
--- Adjust column names in the CTEs below if your signal views use different names.
+-- Trend columns differ by deployment; we read optional keys via row_to_json so missing
+-- columns (e.g. profit_trend) do not fail at CREATE VIEW time.
 
 -- ========== 1) Drop views (dependent first) ==========
 DROP VIEW IF EXISTS branch_business_status CASCADE;
@@ -17,54 +18,62 @@ DROP VIEW IF EXISTS branch_performance_signal CASCADE;
 CREATE VIEW branch_performance_signal AS
 SELECT *
 FROM (
-  SELECT DISTINCT ON (branch_id)
-    branch_id::text AS branch_id,
+  SELECT DISTINCT ON (t.branch_id)
+    t.branch_id::text AS branch_id,
     'accommodation'::text AS branch_type,
-    metric_date::date AS metric_date,
+    t.metric_date::date AS metric_date,
     NULLIF(
       TRIM(
         COALESCE(
-          profitability_trend::text,
-          profit_trend::text,
-          profit_margin_trend::text,
-          trend::text,
+          (sig.j->>'profitability_trend'),
+          (sig.j->>'profit_trend'),
+          (sig.j->>'profit_margin_trend'),
+          (sig.j->>'trend'),
           ''
         )
       ),
       ''
     ) AS profit_margin_trend,
     NULL::numeric AS avg_daily_cost
-  FROM accommodation_profitability_signal
-  ORDER BY branch_id, metric_date DESC NULLS LAST
+  FROM accommodation_profitability_signal t
+  CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS j) AS sig
+  ORDER BY t.branch_id, t.metric_date DESC NULLS LAST
 ) acc
 UNION ALL
 SELECT *
 FROM (
-  SELECT DISTINCT ON (branch_id)
-    branch_id::text AS branch_id,
+  SELECT DISTINCT ON (t.branch_id)
+    t.branch_id::text AS branch_id,
     'fnb'::text AS branch_type,
-    metric_date::date AS metric_date,
+    t.metric_date::date AS metric_date,
     NULLIF(
       TRIM(
         COALESCE(
-          margin_trend::text,
-          margin_direction::text,
-          profitability_trend::text,
-          trend::text,
+          (sig.j->>'margin_trend'),
+          (sig.j->>'margin_direction'),
+          (sig.j->>'profitability_trend'),
+          (sig.j->>'trend'),
           ''
         )
       ),
       ''
     ) AS profit_margin_trend,
-    avg_daily_cost::numeric AS avg_daily_cost
-  FROM fnb_profitability_signal
-  ORDER BY branch_id, metric_date DESC NULLS LAST
+    COALESCE(
+      NULLIF(TRIM(sig.j->>'avg_daily_cost'), '')::numeric,
+      NULLIF(TRIM(sig.j->>'average_daily_cost'), '')::numeric,
+      NULLIF(TRIM(sig.j->>'daily_cost'), '')::numeric,
+      NULLIF(TRIM(sig.j->>'avg_cost'), '')::numeric,
+      NULL::numeric
+    ) AS avg_daily_cost
+  FROM fnb_profitability_signal t
+  CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS j) AS sig
+  ORDER BY t.branch_id, t.metric_date DESC NULLS LAST
 ) fnb;
 
 COMMENT ON VIEW branch_performance_signal IS
   'Latest profitability/margin signal per branch; accommodation + fnb UNION. Feeds branch_business_status.';
 
--- ========== 3) branch_business_status — one row per branch (latest today_summary_clean_safe + signals) ==========
+-- ========== 3) branch_business_status — one row per branch (latest today_summary_clean + signals) ==========
 CREATE VIEW branch_business_status AS
 SELECT
   b.id AS branch_id,
@@ -100,29 +109,41 @@ SELECT
   NULL::text AS freshness_status
 FROM branches b
 INNER JOIN (
-  SELECT DISTINCT ON (branch_id)
-    branch_id,
-    metric_date,
-    total_revenue,
-    accommodation_revenue,
-    fnb_revenue,
-    customers,
-    capacity,
-    utilized,
-    occupancy_rate,
-    adr,
-    revpar,
-    health_score
-  FROM today_summary_clean_safe
-  ORDER BY branch_id, metric_date DESC NULLS LAST
-) l ON l.branch_id = b.id
+  SELECT DISTINCT ON (t.branch_id)
+    t.branch_id::text AS branch_id,
+    t.metric_date::date AS metric_date,
+    COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
+    COALESCE(t.accommodation_revenue, t.total_revenue, 0)::numeric AS accommodation_revenue,
+    COALESCE(t.fnb_revenue, 0)::numeric AS fnb_revenue,
+    COALESCE(t.customers, 0)::numeric AS customers,
+    COALESCE(t.capacity, 0)::integer AS capacity,
+    COALESCE(t.utilized, 0)::integer AS utilized,
+    t.occupancy_rate::numeric AS occupancy_rate,
+    CASE
+      WHEN COALESCE(t.utilized, 0) > 0
+      THEN (COALESCE(t.total_revenue, 0)::numeric / NULLIF(t.utilized::numeric, 0))
+      ELSE NULL::numeric
+    END AS adr,
+    CASE
+      WHEN COALESCE(t.capacity, 0) > 0
+      THEN (COALESCE(t.total_revenue, 0)::numeric / NULLIF(t.capacity::numeric, 0))
+      ELSE NULL::numeric
+    END AS revpar,
+    CASE
+      WHEN t.revenue_delta_day IS NULL THEN 70::numeric
+      WHEN t.revenue_delta_day >= 0 THEN 76::numeric
+      ELSE 58::numeric
+    END AS health_score
+  FROM today_summary_clean t
+  ORDER BY t.branch_id, t.metric_date DESC NULLS LAST
+) l ON l.branch_id = b.id::text
 LEFT JOIN branch_performance_signal ps_acc
   ON ps_acc.branch_id = b.id::text AND ps_acc.branch_type = 'accommodation'
 LEFT JOIN branch_performance_signal ps_fnb
   ON ps_fnb.branch_id = b.id::text AND ps_fnb.branch_type = 'fnb';
 
 COMMENT ON VIEW branch_business_status IS
-  'Company Latest business status: latest today_summary_clean_safe per branch + profitability_trend, margin_trend, avg_daily_cost from branch_performance_signal.';
+  'Latest today_summary_clean per branch + profitability_trend, margin_trend, avg_daily_cost from branch_performance_signal.';
 
 GRANT SELECT ON branch_performance_signal TO anon, authenticated;
 GRANT SELECT ON branch_business_status TO anon, authenticated;

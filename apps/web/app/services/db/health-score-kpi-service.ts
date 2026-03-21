@@ -6,7 +6,6 @@
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
-import { TODAY_SUMMARY_VIEW } from './latest-metrics-service';
 
 function getTodayDateString(): string {
   const d = new Date();
@@ -231,8 +230,7 @@ export async function getHealthScoreFromBranchHealthMetrics(
 }
 
 /**
- * Get health_score from today_summary_clean_safe for the Operating Status / Today page.
- * Used for both accommodation and F&B branches.
+ * Get health_score from branch_business_status (Operating Status / Today page).
  */
 export async function getHealthScoreFromAccommodationHealthToday(
   branchId: string
@@ -244,11 +242,9 @@ export async function getHealthScoreFromAccommodationHealthToday(
 
   try {
     const { data, error } = await supabase
-      .from(TODAY_SUMMARY_VIEW)
+      .from('branch_business_status')
       .select('health_score')
       .eq('branch_id', branchId)
-      .order('metric_date', { ascending: false })
-      .limit(1)
       .maybeSingle();
 
     if (error || data == null) return null;
@@ -260,7 +256,7 @@ export async function getHealthScoreFromAccommodationHealthToday(
 }
 
 /**
- * Get health_score from today_summary_clean_safe for F&B branches.
+ * F&B: same source as accommodation (branch_business_status).
  */
 export async function getHealthScoreFromFnbHealthToday(
   branchId: string

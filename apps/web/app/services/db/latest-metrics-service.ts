@@ -8,12 +8,6 @@
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 
-/**
- * App must query this view only — not `today_summary_clean` (TEXT branch_id, stable columns, computed health).
- * @see add-today-summary-clean-safe.sql
- */
-export const TODAY_SUMMARY_VIEW = 'today_summary_clean_safe' as const;
-
 export type BranchModuleType = 'accommodation' | 'fnb';
 
 /** Raw row from fnb_latest_metrics or accommodation_latest_metrics for Operating Status cards. */
@@ -223,8 +217,8 @@ export async function getOperatingStatusData(
 }
 
 /**
- * Row from today_summary_clean_safe (core view for Today page).
- * total_revenue = main revenue; accommodation_revenue, fnb_revenue = split when available.
+ * Branch Today KPI row — sourced from branch_business_status (latest per branch).
+ * Deltas / split revenue may be null when not exposed by that view.
  */
 export interface TodaySummaryRow {
   branch_id: string;
@@ -246,8 +240,8 @@ export interface TodaySummaryRow {
   fnb_revenue?: number | null;
 }
 
-const TODAY_SUMMARY_SELECT =
-  'branch_id, metric_date, total_revenue, occupancy_rate, adr, revpar, health_score, revenue_delta_day, occupancy_delta_week, accommodation_revenue, fnb_revenue';
+const BRANCH_BUSINESS_STATUS_TODAY_SELECT =
+  'branch_id, metric_date, revenue_thb, occupancy_pct, adr, revpar, health_score, rooms_sold, rooms_total, customers, avg_ticket';
 
 /** Trend series for Trends page: one value per day (oldest first). dates[i] = YYYY-MM-DD for values[i]. */
 export interface BranchTrendSeries {
@@ -259,14 +253,8 @@ export interface BranchTrendSeries {
   customers: number[];
 }
 
-const TREND_SELECT_FULL =
-  'metric_date, total_revenue, occupancy_rate, customers, capacity, utilized';
-const TREND_SELECT_MIN =
-  'metric_date, total_revenue, occupancy_rate, customers';
-
 /**
- * Fetch last N days from today_summary_clean_safe for Trends charts.
- * Tries full select first (with capacity, utilized for adr/revpar); on error tries minimal select.
+ * Fetch last N days for Trends charts from accommodation_daily_metrics / fnb_daily_metrics (no summary view).
  */
 export async function getBranchTrendSeries(branchId: string, days: number = 30): Promise<BranchTrendSeries | null> {
   if (branchId == null || branchId === '') return null;
@@ -274,66 +262,13 @@ export async function getBranchTrendSeries(branchId: string, days: number = 30):
   if (!isSupabaseAvailable()) return null;
   const supabase = getSupabaseClient();
   if (!supabase) return null;
-  const start = new Date();
-  start.setDate(start.getDate() - days);
-  const startStr = start.toISOString().split('T')[0]!;
-
-  let data: unknown[] | null = null;
-  let hasCapacityUtilized = false;
-
-  const { data: fullData, error: fullError } = await supabase
-    .from(TODAY_SUMMARY_VIEW)
-    .select(TREND_SELECT_FULL)
-    .eq('branch_id', branchId)
-    .gte('metric_date', startStr)
-    .order('metric_date', { ascending: true });
-  if (!fullError && fullData && fullData.length >= 2) {
-    data = fullData;
-    hasCapacityUtilized = true;
-  } else {
-    const { data: minData, error: minError } = await supabase
-      .from(TODAY_SUMMARY_VIEW)
-      .select(TREND_SELECT_MIN)
-      .eq('branch_id', branchId)
-      .gte('metric_date', startStr)
-      .order('metric_date', { ascending: true });
-    if (!minError && minData && minData.length >= 2) data = minData;
-  }
-
-  if (!data || data.length < 2) return null;
-  const rows = data as Array<{
-    metric_date?: string | null;
-    total_revenue?: number | null;
-    occupancy_rate?: number | null;
-    customers?: number | null;
-    capacity?: number | null;
-    utilized?: number | null;
-  }>;
-  return {
-    dates: rows.map((r) => (r.metric_date ? String(r.metric_date).slice(0, 10) : '')),
-    revenue: rows.map((r) => Number(r.total_revenue ?? 0)),
-    occupancy: rows.map((r) => {
-      const v = r.occupancy_rate;
-      if (v == null) return 0;
-      return Number(v) <= 1 ? Number(v) * 100 : Number(v);
-    }),
-    revpar: rows.map((r) => {
-      if (!hasCapacityUtilized) return 0;
-      const cap = Number(r.capacity ?? 0);
-      const rev = Number(r.total_revenue ?? 0);
-      return cap > 0 ? rev / cap : 0;
-    }),
-    adr: rows.map((r) => {
-      if (!hasCapacityUtilized) return 0;
-      const util = Number(r.utilized ?? 0);
-      const rev = Number(r.total_revenue ?? 0);
-      return util > 0 ? rev / util : 0;
-    }),
-    customers: rows.map((r) => Number(r.customers ?? 0)),
-  };
+  return (
+    (await getAccommodationTrendFallback(branchId, days, supabase)) ??
+    (await getFnbTrendFallback(branchId, days, supabase))
+  );
 }
 
-/** Build trend series from accommodation_daily_metrics rows (when today_summary_clean_safe is empty). */
+/** Build trend series from accommodation_daily_metrics rows. */
 async function getAccommodationTrendFallback(
   branchId: string,
   days: number,
@@ -370,7 +305,7 @@ async function getAccommodationTrendFallback(
   };
 }
 
-/** Build trend series from fnb_daily_metrics rows (when today_summary_clean_safe is empty). */
+/** Build trend series from fnb_daily_metrics rows. */
 async function getFnbTrendFallback(
   branchId: string,
   days: number,
@@ -398,26 +333,17 @@ async function getFnbTrendFallback(
 }
 
 /**
- * Fetch trend series for Trends page. Tries direct tables first (most reliable), then today_summary_clean_safe.
+ * Fetch trend series for Trends page — daily metrics tables only.
  */
 export async function getBranchTrendSeriesWithFallback(
   branchId: string,
   days: number = 30
 ): Promise<BranchTrendSeries | null> {
-  if (!isSupabaseAvailable()) return null;
-  const supabase = getSupabaseClient();
-  if (!supabase) return null;
-  const fromAcc = await getAccommodationTrendFallback(branchId, days, supabase);
-  if (fromAcc != null) return fromAcc;
-  const fromFnb = await getFnbTrendFallback(branchId, days, supabase);
-  if (fromFnb != null) return fromFnb;
   return getBranchTrendSeries(branchId, days);
 }
 
 /**
- * Fetch latest row from today_summary_clean_safe for a branch.
- * Core view: revenue, occupancy_rate, adr, revpar, health_score, revenue_delta_day, occupancy_delta_week.
- * Returns null if view missing or error (caller can fall back to client-side deltas).
+ * Latest branch KPIs from branch_business_status (one row per branch).
  */
 export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow | null> {
   if (branchId == null || branchId === '') return null;
@@ -428,39 +354,41 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
   if (!supabase) return null;
 
   const { data, error } = await supabase
-    .from(TODAY_SUMMARY_VIEW)
-    .select(TODAY_SUMMARY_SELECT)
+    .from('branch_business_status')
+    .select(BRANCH_BUSINESS_STATUS_TODAY_SELECT)
     .eq('branch_id', branchId)
-    .order('metric_date', { ascending: false })
-    .limit(1)
     .maybeSingle();
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[LatestMetricsService] today_summary_clean_safe error:', error.message);
+      console.warn('[LatestMetricsService] branch_business_status error:', error.message);
     }
     return null;
   }
 
   if (!data) return null;
   const row = data as Record<string, unknown>;
+  const occRaw = row.occupancy_pct != null ? Number(row.occupancy_pct) : null;
+  const occPct =
+    occRaw != null && !Number.isNaN(occRaw) ? (occRaw > 0 && occRaw <= 1 ? occRaw * 100 : occRaw) : null;
+  const revThb = row.revenue_thb != null ? Number(row.revenue_thb) : null;
   return {
     branch_id: branchId,
     metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
-    total_revenue: row.total_revenue != null ? Number(row.total_revenue) : (row.revenue != null ? Number(row.revenue) : null),
-    revenue_yesterday: row.revenue_yesterday != null ? Number(row.revenue_yesterday) : null,
-    revenue_delta_day: row.revenue_delta_day != null ? Number(row.revenue_delta_day) : null,
-    occupancy_rate: row.occupancy_rate != null ? Number(row.occupancy_rate) : null,
-    occupancy_delta_week: row.occupancy_delta_week != null ? Number(row.occupancy_delta_week) : null,
+    total_revenue: revThb,
+    revenue_yesterday: null,
+    revenue_delta_day: null,
+    occupancy_rate: occPct,
+    occupancy_delta_week: null,
     rooms_sold: row.rooms_sold != null ? Number(row.rooms_sold) : null,
-    rooms_available: row.rooms_available != null ? Number(row.rooms_available) : null,
+    rooms_available: row.rooms_total != null ? Number(row.rooms_total) : null,
     adr: row.adr != null ? Number(row.adr) : null,
     revpar: row.revpar != null ? Number(row.revpar) : null,
     customers: row.customers != null ? Number(row.customers) : null,
     avg_ticket: row.avg_ticket != null ? Number(row.avg_ticket) : null,
     health_score: row.health_score != null ? Number(row.health_score) : null,
-    accommodation_revenue: row.accommodation_revenue != null ? Number(row.accommodation_revenue) : null,
-    fnb_revenue: row.fnb_revenue != null ? Number(row.fnb_revenue) : null,
+    accommodation_revenue: null,
+    fnb_revenue: null,
   };
 }
 
@@ -783,11 +711,7 @@ export async function getAlertsTop(branchId: string): Promise<AlertTopRow[]> {
   }));
 }
 
-const TREND_PORTFOLIO_SELECT_FULL =
-  'metric_date, branch_id, total_revenue, occupancy_rate, customers, accommodation_revenue, fnb_revenue';
-const TREND_PORTFOLIO_SELECT_MIN = 'metric_date, branch_id, total_revenue, occupancy_rate, customers';
-
-/** Aggregated 7-day window across branches (from today_summary_clean_safe). */
+/** Aggregated 7-day window across branches (from accommodation_daily_metrics ∪ fnb_daily_metrics). */
 export interface CompanyPortfolioTrendSnapshot {
   ready: boolean;
   /** Distinct dates in lookback window. */
@@ -836,33 +760,23 @@ export async function getCompanyPortfolioTrendSnapshot(
   start.setDate(start.getDate() - lookbackDays);
   const startStr = start.toISOString().split('T')[0]!;
 
-  let rows: unknown[] | null = null;
-  const { data: full, error: errFull } = await supabase
-    .from(TODAY_SUMMARY_VIEW)
-    .select(TREND_PORTFOLIO_SELECT_FULL)
-    .in('branch_id', ids)
-    .gte('metric_date', startStr)
-    .order('metric_date', { ascending: true });
-
-  if (!errFull && full && full.length > 0) {
-    rows = full;
-  } else {
-    const { data: min, error: errMin } = await supabase
-      .from(TODAY_SUMMARY_VIEW)
-      .select(TREND_PORTFOLIO_SELECT_MIN)
+  const [{ data: accRows, error: accErr }, { data: fnbRows, error: fnbErr }] = await Promise.all([
+    supabase
+      .from('accommodation_daily_metrics')
+      .select('metric_date, branch_id, revenue, rooms_sold, rooms_available')
       .in('branch_id', ids)
       .gte('metric_date', startStr)
-      .order('metric_date', { ascending: true });
-    if (!errMin && min && min.length > 0) rows = min;
-    else {
-      if (process.env.NODE_ENV === 'development' && (errFull || errMin)) {
-        console.warn(
-          '[LatestMetricsService] portfolio trend:',
-          errFull?.message || errMin?.message
-        );
-      }
-      return empty;
-    }
+      .order('metric_date', { ascending: true }),
+    supabase
+      .from('fnb_daily_metrics')
+      .select('metric_date, branch_id, revenue, total_customers')
+      .in('branch_id', ids)
+      .gte('metric_date', startStr)
+      .order('metric_date', { ascending: true }),
+  ]);
+
+  if (process.env.NODE_ENV === 'development' && (accErr || fnbErr)) {
+    console.warn('[LatestMetricsService] portfolio trend daily metrics:', accErr?.message || fnbErr?.message);
   }
 
   type Agg = {
@@ -875,7 +789,7 @@ export async function getCompanyPortfolioTrendSnapshot(
   };
   const byDate = new Map<string, Agg>();
 
-  for (const raw of rows) {
+  for (const raw of accRows ?? []) {
     const r = raw as Record<string, unknown>;
     if (r.metric_date == null) continue;
     const d = String(r.metric_date).slice(0, 10);
@@ -887,17 +801,34 @@ export async function getCompanyPortfolioTrendSnapshot(
       accom: 0,
       fnb: 0,
     };
-    cur.revenue += Number(r.total_revenue ?? 0);
-    const orv = r.occupancy_rate;
-    if (orv != null && !Number.isNaN(Number(orv))) {
-      let occ = Number(orv);
-      if (occ > 0 && occ <= 1) occ *= 100;
-      cur.occSum += occ;
+    const rev = Number(r.revenue ?? 0);
+    cur.revenue += rev;
+    cur.accom += rev;
+    const avail = Number(r.rooms_available ?? 0);
+    const sold = Number(r.rooms_sold ?? 0);
+    if (avail > 0) {
+      cur.occSum += (sold / avail) * 100;
       cur.occCount += 1;
     }
-    cur.customers += Number(r.customers ?? 0);
-    cur.accom += Number(r.accommodation_revenue ?? 0);
-    cur.fnb += Number(r.fnb_revenue ?? 0);
+    byDate.set(d, cur);
+  }
+
+  for (const raw of fnbRows ?? []) {
+    const r = raw as Record<string, unknown>;
+    if (r.metric_date == null) continue;
+    const d = String(r.metric_date).slice(0, 10);
+    const cur: Agg = byDate.get(d) ?? {
+      revenue: 0,
+      occSum: 0,
+      occCount: 0,
+      customers: 0,
+      accom: 0,
+      fnb: 0,
+    };
+    const rev = Number(r.revenue ?? 0);
+    cur.revenue += rev;
+    cur.fnb += rev;
+    cur.customers += Number(r.total_customers ?? 0);
     byDate.set(d, cur);
   }
 

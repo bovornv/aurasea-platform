@@ -1,12 +1,10 @@
 /**
  * Branch Anomaly Signals Service
  *
- * Read-only: uses today_summary_clean_safe for latest revenue/confidence.
- * Anomaly-style alerts can also come from alerts_final (alert_type, severity).
+ * Read-only: branch_business_status for latest revenue + health as confidence proxy.
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
-import { TODAY_SUMMARY_VIEW } from './db/latest-metrics-service';
 import type { AlertContract } from '../../../../core/sme-os/contracts/alerts';
 
 export interface BranchAnomalySignalRow {
@@ -25,7 +23,7 @@ export interface AnomalyAlert {
 }
 
 /**
- * Fetch latest row from today_summary_clean_safe for a branch (revenue, health as confidence proxy).
+ * Latest revenue + health from branch_business_status.
  */
 export async function getLatestAnomalySignal(
   branchId: string
@@ -35,22 +33,25 @@ export async function getLatestAnomalySignal(
   if (!supabase) return null;
 
   const { data, error } = await supabase
-    .from(TODAY_SUMMARY_VIEW)
-    .select('branch_id, metric_date, total_revenue, health_score')
+    .from('branch_business_status')
+    .select('branch_id, metric_date, revenue_thb, health_score')
     .eq('branch_id', branchId)
-    .order('metric_date', { ascending: false })
-    .limit(1)
     .maybeSingle();
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[AnomalySignals] today_summary_clean_safe error:', error.message);
+      console.warn('[AnomalySignals] branch_business_status error:', error.message);
     }
     return null;
   }
   if (!data) return null;
-  const row = data as { branch_id: string; metric_date?: string | null; total_revenue?: number | null; revenue?: number | null; health_score?: number | null };
-  const rev = row.total_revenue ?? row.revenue;
+  const row = data as {
+    branch_id: string;
+    metric_date?: string | null;
+    revenue_thb?: number | null;
+    health_score?: number | null;
+  };
+  const rev = row.revenue_thb;
   return {
     branch_id: row.branch_id,
     metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : '',

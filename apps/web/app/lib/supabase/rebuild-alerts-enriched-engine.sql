@@ -8,9 +8,7 @@
 --   - public.today_summary_clean (total_revenue or revenue pipeline; see fix-today-summary-clean / upgrade scripts)
 --   - public.branches (id, organization_id, name)
 --
--- Note: We read today_summary_clean directly so this script still runs if today_summary_clean_safe
--- is an older definition missing columns (e.g. total_revenue). Re-run add-today-summary-clean-safe-view.sql
--- for PostgREST / app API parity.
+-- App/API use branch_business_status + daily tables; alerts engine reads today_summary_clean only.
 --
 -- After running, verify:
 --   SELECT * FROM alerts_today LIMIT 5;
