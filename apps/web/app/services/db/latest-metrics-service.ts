@@ -626,7 +626,11 @@ function resolveAlertStream(
   branch_type: string | null
 ): 'accommodation' | 'fnb' | null {
   const raw = pickBranchAlertStr(r, 'alert_stream', 'alertStream').toLowerCase();
-  if (raw === 'accommodation' || raw === 'fnb') return raw;
+  if (raw === 'accommodation' || raw === 'fnb') {
+    // Pure F&B branches: legacy SQL often tagged revenue alerts as accommodation (COALESCE(total) vs fnb split).
+    if (branch_type === 'fnb' && raw === 'accommodation') return 'fnb';
+    return raw as 'accommodation' | 'fnb';
+  }
   const t = alertType.toLowerCase();
   if (t.includes('f&b') || t.includes('underperformance')) return 'fnb';
   if (t.includes('room revenue') || t.includes('low room')) return 'accommodation';
@@ -668,8 +672,9 @@ export async function getBranchAlertsTodayForBranchOverview(
   if (!supabase) return [];
 
   let q = supabase.from('branch_alerts_today').select('*').eq('branch_id', branchId);
-  if (stream === 'accommodation' || stream === 'fnb') {
-    q = q.eq('alert_stream', stream);
+  // Accommodation: filter at API. F&B: do not — DB may still have alert_stream='accommodation' for fnb-only branches.
+  if (stream === 'accommodation') {
+    q = q.eq('alert_stream', 'accommodation');
   }
   const { data, error } = await q;
 
@@ -745,8 +750,11 @@ export async function getBranchAlertsTodayForBranchOverview(
     return (b.metric_date ?? '').localeCompare(a.metric_date ?? '');
   });
 
-  if (stream === 'accommodation' || stream === 'fnb') {
-    return rows.filter((a) => a.alert_stream === stream);
+  if (stream === 'fnb') {
+    return rows.filter((a) => a.alert_stream === 'fnb');
+  }
+  if (stream === 'accommodation') {
+    return rows.filter((a) => a.alert_stream === 'accommodation');
   }
   return rows;
 }

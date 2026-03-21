@@ -323,8 +323,8 @@ export async function getAlertsFromBranchAlertsToday(
   if (!supabase) return [];
   try {
     let q = supabase.from('branch_alerts_today').select('*').eq('branch_id', branchId);
-    if (stream === 'accommodation' || stream === 'fnb') {
-      q = q.eq('alert_stream', stream);
+    if (stream === 'accommodation') {
+      q = q.eq('alert_stream', 'accommodation');
     }
     const { data, error } = await q.order('metric_date', { ascending: false });
     if (error) {
@@ -345,8 +345,15 @@ export async function getAlertsFromBranchAlertsToday(
       return [];
     }
     let rows = (data ?? []) as BranchAlertsTodayRow[];
-    if (stream === 'accommodation' || stream === 'fnb') {
-      rows = rows.filter((a) => String(a.alert_stream ?? '').toLowerCase() === stream);
+    if (stream === 'accommodation') {
+      rows = rows.filter((a) => String(a.alert_stream ?? '').toLowerCase() === 'accommodation');
+    } else if (stream === 'fnb') {
+      const bt = (a: BranchAlertsTodayRow) => String(a.branch_type ?? '').toLowerCase();
+      rows = rows.filter((a) => {
+        const s = String(a.alert_stream ?? '').toLowerCase();
+        if (s === 'fnb') return true;
+        return bt(a) === 'fnb' && s === 'accommodation';
+      });
     }
     rows.sort((a, b) => {
       const orderA = severityOrder(a.alert_severity);

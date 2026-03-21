@@ -67,12 +67,15 @@ problems AS (
         branch_name,
         branch_type,
         CASE
+            WHEN branch_type = 'fnb' THEN 'fnb'::text
             WHEN revenue_delta_day IS NOT NULL AND revenue_delta_day <= -10 THEN
                 CASE
                     WHEN COALESCE(accommodation_revenue, 0) >= COALESCE(fnb_revenue, 0) THEN 'accommodation'::text
                     ELSE 'fnb'::text
                 END
-            WHEN occupancy_delta_week IS NOT NULL AND occupancy_delta_week <= -10 THEN 'accommodation'::text
+            WHEN branch_type = 'accommodation'
+                AND occupancy_delta_week IS NOT NULL
+                AND occupancy_delta_week <= -10 THEN 'accommodation'::text
         END AS alert_stream,
         metric_date,
         CASE
@@ -116,7 +119,11 @@ problems AS (
         'problem'::text AS alert_category
     FROM ts
     WHERE (revenue_delta_day IS NOT NULL AND revenue_delta_day <= -10)
-       OR (occupancy_delta_week IS NOT NULL AND occupancy_delta_week <= -10)
+       OR (
+            branch_type = 'accommodation'
+            AND occupancy_delta_week IS NOT NULL
+            AND occupancy_delta_week <= -10
+        )
 ),
 opportunities AS (
     SELECT
@@ -125,6 +132,7 @@ opportunities AS (
         branch_name,
         branch_type,
         CASE
+            WHEN branch_type = 'fnb' THEN 'fnb'::text
             WHEN COALESCE(accommodation_revenue, 0) >= COALESCE(fnb_revenue, 0) THEN 'accommodation'::text
             ELSE 'fnb'::text
         END AS alert_stream,
