@@ -46,11 +46,15 @@ import {
   getTodaySummary,
   getBranchAlertsTodayForBranchOverview,
   getBranchTrendSeriesWithFallback,
+  getAccommodationProfitabilitySignal,
+  getFnbProfitabilitySignal,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
   type TodaySummaryRow,
   type BranchTodayOverviewAlertRow,
   type BranchTrendSeries,
+  type AccommodationProfitabilitySignal,
+  type FnbProfitabilitySignal,
 } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
@@ -108,6 +112,8 @@ export default function BranchOverviewPage() {
   const [branchTodayAlerts, setBranchTodayAlerts] = useState<BranchTodayOverviewAlertRow[]>([]);
   const [branchTodayAlertsLoading, setBranchTodayAlertsLoading] = useState(true);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
+  const [accProfitSignal, setAccProfitSignal] = useState<AccommodationProfitabilitySignal | null>(null);
+  const [fnbProfitSignal, setFnbProfitSignal] = useState<FnbProfitabilitySignal | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -376,10 +382,13 @@ export default function BranchOverviewPage() {
     if (!branch?.id) return;
     setBranchTodayAlertsLoading(true);
     setFreshnessLoaded(false);
+    if (branch.moduleType !== 'accommodation') setAccProfitSignal(null);
+    if (branch.moduleType !== 'fnb') setFnbProfitSignal(null);
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
       getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
+      getFnbProfitabilitySignal(branch.id).then(setFnbProfitSignal);
     } else {
       setFnbOperatingStatus(null);
       getOperatingStatusData(branch.id, 'accommodation').then(setOperatingStatusData);
@@ -387,6 +396,7 @@ export default function BranchOverviewPage() {
         getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
         getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
         getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
+        getAccommodationProfitabilitySignal(branch.id).then(setAccProfitSignal);
       }
     }
     getBranchLearningStatus(branch.id).then(setLearningStatus);
@@ -412,6 +422,8 @@ export default function BranchOverviewPage() {
       setBranchTodayAlertsLoading(false);
       setFreshnessDatesFromRaw([]);
       setFreshnessLoaded(false);
+      setAccProfitSignal(null);
+      setFnbProfitSignal(null);
       return;
     }
     refreshOperatingStatus();
@@ -431,10 +443,12 @@ export default function BranchOverviewPage() {
           getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
           getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
           getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
+          getAccommodationProfitabilitySignal(branch.id).then(setAccProfitSignal);
         }
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
           getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
+          getFnbProfitabilitySignal(branch.id).then(setFnbProfitSignal);
         }
       }
     };
@@ -1176,6 +1190,23 @@ export default function BranchOverviewPage() {
             }
             accommodation={todaySummary.accommodation}
             fnb={todaySummary.fnb}
+            accommodationProfitability={
+              branch.moduleType === 'accommodation'
+                ? {
+                    trend: accProfitSignal?.trend ?? null,
+                    explanation: accProfitSignal?.explanation ?? '',
+                  }
+                : null
+            }
+            fnbProfitability={
+              branch.moduleType === 'fnb'
+                ? {
+                    avgDailyCost: fnbProfitSignal?.avg_daily_cost ?? null,
+                    marginTrend: fnbProfitSignal?.margin_trend ?? null,
+                    marginExplanation: fnbProfitSignal?.margin_explanation ?? '',
+                  }
+                : null
+            }
             collectingLabel={locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...'}
             freshness={freshness}
           />

@@ -2,12 +2,14 @@
 
 /**
  * BranchTodaySummary — Top Metrics only (premium, Stripe/Linear-style).
- * Single row: Revenue | ADR | RevPAR | Health (accommodation) or Revenue | Customers | Avg Ticket | Health (F&B).
+ * Accommodation: Occupancy | Rooms | Revenue | ADR | RevPAR | Profitability | Health.
+ * F&B: Revenue | Customers | Avg Ticket | Avg Cost | Margin | Health.
  * Right-aligned data freshness chip: same status as Enter Data page (shared getDataFreshnessStatus).
  */
 
 import { getHealthIcon } from '../../utils/today-summary-utils';
 import { StatusChip, type StatusChipColor } from '../status-chip';
+import type { ProfitabilityTrend } from '../../services/db/latest-metrics-service';
 
 const sep = ' | ';
 const sepStyle: React.CSSProperties = { color: '#9ca3af', fontSize: '16px', fontWeight: 400, margin: '0 8px' };
@@ -19,6 +21,55 @@ const healthGreen: React.CSSProperties = { color: '#059669', fontWeight: 600, fo
 const healthYellow: React.CSSProperties = { color: '#ca8a04', fontWeight: 600, fontSize: '17px' };
 const healthRed: React.CSSProperties = { color: '#dc2626', fontWeight: 600, fontSize: '17px' };
 const itemGap = 20;
+
+const profExplStyle: React.CSSProperties = {
+  fontSize: '12px',
+  color: '#9ca3af',
+  fontWeight: 400,
+  lineHeight: 1.25,
+  maxWidth: 260,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+const trendUp: React.CSSProperties = { color: '#059669', fontWeight: 600, fontSize: '17px' };
+const trendFlat: React.CSSProperties = { color: '#9ca3af', fontWeight: 600, fontSize: '17px' };
+const trendDown: React.CSSProperties = { color: '#dc2626', fontWeight: 600, fontSize: '17px' };
+
+function profitTrendValueStyle(t: ProfitabilityTrend | null): React.CSSProperties {
+  if (t === 'up') return trendUp;
+  if (t === 'flat') return trendFlat;
+  if (t === 'down') return trendDown;
+  return valueStyle;
+}
+
+function ProfitTrendMetric({
+  label,
+  trend,
+  explanation,
+  insufficientText,
+  segmentStyle,
+}: {
+  label: string;
+  trend: ProfitabilityTrend | null;
+  explanation: string;
+  insufficientText: string;
+  segmentStyle: React.CSSProperties;
+}) {
+  const hasTrend = trend != null;
+  const arrow = trend === 'up' ? '↑' : trend === 'flat' ? '→' : trend === 'down' ? '↓' : '—';
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+      <span style={segmentStyle}>
+        <span style={labelStyle}>{label}</span>
+        <span style={hasTrend ? profitTrendValueStyle(trend) : valueStyle}>{arrow}</span>
+      </span>
+      {hasTrend && explanation.trim() ? <span style={profExplStyle}>{explanation.trim()}</span> : null}
+      {!hasTrend ? <span style={profExplStyle}>{insufficientText}</span> : null}
+    </span>
+  );
+}
 
 function healthColor(score: number | null | undefined): React.CSSProperties {
   if (score == null || Number.isNaN(score)) return valueStyle;
@@ -56,6 +107,14 @@ export interface BranchTodaySummaryProps {
   lastUpdatedDate?: string | null;
   accommodation?: BranchTodaySummaryAccommodation | null;
   fnb?: BranchTodaySummaryFnb | null;
+  /** Latest accommodation_profitability_signal row (branch Today). */
+  accommodationProfitability?: { trend: ProfitabilityTrend | null; explanation: string } | null;
+  /** Latest fnb_profitability_signal row (branch Today). */
+  fnbProfitability?: {
+    avgDailyCost: number | null;
+    marginTrend: ProfitabilityTrend | null;
+    marginExplanation: string;
+  } | null;
   collectingLabel?: string;
   /** Freshness from getDataFreshnessStatus. When non-null, chip is always shown (same status as Enter Data page). */
   freshness?: { label: string; color: StatusChipColor } | null;
@@ -72,6 +131,8 @@ export function BranchTodaySummary({
   lastUpdatedDate,
   accommodation,
   fnb,
+  accommodationProfitability = null,
+  fnbProfitability = null,
   collectingLabel = 'Collecting data...',
   freshness = null,
 }: BranchTodaySummaryProps) {
@@ -84,6 +145,10 @@ export function BranchTodaySummary({
   const labelHealth = isTh ? 'สุขภาพ' : 'Health';
   const labelCustomers = isTh ? 'ลูกค้า' : 'Customers';
   const labelAvgTicket = isTh ? 'ค่าเฉลี่ยต่อบิล' : 'Avg Ticket';
+  const labelProfitability = isTh ? 'กำไร' : 'Profitability';
+  const labelAvgCost = isTh ? 'ต้นทุนเฉลี่ย' : 'Avg Cost';
+  const labelMargin = isTh ? 'มาร์จิ้น' : 'Margin';
+  const insufficientData = isTh ? 'ข้อมูลไม่เพียงพอ' : 'Insufficient data';
 
   const rowStyle: React.CSSProperties = {
     display: 'flex',
@@ -163,6 +228,14 @@ export function BranchTodaySummary({
               <span style={valueStyle}>{revparStr}</span>
             </span>
             <span style={sepStyle}>{sep}</span>
+            <ProfitTrendMetric
+              label={labelProfitability}
+              trend={accommodationProfitability?.trend ?? null}
+              explanation={accommodationProfitability?.explanation ?? ''}
+              insufficientText={insufficientData}
+              segmentStyle={segmentStyle}
+            />
+            <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelHealth}</span>
               <span style={healthColor(a.healthScore)}>{health} {healthIcon}</span>
@@ -183,6 +256,9 @@ export function BranchTodaySummary({
     const avgStr = f.avgTicket != null ? formatRevenue(f.avgTicket) : '—';
     const health = f.healthScore != null ? Math.round(f.healthScore) : '—';
     const healthIcon = getHealthIcon(f.healthScore);
+    const avgCost = fnbProfitability?.avgDailyCost;
+    const avgCostStr =
+      avgCost != null && Number.isFinite(avgCost) ? formatRevenue(avgCost) : '—';
     return (
       <div style={{ padding: 0 }}>
         <div style={wrapperStyle}>
@@ -211,6 +287,19 @@ export function BranchTodaySummary({
               <span style={labelStyle}>{labelAvgTicket}</span>
               <span style={valueStyle}>{avgStr}</span>
             </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelAvgCost}</span>
+              <span style={valueStyle}>{avgCostStr}</span>
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <ProfitTrendMetric
+              label={labelMargin}
+              trend={fnbProfitability?.marginTrend ?? null}
+              explanation={fnbProfitability?.marginExplanation ?? ''}
+              insufficientText={insufficientData}
+              segmentStyle={segmentStyle}
+            />
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelHealth}</span>

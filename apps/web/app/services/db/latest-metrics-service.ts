@@ -476,6 +476,167 @@ export async function getLatestMetricForDashboard(
   };
 }
 
+/** ↑ / → / ↓ — parsed from profitability views. */
+export type ProfitabilityTrend = 'up' | 'flat' | 'down';
+
+export function normalizeProfitabilityTrend(raw: unknown): ProfitabilityTrend | null {
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'number' && !Number.isNaN(raw)) {
+    if (raw > 0) return 'up';
+    if (raw < 0) return 'down';
+    return 'flat';
+  }
+  const s = String(raw).toLowerCase().trim();
+  if (['up', 'rising', 'positive', 'improve', 'improving', 'higher', 'gain', '↑'].includes(s)) return 'up';
+  if (['down', 'falling', 'negative', 'decline', 'declining', 'lower', 'loss', '↓'].includes(s)) return 'down';
+  if (['flat', 'neutral', 'stable', 'unchanged', 'steady', 'sideways', '→', 'hold', 'same'].includes(s))
+    return 'flat';
+  return null;
+}
+
+function pickProfitStr(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+
+function pickProfitNum(r: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const k of keys) {
+    const v = r[k];
+    if (typeof v === 'number' && isFinite(v) && !isNaN(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '') {
+      const n = Number(v.replace(/,/g, ''));
+      if (!isNaN(n) && isFinite(n)) return n;
+    }
+  }
+  return null;
+}
+
+/** Latest row from accommodation_profitability_signal. */
+export interface AccommodationProfitabilitySignal {
+  branch_id: string;
+  metric_date: string | null;
+  trend: ProfitabilityTrend | null;
+  explanation: string;
+}
+
+export async function getAccommodationProfitabilitySignal(
+  branchId: string
+): Promise<AccommodationProfitabilitySignal | null> {
+  if (branchId == null || branchId === '') return null;
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('accommodation_profitability_signal')
+    .select('*')
+    .eq('branch_id', branchId)
+    .order('metric_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[LatestMetricsService] accommodation_profitability_signal:', error.message);
+    }
+    return null;
+  }
+  if (data == null) return null;
+  const row = data as Record<string, unknown>;
+  const trendRaw =
+    row.profitability_trend ??
+    row.profit_trend ??
+    row.trend ??
+    row.signal_direction ??
+    row.direction ??
+    row.arrow;
+  const trend = normalizeProfitabilityTrend(trendRaw);
+  const explanation = pickProfitStr(
+    row,
+    'profitability_explanation',
+    'explanation',
+    'ai_explanation',
+    'narrative',
+    'signal_explanation'
+  );
+  const md = row.metric_date;
+  return {
+    branch_id: branchId,
+    metric_date: md != null ? String(md).slice(0, 10) : null,
+    trend,
+    explanation,
+  };
+}
+
+/** Latest row from fnb_profitability_signal. */
+export interface FnbProfitabilitySignal {
+  branch_id: string;
+  metric_date: string | null;
+  avg_daily_cost: number | null;
+  margin_trend: ProfitabilityTrend | null;
+  margin_explanation: string;
+}
+
+export async function getFnbProfitabilitySignal(branchId: string): Promise<FnbProfitabilitySignal | null> {
+  if (branchId == null || branchId === '') return null;
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('fnb_profitability_signal')
+    .select('*')
+    .eq('branch_id', branchId)
+    .order('metric_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[LatestMetricsService] fnb_profitability_signal:', error.message);
+    }
+    return null;
+  }
+  if (data == null) return null;
+  const row = data as Record<string, unknown>;
+  const marginRaw =
+    row.margin_trend ??
+    row.margin_direction ??
+    row.profitability_trend ??
+    row.trend ??
+    row.direction;
+  const margin_trend = normalizeProfitabilityTrend(marginRaw);
+  const margin_explanation = pickProfitStr(
+    row,
+    'margin_explanation',
+    'explanation',
+    'profitability_explanation',
+    'ai_explanation',
+    'narrative'
+  );
+  const avg_daily_cost = pickProfitNum(
+    row,
+    'avg_daily_cost',
+    'average_daily_cost',
+    'daily_cost',
+    'avg_cost',
+    'estimated_daily_cost'
+  );
+  const md = row.metric_date;
+  return {
+    branch_id: branchId,
+    metric_date: md != null ? String(md).slice(0, 10) : null,
+    avg_daily_cost,
+    margin_trend,
+    margin_explanation,
+  };
+}
+
 /** Row from alerts_top view (legacy; prefer branch_alerts_today). */
 export interface AlertTopRow {
   branch_id: string;
