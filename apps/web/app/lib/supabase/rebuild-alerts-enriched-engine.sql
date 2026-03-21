@@ -1,10 +1,26 @@
--- Unified alerts engine: alerts_enriched → alerts_today (passthrough) → alerts_critical, alerts_top3_revenue_leaks
--- Prerequisites: today_summary_clean, public.branches (id, organization_id, name)
+-- =============================================================================
+-- FULL REBUILD: alert views (run this entire script in the SQL editor)
+-- =============================================================================
+-- Do NOT run bare view names (e.g. only `alerts_today`) — that is invalid SQL.
+-- Always use: CREATE OR REPLACE VIEW view_name AS ...
 --
--- STEP 1 — Drop dependents (exact order; CASCADE on alerts_today removes legacy views that depended on it)
+-- Prerequisites:
+--   - public.today_summary_clean (total_revenue or revenue pipeline; see fix-today-summary-clean / upgrade scripts)
+--   - public.branches (id, organization_id, name)
+--
+-- Note: We read today_summary_clean directly so this script still runs if today_summary_clean_safe
+-- is an older definition missing columns (e.g. total_revenue). Re-run add-today-summary-clean-safe-view.sql
+-- for PostgREST / app API parity.
+--
+-- After running, verify:
+--   SELECT * FROM alerts_today LIMIT 5;
+-- =============================================================================
+
+-- STEP 1 — Drop dependents first (children → parent). CASCADE cleans legacy dependents.
 DROP VIEW IF EXISTS alerts_critical CASCADE;
 DROP VIEW IF EXISTS alerts_top3_revenue_leaks CASCADE;
 DROP VIEW IF EXISTS alerts_today CASCADE;
+DROP VIEW IF EXISTS alerts_enriched CASCADE;
 
 -- Optional: remove old pipeline if still present (safe if already gone)
 DROP VIEW IF EXISTS alerts_top CASCADE;
@@ -16,18 +32,18 @@ DROP VIEW IF EXISTS alerts_revenue_split CASCADE;
 DROP VIEW IF EXISTS alerts_with_actions CASCADE;
 DROP VIEW IF EXISTS alerts_opportunities CASCADE;
 
--- STEP 2 — Core engine (join today_summary_clean + branches; single shape for all consumers)
-CREATE VIEW alerts_enriched AS
+-- STEP 2 — Core engine (join today_summary_clean + branches; same metric semantics as safe view)
+CREATE OR REPLACE VIEW alerts_enriched AS
 WITH ts AS (
     SELECT
-        t.branch_id,
-        t.metric_date,
-        t.total_revenue,
-        t.accommodation_revenue,
-        t.fnb_revenue,
-        t.revenue_delta_day,
-        t.occupancy_delta_week,
-        t.customers,
+        t.branch_id::text AS branch_id,
+        t.metric_date::date AS metric_date,
+        COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
+        COALESCE(t.accommodation_revenue, t.total_revenue, 0)::numeric AS accommodation_revenue,
+        COALESCE(t.fnb_revenue, 0)::numeric AS fnb_revenue,
+        t.revenue_delta_day::numeric AS revenue_delta_day,
+        t.occupancy_delta_week::numeric AS occupancy_delta_week,
+        COALESCE(t.customers, 0)::numeric AS customers,
         b.organization_id,
         b.name AS branch_name
     FROM today_summary_clean t
@@ -210,11 +226,11 @@ WHERE alert_type IS NOT NULL
   AND recommended_action IS NOT NULL;
 
 -- STEP 3 — Passthrough (full enriched set for daily summary / generic consumers)
-CREATE VIEW alerts_today AS
+CREATE OR REPLACE VIEW alerts_today AS
 SELECT * FROM alerts_enriched;
 
 -- STEP 4 — Critical: severity >= 3, dedupe (branch_id, alert_type), best severity then impact, top 5 per branch
-CREATE VIEW alerts_critical AS
+CREATE OR REPLACE VIEW alerts_critical AS
 SELECT
     branch_id,
     organization_id,
@@ -246,7 +262,7 @@ WHERE dedupe_rn = 1
   AND branch_rank <= 5;
 
 -- STEP 5 — Top revenue leaks: non-opportunity, dedupe (branch_id, alert_type), top 3 per branch by impact
-CREATE VIEW alerts_top3_revenue_leaks AS
+CREATE OR REPLACE VIEW alerts_top3_revenue_leaks AS
 SELECT
     branch_id,
     organization_id,
@@ -304,7 +320,8 @@ GRANT SELECT ON alerts_today TO anon, authenticated;
 GRANT SELECT ON alerts_critical TO anon, authenticated;
 GRANT SELECT ON alerts_top3_revenue_leaks TO anon, authenticated;
 
--- STEP 6 — Verify (run in SQL editor)
+-- STEP 6 — Verify (run these as separate statements after the script succeeds)
+-- SELECT * FROM alerts_today LIMIT 5;
 -- SELECT * FROM alerts_enriched LIMIT 10;
--- SELECT * FROM alerts_critical;
--- SELECT * FROM alerts_top3_revenue_leaks;
+-- SELECT * FROM alerts_critical LIMIT 5;
+-- SELECT * FROM alerts_top3_revenue_leaks LIMIT 5;

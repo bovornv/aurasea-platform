@@ -611,8 +611,8 @@ function OwnerSummaryContent() {
           title={locale === 'th' ? 'แนวโน้มธุรกิจ' : 'Business trends'}
           subtitle={
             locale === 'th'
-              ? 'สรุปจาก today_summary_clean ทุกสาขาในกลุ่ม (รายได้ · เทียบสัปดาห์ก่อน · เข้าพัก/ลูกค้า)'
-              : 'From today_summary_clean across your branches (revenue · week-over-week · occupancy/customers).'
+              ? 'สรุปจาก today_summary_clean_safe ทุกสาขาในกลุ่ม (รายได้ · เทียบสัปดาห์ก่อน · เข้าพัก/ลูกค้า)'
+              : 'From today_summary_clean_safe across your branches (revenue · week-over-week · occupancy/customers).'
           }
         >
           <MonitoringErrorBoundary componentName="Company business trends">

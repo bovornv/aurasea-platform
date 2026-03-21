@@ -1,11 +1,12 @@
 /**
  * Branch Anomaly Signals Service
  *
- * Read-only: uses core view today_summary_clean for latest revenue/confidence.
+ * Read-only: uses today_summary_clean_safe for latest revenue/confidence.
  * Anomaly-style alerts can also come from alerts_final (alert_type, severity).
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
+import { TODAY_SUMMARY_VIEW } from './db/latest-metrics-service';
 import type { AlertContract } from '../../../../core/sme-os/contracts/alerts';
 
 export interface BranchAnomalySignalRow {
@@ -24,7 +25,7 @@ export interface AnomalyAlert {
 }
 
 /**
- * Fetch latest row from today_summary_clean for a branch (revenue, health as confidence proxy).
+ * Fetch latest row from today_summary_clean_safe for a branch (revenue, health as confidence proxy).
  */
 export async function getLatestAnomalySignal(
   branchId: string
@@ -34,7 +35,7 @@ export async function getLatestAnomalySignal(
   if (!supabase) return null;
 
   const { data, error } = await supabase
-    .from('today_summary_clean')
+    .from(TODAY_SUMMARY_VIEW)
     .select('branch_id, metric_date, total_revenue, health_score')
     .eq('branch_id', branchId)
     .order('metric_date', { ascending: false })
@@ -43,7 +44,7 @@ export async function getLatestAnomalySignal(
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[AnomalySignals] today_summary_clean error:', error.message);
+      console.warn('[AnomalySignals] today_summary_clean_safe error:', error.message);
     }
     return null;
   }

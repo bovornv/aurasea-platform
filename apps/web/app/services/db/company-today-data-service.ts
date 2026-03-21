@@ -1,9 +1,13 @@
 /**
- * Company Today — reads rebuilt KPI views (post–today_summary_clean).
- * Views: branch_business_status, alerts_critical, alerts_top3_revenue_leaks, alerts_today
+ * Company Today — reads rebuilt KPI views.
+ * Views: branch_business_status, today_summary_clean_safe (fallback/health), alerts_*
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
-import { normalizeProfitabilityTrend, type ProfitabilityTrend } from './latest-metrics-service';
+import {
+  normalizeProfitabilityTrend,
+  type ProfitabilityTrend,
+  TODAY_SUMMARY_VIEW,
+} from './latest-metrics-service';
 
 export interface NormalizedBusinessRow {
   branchId: string;
@@ -368,13 +372,13 @@ async function buildBusinessStatusFromTodaySummaryFallback(
   if (branchIds.length === 0) return [];
 
   const { data, error } = await supabase
-    .from('today_summary_clean')
+    .from(TODAY_SUMMARY_VIEW)
     .select('*')
     .in('branch_id', branchIds)
     .order('metric_date', { ascending: false });
 
   if (error && process.env.NODE_ENV === 'development') {
-    console.warn('[CompanyToday] today_summary_clean fallback:', error.message);
+    console.warn('[CompanyToday] today_summary_clean_safe fallback:', error.message);
   }
 
   const latestByBranch = new Map<string, Record<string, unknown>>();
@@ -482,7 +486,7 @@ export async function fetchCompanyTodayBundle(
       const fb = await buildBusinessStatusFromTodaySummaryFallback(supabase, idFilter);
       businessStatus.push(...fb);
       if (fb.length > 0) {
-        errors.push('branch_business_status_fallback_today_summary_clean');
+        errors.push('branch_business_status_fallback_today_summary_clean_safe');
       }
       if (bsRes.error) {
         errors.push(`branch_business_status:${bsRes.error.message}`);
@@ -492,10 +496,10 @@ export async function fetchCompanyTodayBundle(
     }
   }
 
-  /** Match branch Today: branch_business_status often omits or zeroes health; use latest today_summary_clean per branch. */
+  /** Match branch Today: branch_business_status often omits or zeroes health; use latest safe summary per branch. */
   if (idFilter.length > 0) {
     const tsRes = await supabase
-      .from('today_summary_clean')
+      .from(TODAY_SUMMARY_VIEW)
       .select('branch_id, health_score, metric_date')
       .in('branch_id', idFilter);
     if (!tsRes.error && tsRes.data) {

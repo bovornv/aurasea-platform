@@ -8,6 +8,12 @@
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 
+/**
+ * App must query this view only — not `today_summary_clean` (TEXT branch_id, stable columns, computed health).
+ * @see add-today-summary-clean-safe.sql
+ */
+export const TODAY_SUMMARY_VIEW = 'today_summary_clean_safe' as const;
+
 export type BranchModuleType = 'accommodation' | 'fnb';
 
 /** Raw row from fnb_latest_metrics or accommodation_latest_metrics for Operating Status cards. */
@@ -217,7 +223,7 @@ export async function getOperatingStatusData(
 }
 
 /**
- * Row from today_summary_clean (core view for Today page).
+ * Row from today_summary_clean_safe (core view for Today page).
  * total_revenue = main revenue; accommodation_revenue, fnb_revenue = split when available.
  */
 export interface TodaySummaryRow {
@@ -259,7 +265,7 @@ const TREND_SELECT_MIN =
   'metric_date, total_revenue, occupancy_rate, customers';
 
 /**
- * Fetch last N days from today_summary_clean for Trends charts.
+ * Fetch last N days from today_summary_clean_safe for Trends charts.
  * Tries full select first (with capacity, utilized for adr/revpar); on error tries minimal select.
  */
 export async function getBranchTrendSeries(branchId: string, days: number = 30): Promise<BranchTrendSeries | null> {
@@ -276,7 +282,7 @@ export async function getBranchTrendSeries(branchId: string, days: number = 30):
   let hasCapacityUtilized = false;
 
   const { data: fullData, error: fullError } = await supabase
-    .from('today_summary_clean')
+    .from(TODAY_SUMMARY_VIEW)
     .select(TREND_SELECT_FULL)
     .eq('branch_id', branchId)
     .gte('metric_date', startStr)
@@ -286,7 +292,7 @@ export async function getBranchTrendSeries(branchId: string, days: number = 30):
     hasCapacityUtilized = true;
   } else {
     const { data: minData, error: minError } = await supabase
-      .from('today_summary_clean')
+      .from(TODAY_SUMMARY_VIEW)
       .select(TREND_SELECT_MIN)
       .eq('branch_id', branchId)
       .gte('metric_date', startStr)
@@ -327,7 +333,7 @@ export async function getBranchTrendSeries(branchId: string, days: number = 30):
   };
 }
 
-/** Build trend series from accommodation_daily_metrics rows (when today_summary_clean is empty). */
+/** Build trend series from accommodation_daily_metrics rows (when today_summary_clean_safe is empty). */
 async function getAccommodationTrendFallback(
   branchId: string,
   days: number,
@@ -364,7 +370,7 @@ async function getAccommodationTrendFallback(
   };
 }
 
-/** Build trend series from fnb_daily_metrics rows (when today_summary_clean is empty). */
+/** Build trend series from fnb_daily_metrics rows (when today_summary_clean_safe is empty). */
 async function getFnbTrendFallback(
   branchId: string,
   days: number,
@@ -392,7 +398,7 @@ async function getFnbTrendFallback(
 }
 
 /**
- * Fetch trend series for Trends page. Tries direct tables first (most reliable), then today_summary_clean.
+ * Fetch trend series for Trends page. Tries direct tables first (most reliable), then today_summary_clean_safe.
  */
 export async function getBranchTrendSeriesWithFallback(
   branchId: string,
@@ -409,7 +415,7 @@ export async function getBranchTrendSeriesWithFallback(
 }
 
 /**
- * Fetch latest row from today_summary_clean for a branch.
+ * Fetch latest row from today_summary_clean_safe for a branch.
  * Core view: revenue, occupancy_rate, adr, revpar, health_score, revenue_delta_day, occupancy_delta_week.
  * Returns null if view missing or error (caller can fall back to client-side deltas).
  */
@@ -422,7 +428,7 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
   if (!supabase) return null;
 
   const { data, error } = await supabase
-    .from('today_summary_clean')
+    .from(TODAY_SUMMARY_VIEW)
     .select(TODAY_SUMMARY_SELECT)
     .eq('branch_id', branchId)
     .order('metric_date', { ascending: false })
@@ -431,7 +437,7 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[LatestMetricsService] today_summary_clean error:', error.message);
+      console.warn('[LatestMetricsService] today_summary_clean_safe error:', error.message);
     }
     return null;
   }
@@ -781,7 +787,7 @@ const TREND_PORTFOLIO_SELECT_FULL =
   'metric_date, branch_id, total_revenue, occupancy_rate, customers, accommodation_revenue, fnb_revenue';
 const TREND_PORTFOLIO_SELECT_MIN = 'metric_date, branch_id, total_revenue, occupancy_rate, customers';
 
-/** Aggregated 7-day window across branches (from today_summary_clean). */
+/** Aggregated 7-day window across branches (from today_summary_clean_safe). */
 export interface CompanyPortfolioTrendSnapshot {
   ready: boolean;
   /** Distinct dates in lookback window. */
@@ -832,7 +838,7 @@ export async function getCompanyPortfolioTrendSnapshot(
 
   let rows: unknown[] | null = null;
   const { data: full, error: errFull } = await supabase
-    .from('today_summary_clean')
+    .from(TODAY_SUMMARY_VIEW)
     .select(TREND_PORTFOLIO_SELECT_FULL)
     .in('branch_id', ids)
     .gte('metric_date', startStr)
@@ -842,7 +848,7 @@ export async function getCompanyPortfolioTrendSnapshot(
     rows = full;
   } else {
     const { data: min, error: errMin } = await supabase
-      .from('today_summary_clean')
+      .from(TODAY_SUMMARY_VIEW)
       .select(TREND_PORTFOLIO_SELECT_MIN)
       .in('branch_id', ids)
       .gte('metric_date', startStr)

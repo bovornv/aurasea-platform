@@ -3,7 +3,7 @@
 --
 -- Requires:
 --   public.branches (id, organization_id, name, module_type)
---   public.today_summary_clean (latest metrics per branch/day)
+--   public.today_summary_clean_safe (latest metrics per branch/day; app queries this, not today_summary_clean)
 --   public.accommodation_profitability_signal
 --   public.fnb_profitability_signal
 --
@@ -64,7 +64,7 @@ FROM (
 COMMENT ON VIEW branch_performance_signal IS
   'Latest profitability/margin signal per branch; accommodation + fnb UNION. Feeds branch_business_status.';
 
--- ========== 3) branch_business_status — one row per branch (latest today_summary_clean + signals) ==========
+-- ========== 3) branch_business_status — one row per branch (latest today_summary_clean_safe + signals) ==========
 CREATE VIEW branch_business_status AS
 SELECT
   b.id AS branch_id,
@@ -113,7 +113,7 @@ INNER JOIN (
     adr,
     revpar,
     health_score
-  FROM today_summary_clean
+  FROM today_summary_clean_safe
   ORDER BY branch_id, metric_date DESC NULLS LAST
 ) l ON l.branch_id = b.id
 LEFT JOIN branch_performance_signal ps_acc
@@ -122,7 +122,7 @@ LEFT JOIN branch_performance_signal ps_fnb
   ON ps_fnb.branch_id = b.id::text AND ps_fnb.branch_type = 'fnb';
 
 COMMENT ON VIEW branch_business_status IS
-  'Company Latest business status: latest today_summary_clean per branch + profitability_trend, margin_trend, avg_daily_cost from branch_performance_signal.';
+  'Company Latest business status: latest today_summary_clean_safe per branch + profitability_trend, margin_trend, avg_daily_cost from branch_performance_signal.';
 
 GRANT SELECT ON branch_performance_signal TO anon, authenticated;
 GRANT SELECT ON branch_business_status TO anon, authenticated;

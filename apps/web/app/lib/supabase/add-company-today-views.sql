@@ -1,12 +1,17 @@
--- Company Today page reads these objects (create in Supabase to match your today_summary_clean pipeline).
+-- Company Today page reads these objects (create in Supabase to match your summary pipeline).
 -- Expected columns are flexible; the web app maps common aliases (see company-today-data-service.ts).
+--
+-- **Run `add-today-summary-clean-safe-view.sql` first** — the app queries `today_summary_clean_safe` only
+-- (TEXT branch_id, stable columns), not `today_summary_clean`.
 --
 -- **Recommended:** run `add-branch-performance-signal-and-business-status.sql` (in order: drop views →
 -- branch_performance_signal → branch_business_status). Requires accommodation_profitability_signal,
--- fnb_profitability_signal, today_summary_clean, branches.
+-- fnb_profitability_signal, today_summary_clean_safe, branches.
 --
--- Unified alerts pipeline (recommended): run rebuild-alerts-enriched-engine.sql
---   alerts_enriched (engine) → alerts_today (passthrough) → alerts_critical, alerts_top3_revenue_leaks
+-- Unified alerts pipeline (recommended): run the **entire** rebuild-alerts-enriched-engine.sql script
+-- (not bare view names). Uses today_summary_clean_safe + branches.
+--   alerts_enriched → alerts_today → alerts_critical, alerts_top3_revenue_leaks
+-- Verify: SELECT * FROM alerts_today LIMIT 5;
 --
 -- 1) branch_business_status (see add-branch-performance-signal-and-business-status.sql for full definition)
 --    branch_id, organization_id, branch_name, branch_type,
