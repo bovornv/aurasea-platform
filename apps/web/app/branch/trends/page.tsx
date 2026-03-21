@@ -167,46 +167,6 @@ export default function BranchTrendsPage() {
     return buildDatesFallback(revenueValues.length || occupancyValues.length || customersValues.length || 1);
   }, [trendSeries?.dates, revenueValues.length, dailyMetrics, occupancyValues.length, customersValues.length]);
 
-  const hasAnyData = revenueValues.length >= 2 || occupancyValues.length >= 2 || customersValues.length >= 2;
-  const loading = kpiLoading || dailyLoading;
-
-  if (!mounted) {
-    return (
-      <PageLayout title={locale === 'th' ? 'เทรนด์' : 'Trends'} subtitle="">
-        <div style={{ padding: `${PAGE_PADDING_TOP}px ${PAGE_PADDING_SIDES}px ${PAGE_PADDING_BOTTOM}px ${PAGE_PADDING_SIDES}px` }}>
-          <div style={{ fontSize: 14, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
-        </div>
-      </PageLayout>
-    );
-  }
-
-  if (!branch) {
-    return (
-      <PageLayout title={locale === 'th' ? 'เทรนด์' : 'Trends'} subtitle="">
-        <ErrorState
-          message={locale === 'th' ? 'ไม่พบสาขา' : 'No branch selected'}
-          action={{
-            label: locale === 'th' ? 'ไปที่ภาพรวม' : 'Go to Overview',
-            onClick: () => router.push(paths.branchOverview || '/branch/overview'),
-          }}
-        />
-      </PageLayout>
-    );
-  }
-
-  if (!isAccommodation && !isFnb) {
-    return (
-      <PageLayout title={locale === 'th' ? 'เทรนด์' : 'Trends'} subtitle="">
-        <div style={{ padding: `${PAGE_PADDING_TOP}px ${PAGE_PADDING_SIDES}px ${PAGE_PADDING_BOTTOM}px ${PAGE_PADDING_SIDES}px` }}>
-          <div style={{ fontSize: 14, color: '#6b7280' }}>
-            {locale === 'th' ? 'เลือกสาขาประเภทที่พักหรือ F&B เพื่อดูเทรนด์' : 'Select an accommodation or F&B branch to view trends.'}
-          </div>
-        </div>
-      </PageLayout>
-    );
-  }
-
-  const emptyMsg = locale === 'th' ? 'ไม่มีข้อมูล' : 'No data';
   const chartLocale = locale === 'th' ? 'th' : 'en';
 
   const branchTrendInsights = useMemo(() => {
@@ -274,6 +234,46 @@ export default function BranchTrendsPage() {
     customersValues,
     avgTicketValues,
   ]);
+
+  const hasAnyData = revenueValues.length >= 2 || occupancyValues.length >= 2 || customersValues.length >= 2;
+  const loading = kpiLoading || dailyLoading;
+  const emptyMsg = locale === 'th' ? 'ไม่มีข้อมูล' : 'No data';
+
+  if (!mounted) {
+    return (
+      <PageLayout title={locale === 'th' ? 'เทรนด์' : 'Trends'} subtitle="">
+        <div style={{ padding: `${PAGE_PADDING_TOP}px ${PAGE_PADDING_SIDES}px ${PAGE_PADDING_BOTTOM}px ${PAGE_PADDING_SIDES}px` }}>
+          <div style={{ fontSize: 14, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
+        </div>
+      </PageLayout>
+    );
+  }
+
+  if (!branch) {
+    return (
+      <PageLayout title={locale === 'th' ? 'เทรนด์' : 'Trends'} subtitle="">
+        <ErrorState
+          message={locale === 'th' ? 'ไม่พบสาขา' : 'No branch selected'}
+          action={{
+            label: locale === 'th' ? 'ไปที่ภาพรวม' : 'Go to Overview',
+            onClick: () => router.push(paths.branchOverview || '/branch/overview'),
+          }}
+        />
+      </PageLayout>
+    );
+  }
+
+  if (!isAccommodation && !isFnb) {
+    return (
+      <PageLayout title={locale === 'th' ? 'เทรนด์' : 'Trends'} subtitle="">
+        <div style={{ padding: `${PAGE_PADDING_TOP}px ${PAGE_PADDING_SIDES}px ${PAGE_PADDING_BOTTOM}px ${PAGE_PADDING_SIDES}px` }}>
+          <div style={{ fontSize: 14, color: '#6b7280' }}>
+            {locale === 'th' ? 'เลือกสาขาประเภทที่พักหรือ F&B เพื่อดูเทรนด์' : 'Select an accommodation or F&B branch to view trends.'}
+          </div>
+        </div>
+      </PageLayout>
+    );
+  }
 
   return (
     <PageLayout title="" subtitle="">
