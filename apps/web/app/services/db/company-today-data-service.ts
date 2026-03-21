@@ -166,12 +166,28 @@ function normalizeBusinessRow(r: Record<string, unknown>, branchNameFallback: st
 
   const revenueThb = pickNum(r, 'revenue_thb', 'revenue', 'total_revenue_thb', 'revenue_30d');
   const adrThb = pickNum(r, 'adr', 'average_daily_rate', 'avg_adr', 'adr_thb');
-  const roomsSold = Math.round(pickNum(r, 'rooms_sold', 'roomsSold'));
-  let roomsTotal = Math.round(pickNum(r, 'rooms_total', 'rooms_available', 'roomsTotal', 'total_rooms'));
+  let roomsSold = Math.round(pickNum(r, 'rooms_sold', 'roomsSold'));
+  let roomsTotal = Math.round(
+    pickNum(r, 'rooms_total', 'rooms_available', 'roomsTotal', 'total_rooms', 'inventory_rooms')
+  );
   if (roomsTotal <= 0 && occ > 0 && roomsSold > 0) {
     roomsTotal = Math.max(roomsTotal, Math.round((roomsSold * 100) / occ));
   }
   const revparDirect = pickNum(r, 'revpar', 'rev_par', 'revpar_thb');
+  /** Infer room inventory when the view omits it but daily RevPAR + revenue exist. */
+  if (roomsTotal <= 0 && revenueThb > 0 && revparDirect > 0) {
+    roomsTotal = Math.max(1, Math.round(revenueThb / revparDirect));
+  }
+  if (roomsSold <= 0 && roomsTotal > 0 && occ > 0) {
+    roomsSold = Math.round((occ / 100) * roomsTotal);
+  }
+  if (roomsTotal <= 0 && revenueThb > 0 && adrThb > 0 && occ > 0) {
+    const estSold = Math.max(0, Math.round(revenueThb / adrThb));
+    if (estSold > 0) {
+      roomsTotal = Math.max(1, Math.round(estSold / (occ / 100)));
+      if (roomsSold <= 0) roomsSold = estSold;
+    }
+  }
   const revparThb =
     revparDirect > 0
       ? revparDirect
@@ -181,8 +197,17 @@ function normalizeBusinessRow(r: Record<string, unknown>, branchNameFallback: st
           ? (adrThb * occ) / 100
           : 0;
 
-  const healthRaw = pickNum(r, 'health_score', 'healthScore');
-  const healthScore = healthRaw > 0 || r.health_score != null || r.healthScore != null ? healthRaw : null;
+  const healthFromRow = pickNumOrNull(
+    r,
+    'health_score',
+    'healthScore',
+    'business_health_score',
+    'kpi_health_score'
+  );
+  const healthScore =
+    healthFromRow != null && !Number.isNaN(healthFromRow)
+      ? Math.min(100, Math.max(0, healthFromRow))
+      : null;
 
   const metricDateRaw = pickStr(r, 'metric_date', 'as_of_date', 'snapshot_date', 'data_date', 'metric_as_of');
   let daysSinceUpdate = pickNumOrNull(
@@ -200,11 +225,13 @@ function normalizeBusinessRow(r: Record<string, unknown>, branchNameFallback: st
     branchId,
     branchName: pickStr(r, 'branch_name', 'branchName', 'name') || branchNameFallback,
     branchType: bt,
-    healthScore: healthScore !== null && !isNaN(healthScore) ? Math.min(100, Math.max(0, healthScore)) : null,
+    healthScore,
     occupancyPct: occ,
     revenueThb,
     adrThb,
-    roomsSold: roomsSold || (roomsTotal > 0 && occ > 0 ? Math.round((occ / 100) * roomsTotal) : 0),
+    roomsSold:
+      roomsSold ||
+      (roomsTotal > 0 && occ > 0 ? Math.round((occ / 100) * roomsTotal) : 0),
     roomsTotal,
     revparThb,
     customers: Math.round(pickNum(r, 'customers', 'total_customers', 'customers_7d', 'customer_count')),
@@ -293,6 +320,36 @@ export async function fetchCompanyTodayBundle(
     const bid = pickStr(r, 'branch_id', 'branchId');
     const normalized = normalizeBusinessRow(r, branchNameFromLocal(bid));
     if (normalized) businessStatus.push(normalized);
+  }
+
+  /** Match branch Today: branch_business_status often omits or zeroes health; use latest today_summary_clean per branch. */
+  if (idFilter.length > 0) {
+    const tsRes = await supabase
+      .from('today_summary_clean')
+      .select('branch_id, health_score, metric_date')
+      .in('branch_id', idFilter);
+    if (!tsRes.error && tsRes.data) {
+      const healthBest = new Map<string, { md: string; score: number }>();
+      for (const raw of asRecordArray(tsRes.data)) {
+        const bid = pickStr(raw, 'branch_id', 'branchId');
+        if (!bid) continue;
+        const md = pickStr(raw, 'metric_date', 'as_of_date') || '';
+        const hs = pickNumOrNull(raw, 'health_score', 'healthScore');
+        if (hs == null || Number.isNaN(hs)) continue;
+        const score = Math.min(100, Math.max(0, hs));
+        const prev = healthBest.get(bid);
+        if (!prev || md.localeCompare(prev.md) > 0) {
+          healthBest.set(bid, { md, score });
+        }
+      }
+      for (let i = 0; i < businessStatus.length; i++) {
+        const row = businessStatus[i]!;
+        const fb = healthBest.get(row.branchId)?.score;
+        if (fb != null && (row.healthScore == null || row.healthScore === 0)) {
+          businessStatus[i] = { ...row, healthScore: fb };
+        }
+      }
+    }
   }
 
   const alertsTodayRaw = asRecordArray(todayRes.data);

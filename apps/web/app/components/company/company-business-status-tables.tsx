@@ -87,16 +87,19 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
     return { accommodationRows: acc, fnbRows: fnb };
   }, [rows]);
 
+  const isTh = locale === 'th';
   const subTitle = (label: string) => (
     <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a', margin: '1rem 0 0.5rem' }}>{label}</h3>
   );
 
   return (
     <div>
-      {subTitle('ที่พัก (Accommodation)')}
+      {subTitle(isTh ? 'ที่พัก' : 'Accommodation')}
       {accommodationRows.length === 0 ? (
         <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
-          ไม่มีแถว branch_type = accommodation ใน branch_business_status
+          {isTh
+            ? 'ไม่มีแถว branch_type = accommodation ใน branch_business_status'
+            : 'No accommodation branches in branch_business_status.'}
         </p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -104,7 +107,7 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
             <thead>
               <tr>
                 <th style={thStyle}>Health</th>
-                <th style={thStyle}>สาขา</th>
+                <th style={thStyle}>{isTh ? 'สาขา' : 'Branch'}</th>
                 <th style={thStyle}>Occupancy (%)</th>
                 <th style={thStyle}>Revenue (฿)</th>
                 <th style={thStyle}>ADR (฿)</th>
@@ -121,7 +124,7 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
                   <td style={tdStyle}>
                     <BranchNameCell row={r} locale={locale} />
                   </td>
-                  <td style={tdStyle}>{r.occupancyPct.toFixed(1)}%</td>
+                  <td style={tdStyle}>{Math.round(r.occupancyPct)}%</td>
                   <td style={tdStyle}>฿{formatCurrency(r.revenueThb)}</td>
                   <td style={tdStyle}>฿{formatCurrency(r.adrThb)}</td>
                   <td style={tdStyle}>
@@ -138,7 +141,9 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
       {subTitle('F&B')}
       {fnbRows.length === 0 ? (
         <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
-          ไม่มีแถว branch_type = fnb ใน branch_business_status
+          {isTh
+            ? 'ไม่มีแถว branch_type = fnb ใน branch_business_status'
+            : 'No F&B branches in branch_business_status.'}
         </p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -146,7 +151,7 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
             <thead>
               <tr>
                 <th style={thStyle}>Health</th>
-                <th style={thStyle}>สาขา</th>
+                <th style={thStyle}>{isTh ? 'สาขา' : 'Branch'}</th>
                 <th style={thStyle}>Revenue (฿)</th>
                 <th style={thStyle}>Customers</th>
                 <th style={thStyle}>Avg ticket (฿)</th>
