@@ -15,6 +15,7 @@
 -- =============================================================================
 
 -- STEP 1 — Drop dependents first (children → parent). CASCADE cleans legacy dependents.
+DROP VIEW IF EXISTS alerts_fix_this_first CASCADE;
 DROP VIEW IF EXISTS alerts_critical CASCADE;
 DROP VIEW IF EXISTS alerts_top3_revenue_leaks CASCADE;
 DROP VIEW IF EXISTS alerts_today CASCADE;
@@ -312,14 +313,58 @@ FROM (
 ) ranked
 WHERE leak_rank <= 3;
 
+-- STEP 6 — Fix This First: company Today priority list (deduped per branch+alert_type, sorted by priority_score)
+CREATE OR REPLACE VIEW alerts_fix_this_first AS
+SELECT
+    x.branch_id,
+    x.organization_id,
+    x.branch_name,
+    x.metric_date,
+    x.alert_type,
+    x.severity,
+    x.impact_estimate_thb,
+    x.cause,
+    x.recommended_action,
+    (
+        COALESCE(x.severity, 0)::numeric * 1000000::numeric
+        + COALESCE(x.impact_estimate_thb, 0)::numeric
+    ) AS priority_score
+FROM (
+    SELECT DISTINCT ON (e.branch_id, e.alert_type)
+        e.branch_id,
+        e.organization_id,
+        e.branch_name,
+        e.metric_date,
+        e.alert_type,
+        e.severity,
+        e.impact_estimate_thb,
+        e.cause,
+        e.recommended_action
+    FROM alerts_enriched e
+    WHERE
+        e.alert_category IN ('problem', 'structural')
+        OR COALESCE(e.severity, 0) >= 3
+    ORDER BY
+        e.branch_id,
+        e.alert_type,
+        e.severity DESC NULLS LAST,
+        e.impact_estimate_thb DESC NULLS LAST,
+        e.metric_date DESC NULLS LAST
+) x;
+
+COMMENT ON VIEW alerts_fix_this_first IS
+    'Company Today: deduped actionable alerts; order by priority_score DESC for PostgREST.';
+
 -- Grants (adjust roles if you do not use anon)
 GRANT SELECT ON alerts_enriched TO anon, authenticated;
 GRANT SELECT ON alerts_today TO anon, authenticated;
 GRANT SELECT ON alerts_critical TO anon, authenticated;
 GRANT SELECT ON alerts_top3_revenue_leaks TO anon, authenticated;
+GRANT SELECT ON alerts_fix_this_first TO anon, authenticated;
 
--- STEP 6 — Verify (run these as separate statements after the script succeeds)
+-- STEP 7 — Verify (run these as separate statements after the script succeeds)
 -- SELECT * FROM alerts_today LIMIT 5;
 -- SELECT * FROM alerts_enriched LIMIT 10;
 -- SELECT * FROM alerts_critical LIMIT 5;
 -- SELECT * FROM alerts_top3_revenue_leaks LIMIT 5;
+-- SELECT * FROM alerts_fix_this_first ORDER BY priority_score DESC LIMIT 5;

@@ -48,6 +48,11 @@ import { OperatingFooterTrust } from '../../components/operating-layer/operating
 import { CompanyLastUpdated } from '../../components/company/company-last-updated';
 import { CompanyBusinessStatusTables } from '../../components/company/company-business-status-tables';
 import { CompanyBusinessTrendSummary } from '../../components/company/company-business-trend-summary';
+import { CompanyFixThisFirst } from '../../components/company/company-fix-this-first';
+import {
+  fetchAlertsFixThisFirst,
+  type AlertsFixThisFirstRow,
+} from '../../services/db/alerts-fix-this-first-service';
 import {
   getCompanyPortfolioTrendSnapshot,
   type CompanyPortfolioTrendSnapshot,
@@ -79,7 +84,9 @@ function OwnerSummaryContent() {
   const [aiDailySummaryLoading, setAiDailySummaryLoading] = useState(false);
   const [portfolioTrendSnapshot, setPortfolioTrendSnapshot] = useState<CompanyPortfolioTrendSnapshot | null>(null);
   const [portfolioTrendLoading, setPortfolioTrendLoading] = useState(false);
-  
+  const [fixThisFirstRows, setFixThisFirstRows] = useState<AlertsFixThisFirstRow[]>([]);
+  const [fixThisFirstLoading, setFixThisFirstLoading] = useState(false);
+
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
 
@@ -231,6 +238,32 @@ function OwnerSummaryContent() {
         }
       } finally {
         if (!cancelled) setAiDailySummaryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, activeOrganizationId, permissions.organizationId, refreshTrigger]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
+    if (!orgId?.trim()) {
+      setFixThisFirstRows([]);
+      setFixThisFirstLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setFixThisFirstLoading(true);
+    (async () => {
+      try {
+        const rows = await Promise.race([
+          fetchAlertsFixThisFirst(orgId, 3),
+          new Promise<AlertsFixThisFirstRow[]>((resolve) => setTimeout(() => resolve([]), 12000)),
+        ]);
+        if (!cancelled) setFixThisFirstRows(rows);
+      } finally {
+        if (!cancelled) setFixThisFirstLoading(false);
       }
     })();
     return () => {
@@ -589,6 +622,15 @@ function OwnerSummaryContent() {
         <CompanyLastUpdated iso={lastUpdated?.toISOString?.()} locale={locale} />
 
         {dailySummaryCard}
+
+        <MonitoringErrorBoundary componentName="Fix This First">
+          <CompanyFixThisFirst
+            rows={fixThisFirstRows}
+            loading={fixThisFirstLoading}
+            locale={locale}
+            maxItems={3}
+          />
+        </MonitoringErrorBoundary>
 
         {!groupHealthScore && <ActivationBlock />}
 

@@ -29,6 +29,9 @@
 -- 4) alerts_top3_revenue_leaks
 --    branch_id, branch_name?, alert_type, impact_estimate_thb, cause, recommended_action (optional rank)
 --
+-- 4b) alerts_fix_this_first (Company Today — Fix This First; add-alerts-fix-this-first-view.sql or rebuild-alerts-enriched-engine.sql)
+--    branch_id, organization_id, branch_name, alert_type, severity, impact_estimate_thb, cause, recommended_action, priority_score
+--
 -- 5) company_daily_summary — run add-company-daily-summary.sql (creates table + RLS; fixes /rest/v1/company_daily_summary 404)
 --    organization_id, summary_text, updated_at, created_at, summary_date, id
 --
