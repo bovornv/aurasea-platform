@@ -607,6 +607,8 @@ function pickBranchAlertStr(r: Record<string, unknown>, ...keys: string[]): stri
 /** Normalized row for branch Today “Alerts & Recommendations” (source: branch_alerts_today). */
 export interface BranchTodayOverviewAlertRow {
   branch_id: string;
+  /** Coarse stream from DB: accommodation | fnb | unknown */
+  branch_type: string | null;
   metric_date: string | null;
   alert_type: string;
   alert_message: string;
@@ -615,21 +617,31 @@ export interface BranchTodayOverviewAlertRow {
   isOpportunity: boolean;
 }
 
-function debugBranchAlertsTodayRestUrl(branchId: string, message: string): void {
+export type BranchAlertsTodayStream = 'accommodation' | 'fnb';
+
+function debugBranchAlertsTodayRestUrl(
+  branchId: string,
+  stream: BranchAlertsTodayStream | null,
+  message: string
+): void {
   if (process.env.NODE_ENV !== 'development') return;
   const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
   if (!base) return;
-  const url = `${base}/rest/v1/branch_alerts_today?select=*&branch_id=eq.${encodeURIComponent(branchId)}`;
+  let url = `${base}/rest/v1/branch_alerts_today?select=*&branch_id=eq.${encodeURIComponent(branchId)}`;
+  if (stream === 'accommodation' || stream === 'fnb') {
+    url += `&branch_type=eq.${encodeURIComponent(stream)}`;
+  }
   console.warn(`[LatestMetricsService] branch_alerts_today ${message}:`, url);
 }
 
 /**
  * Today’s alerts for one branch from branch_alerts_today (not alerts_top / alerts_critical).
+ * When `stream` is accommodation | fnb: API filters branch_type + client filter (defense in depth).
  * Sorted by impact_estimate_thb DESC, then metric_date DESC.
- * No current_date filter — backend returns latest rows per branch from the view.
  */
 export async function getBranchAlertsTodayForBranchOverview(
-  branchId: string
+  branchId: string,
+  stream: BranchAlertsTodayStream | null = null
 ): Promise<BranchTodayOverviewAlertRow[]> {
   if (branchId == null || branchId === '') return [];
   rejectMockBranchId(branchId);
@@ -637,12 +649,20 @@ export async function getBranchAlertsTodayForBranchOverview(
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
-  const { data, error } = await supabase.from('branch_alerts_today').select('*').eq('branch_id', branchId);
+  let q = supabase.from('branch_alerts_today').select('*').eq('branch_id', branchId);
+  if (stream === 'accommodation' || stream === 'fnb') {
+    q = q.eq('branch_type', stream);
+  }
+  const { data, error } = await q;
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
       console.warn('[LatestMetricsService] branch_alerts_today error:', error.message, error);
-      debugBranchAlertsTodayRestUrl(branchId, 'test in browser (add Authorization: Bearer <access_token>)');
+      debugBranchAlertsTodayRestUrl(
+        branchId,
+        stream,
+        'test in browser (add Authorization: Bearer <access_token>)'
+      );
     }
     return [];
   }
@@ -653,6 +673,8 @@ export async function getBranchAlertsTodayForBranchOverview(
   for (const r of raw) {
     const bid = pickBranchAlertStr(r, 'branch_id', 'branchId');
     if (!bid) continue;
+    const branchTypeRaw = pickBranchAlertStr(r, 'branch_type', 'branchType');
+    const branch_type = branchTypeRaw !== '' ? branchTypeRaw.toLowerCase() : null;
     const alertType = pickBranchAlertStr(r, 'alert_type', 'alert_name', 'type', 'title');
     const msg = pickBranchAlertStr(r, 'alert_message', 'message', 'description');
     const impact = pickBranchAlertNum(
@@ -684,6 +706,7 @@ export async function getBranchAlertsTodayForBranchOverview(
 
     rows.push({
       branch_id: bid,
+      branch_type,
       metric_date: metricDate,
       alert_type: alertType || 'Alert',
       alert_message: msg,
@@ -700,6 +723,9 @@ export async function getBranchAlertsTodayForBranchOverview(
     return (b.metric_date ?? '').localeCompare(a.metric_date ?? '');
   });
 
+  if (stream === 'accommodation' || stream === 'fnb') {
+    return rows.filter((a) => a.branch_type === stream);
+  }
   return rows;
 }
 

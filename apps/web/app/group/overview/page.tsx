@@ -26,7 +26,6 @@ import { useI18n } from '../../hooks/use-i18n';
 import { useTestMode } from '../../providers/test-mode-provider';
 import { businessGroupService } from '../../services/business-group-service';
 import { getBranchHealthScores } from '../../services/health-score-service';
-import { CompanyCriticalAlertsDb } from '../../components/company/company-critical-alerts-db';
 import { CompanyRevenueLeaksDb } from '../../components/company/company-revenue-leaks-db';
 import { MonitoringErrorBoundary } from '../../components/monitoring-error-boundary';
 import { useOrganization } from '../../contexts/organization-context';
@@ -665,12 +664,6 @@ function OwnerSummaryContent() {
               coverageDays={coverageDays}
               trendsUrl={paths.companyTrends}
             />
-          </MonitoringErrorBoundary>
-        </OperatingSection>
-
-        <OperatingSection title={locale === 'th' ? 'การแจ้งเตือนวิกฤติ' : 'Critical Alerts'}>
-          <MonitoringErrorBoundary componentName="Critical Alerts DB">
-            <CompanyCriticalAlertsDb rows={companyTodayBundle?.criticalAlerts ?? []} locale={locale} maxItems={5} />
           </MonitoringErrorBoundary>
         </OperatingSection>
 

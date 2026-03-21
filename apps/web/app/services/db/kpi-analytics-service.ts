@@ -286,6 +286,7 @@ export async function getAlertsFromBranchIntelligenceEngine(
 /** Row from branch_alerts_today view. */
 export interface BranchAlertsTodayRow {
   branch_id: string;
+  branch_type?: string | null;
   metric_date?: string | null;
   alert_message?: string | null;
   alert_type?: string | null;
@@ -308,35 +309,46 @@ export function severityOrder(severity: string | null | undefined): number {
 
 /**
  * Fetch alerts from branch_alerts_today for a branch.
+ * Optional `stream`: accommodation | fnb — API + client filter (same as branch Today).
  * Order: severity (high, medium, else) then metric_date desc (applied client-side).
  */
 export async function getAlertsFromBranchAlertsToday(
-  branchId: string
+  branchId: string,
+  stream: 'accommodation' | 'fnb' | null = null
 ): Promise<BranchAlertsTodayRow[]> {
   if (branchId == null || branchId === '') return [];
   if (!isSupabaseAvailable()) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
   try {
-    const { data, error } = await supabase
-      .from('branch_alerts_today')
-      .select('*')
-      .eq('branch_id', branchId)
-      .order('metric_date', { ascending: false });
+    let q = supabase.from('branch_alerts_today').select('*').eq('branch_id', branchId);
+    if (stream === 'accommodation' || stream === 'fnb') {
+      q = q.eq('branch_type', stream);
+    }
+    const { data, error } = await q.order('metric_date', { ascending: false });
     if (error) {
       if (process.env.NODE_ENV === 'development') {
         const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
         if (base) {
+          const typeQ =
+            stream === 'accommodation' || stream === 'fnb'
+              ? `&branch_type=eq.${encodeURIComponent(stream)}`
+              : '';
           console.warn(
             '[kpi-analytics] branch_alerts_today:',
             error.message,
-            `${base}/rest/v1/branch_alerts_today?select=*&branch_id=eq.${encodeURIComponent(branchId)}`
+            `${base}/rest/v1/branch_alerts_today?select=*&branch_id=eq.${encodeURIComponent(branchId)}${typeQ}`
           );
         }
       }
       return [];
     }
-    const rows = (data ?? []) as BranchAlertsTodayRow[];
+    let rows = (data ?? []) as BranchAlertsTodayRow[];
+    if (stream === 'accommodation' || stream === 'fnb') {
+      rows = rows.filter(
+        (a) => String(a.branch_type ?? '').toLowerCase() === stream
+      );
+    }
     rows.sort((a, b) => {
       const orderA = severityOrder(a.alert_severity);
       const orderB = severityOrder(b.alert_severity);

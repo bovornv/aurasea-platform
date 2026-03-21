@@ -405,7 +405,13 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw(dates);
       setFreshnessLoaded(true);
     });
-    getBranchAlertsTodayForBranchOverview(branch.id)
+    const alertStream =
+      branch.moduleType === 'accommodation'
+        ? ('accommodation' as const)
+        : branch.moduleType === 'fnb'
+          ? ('fnb' as const)
+          : null;
+    getBranchAlertsTodayForBranchOverview(branch.id, alertStream)
       .then((rows) => {
         setBranchTodayAlerts(rows);
         setBranchTodayAlertsLoading(false);
@@ -435,7 +441,14 @@ export default function BranchOverviewPage() {
       if (detail?.branchId === branch?.id) {
         refreshOperatingStatus();
         getBranchLearningStatus(branch.id).then(setLearningStatus);
-        getBranchAlertsTodayForBranchOverview(branch.id).then(setBranchTodayAlerts);
+        getBranchAlertsTodayForBranchOverview(
+          branch.id,
+          branch.moduleType === 'accommodation'
+            ? 'accommodation'
+            : branch.moduleType === 'fnb'
+              ? 'fnb'
+              : null
+        ).then(setBranchTodayAlerts);
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
@@ -1267,11 +1280,13 @@ export default function BranchOverviewPage() {
             <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
           ) : branchTodayAlerts.length === 0 ? (
             <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.55 }}>
-              {locale === 'th' ? 'ไม่พบประเด็นที่ต้องดำเนินการ' : 'No issues detected'}
+              {locale === 'th'
+                ? 'ทุกอย่างเรียบร้อย — ไม่พบประเด็นวันนี้'
+                : 'All good — no issues detected today'}
             </div>
           ) : (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {branchTodayAlerts.slice(0, 5).map((alert, idx) => {
+              {branchTodayAlerts.slice(0, 3).map((alert, idx) => {
                 const accentColor = alert.isOpportunity ? '#059669' : '#dc2626';
                 const d = getAlertTopDisplay(
                   {

@@ -1,5 +1,6 @@
 -- branch_alerts_today — Branch Today “What needs attention” (PostgREST)
--- Same rows as alerts_today; filter with branch_id=eq.{id}. No current_date in the view — latest rows come from underlying metrics.
+-- Same columns as alerts_today (includes branch_type: accommodation | fnb | … from branches.module_type).
+-- Filter: branch_id=eq.{id}&branch_type=eq.accommodation|fnb
 --
 -- Requires: public.alerts_today (run rebuild-alerts-enriched-engine.sql first).
 --

@@ -45,7 +45,16 @@ WITH ts AS (
         t.occupancy_delta_week::numeric AS occupancy_delta_week,
         COALESCE(t.customers, 0)::numeric AS customers,
         b.organization_id,
-        b.name AS branch_name
+        b.name AS branch_name,
+        CASE
+            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+                'accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'
+            ) THEN 'accommodation'::text
+            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+                'fnb', 'restaurant', 'cafe', 'cafe_restaurant'
+            ) THEN 'fnb'::text
+            ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
+        END AS branch_type
     FROM today_summary_clean t
     LEFT JOIN branches b
         ON b.id::text = t.branch_id::text
@@ -56,6 +65,7 @@ problems AS (
         branch_id,
         organization_id,
         branch_name,
+        branch_type,
         metric_date,
         CASE
             WHEN revenue_delta_day IS NOT NULL AND revenue_delta_day <= -10 THEN 'Revenue Drop'
@@ -105,6 +115,7 @@ opportunities AS (
         branch_id,
         organization_id,
         branch_name,
+        branch_type,
         metric_date,
         'High Demand Opportunity'::text AS alert_type,
         1 AS severity,
@@ -125,6 +136,7 @@ revenue_split AS (
         branch_id,
         organization_id,
         branch_name,
+        branch_type,
         metric_date,
         CASE
             WHEN fnb_revenue IS NOT NULL AND accommodation_revenue IS NOT NULL
@@ -184,6 +196,7 @@ SELECT
     branch_id,
     organization_id,
     branch_name,
+    branch_type,
     metric_date,
     alert_type,
     severity,
@@ -199,6 +212,7 @@ SELECT
     branch_id,
     organization_id,
     branch_name,
+    branch_type,
     metric_date,
     alert_type,
     severity,
@@ -213,6 +227,7 @@ SELECT
     branch_id,
     organization_id,
     branch_name,
+    branch_type,
     metric_date,
     alert_type,
     severity,
@@ -327,6 +342,7 @@ SELECT
     x.branch_id,
     x.organization_id,
     x.branch_name,
+    x.branch_type,
     x.metric_date,
     x.alert_type,
     x.severity,
@@ -342,6 +358,7 @@ FROM (
         e.branch_id,
         e.organization_id,
         e.branch_name,
+        e.branch_type,
         e.metric_date,
         e.alert_type,
         e.severity,
