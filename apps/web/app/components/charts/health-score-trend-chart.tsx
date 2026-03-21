@@ -8,6 +8,11 @@
 import { useState, useMemo } from 'react';
 import { SectionCard } from '../section-card';
 import type { HealthScoreTrend } from '../../../../../core/sme-os/engine/contracts/health-score';
+import {
+  getWeekendStyle,
+  computeTimeSeriesWeekendBands,
+  CHART_WEEKEND_BAND_STROKE_WIDTH,
+} from '../../utils/chart-weekend';
 
 interface HealthScoreTrendChartProps {
   trend: HealthScoreTrend | null;
@@ -99,21 +104,37 @@ export function HealthScoreTrendChart({ trend, currentScore, locale }: HealthSco
                 const minScore = Math.max(0, Math.min(...snapshots.map(s => s.score)) - 5);
                 const maxScore = Math.min(100, Math.max(...snapshots.map(s => s.score)) + 5);
                 const range = maxScore - minScore || 1;
-                
+                const weekendStyle = getWeekendStyle();
+                const weekendBands = computeTimeSeriesWeekendBands(
+                  snapshots.length,
+                  snapshots.map((s) => s.date),
+                  0,
+                  width
+                );
+
                 const points = snapshots.map((snapshot, idx) => {
                   const x = (idx / (snapshots.length - 1)) * width;
                   const y = height - ((snapshot.score - minScore) / range) * height;
                   return `${x},${y}`;
                 }).join(' ');
-                
+
                 return (
-                  <polyline
-                    points={points}
-                    fill="none"
-                    stroke={chartColor}
-                    strokeWidth="2"
-                    style={{ transform: 'scale(0.95)', transformOrigin: '0 0' }}
-                  />
+                  <g style={{ transform: 'scale(0.95)', transformOrigin: '0 0' }}>
+                    {weekendBands.map((b, i) => (
+                      <rect
+                        key={i}
+                        x={b.x1}
+                        y={0}
+                        width={Math.max(0, b.x2 - b.x1)}
+                        height={height}
+                        fill={weekendStyle.backgroundColor}
+                        stroke={weekendStyle.borderColor}
+                        strokeWidth={CHART_WEEKEND_BAND_STROKE_WIDTH}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    ))}
+                    <polyline points={points} fill="none" stroke={chartColor} strokeWidth="2" />
+                  </g>
                 );
               })()}
             </svg>

@@ -58,6 +58,7 @@ import {
 } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
+import { trendInsightDual } from '../../utils/trend-chart-insights';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
 import {
@@ -680,6 +681,50 @@ export default function BranchOverviewPage() {
     });
     return { dates, revenue, occupancy, customers, adr, revpar, avgTicket };
   }, [driverTrendSeries, dailyMetricsForTrends, branchMetrics?.modules?.accommodation?.totalRoomsAvailable]);
+
+  const performanceDriverInsights = useMemo(() => {
+    const loc = locale === 'th' ? 'th' : 'en';
+    if (!driverChartData) return null;
+    if (isAccommodation) {
+      return {
+        kind: 'acc' as const,
+        occAdr: trendInsightDual(
+          { values: driverChartData.occupancy, metric: 'occupancy' },
+          driverChartData.adr.length === driverChartData.occupancy.length
+            ? { values: driverChartData.adr, metric: 'adr' }
+            : null,
+          loc
+        ),
+        occRev: trendInsightDual(
+          { values: driverChartData.occupancy, metric: 'occupancy' },
+          driverChartData.revenue.length === driverChartData.occupancy.length
+            ? { values: driverChartData.revenue, metric: 'revenue' }
+            : null,
+          loc
+        ),
+      };
+    }
+    if (isFnb) {
+      return {
+        kind: 'fnb' as const,
+        custRev: trendInsightDual(
+          { values: driverChartData.customers, metric: 'customers' },
+          driverChartData.revenue.length === driverChartData.customers.length
+            ? { values: driverChartData.revenue, metric: 'revenue' }
+            : null,
+          loc
+        ),
+        custTicket: trendInsightDual(
+          { values: driverChartData.customers, metric: 'customers' },
+          driverChartData.avgTicket.length === driverChartData.customers.length
+            ? { values: driverChartData.avgTicket, metric: 'avgTicket' }
+            : null,
+          loc
+        ),
+      };
+    }
+    return null;
+  }, [driverChartData, isAccommodation, isFnb, locale]);
 
   // STEP 6 & 7: Debug logging will be added after recommendedActions is defined
 
@@ -1347,24 +1392,8 @@ export default function BranchOverviewPage() {
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={
-                      driverChartData.occupancy.length >= 7 && (driverChartData.occupancy[driverChartData.occupancy.length - 1] ?? 0) < 50
-                        ? locale === 'th'
-                          ? 'วันธรรมดามีอัตราการเข้าพักต่ำอย่างต่อเนื่อง'
-                          : 'Weekday occupancy consistently low'
-                        : locale === 'th'
-                          ? 'อัตราการเข้าพักกับราคาห้องอาจดึงคนละทาง'
-                          : 'Occupancy and ADR can pull in different directions'
-                    }
-                    recommendation={
-                      driverChartData.occupancy.length >= 7 && (driverChartData.occupancy[driverChartData.occupancy.length - 1] ?? 0) < 50
-                        ? locale === 'th'
-                          ? 'ทำโปรโมชั่นช่วงวันธรรมดา'
-                          : 'Run weekday promotion'
-                        : locale === 'th'
-                          ? 'ปรับราคาหรือข้อจำกัดเมื่ออุปสงค์กับราคาไม่ตรงกัน'
-                          : 'Adjust rates or stay restrictions when demand and pricing disagree'
-                    }
+                    problem={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occAdr.problem : ''}
+                    recommendation={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occAdr.recommendation : ''}
                   >
                     <DecisionTrendChart
                       values={driverChartData.occupancy}
@@ -1378,6 +1407,9 @@ export default function BranchOverviewPage() {
                       leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
                       rightLabel={locale === 'th' ? 'ราคาห้องเฉลี่ย (฿)' : 'ADR (฿)'}
                       emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                      locale={locale === 'th' ? 'th' : 'en'}
+                      insightRevenue={driverChartData.revenue}
+                      insightCustomers={driverChartData.customers}
                     />
                   </TrendChartCard>
                   <TrendChartCard
@@ -1387,8 +1419,8 @@ export default function BranchOverviewPage() {
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={locale === 'th' ? 'รายได้หรืออัตราการเข้าพักไม่สอดคล้องกัน' : 'Revenue and occupancy moving in opposite directions'}
-                    recommendation={locale === 'th' ? 'ปรับราคาหรือโปรโมชั่นให้สอดคล้องกับความต้องการ' : 'Align pricing or promotions with demand'}
+                    problem={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occRev.problem : ''}
+                    recommendation={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occRev.recommendation : ''}
                   >
                     <DecisionTrendChart
                       values={driverChartData.occupancy}
@@ -1402,6 +1434,8 @@ export default function BranchOverviewPage() {
                       leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
                       rightLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
                       emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                      locale={locale === 'th' ? 'th' : 'en'}
+                      insightCustomers={driverChartData.customers}
                     />
                   </TrendChartCard>
                 </>
@@ -1415,8 +1449,8 @@ export default function BranchOverviewPage() {
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={locale === 'th' ? 'รายได้หรือจำนวนลูกค้าลด' : 'Revenue or customer traffic declining'}
-                    recommendation={locale === 'th' ? 'โปรโมชั่นหรือแพ็กเกจเพื่อดึงลูกค้า' : 'Run promotion or bundle to attract traffic'}
+                    problem={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custRev.problem : ''}
+                    recommendation={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custRev.recommendation : ''}
                   >
                     <DecisionTrendChart
                       values={driverChartData.customers}
@@ -1436,6 +1470,7 @@ export default function BranchOverviewPage() {
                       strokeWidthLeft={3}
                       strokeWidthRight={1.5}
                       emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                      locale={locale === 'th' ? 'th' : 'en'}
                     />
                   </TrendChartCard>
                   <TrendChartCard
@@ -1445,8 +1480,8 @@ export default function BranchOverviewPage() {
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={locale === 'th' ? 'ลูกค้าน้อยหรือค่าเฉลี่ยต่อบิลต่ำ' : 'Low traffic or low avg ticket'}
-                    recommendation={locale === 'th' ? 'อัปเซลล์หรือโปรโมชั่นค่าเฉลี่ยสูง' : 'Upsell or promote higher-ticket items'}
+                    problem={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custTicket.problem : ''}
+                    recommendation={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custTicket.recommendation : ''}
                   >
                     <DecisionTrendChart
                       values={driverChartData.customers}
@@ -1462,6 +1497,8 @@ export default function BranchOverviewPage() {
                       strokeWidthLeft={3}
                       strokeWidthRight={1.5}
                       emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                      locale={locale === 'th' ? 'th' : 'en'}
+                      insightRevenue={driverChartData.revenue}
                     />
                   </TrendChartCard>
                 </>

@@ -6,11 +6,11 @@
 
 import { useMemo } from 'react';
 import { getDayOfWeek } from '../../utils/trends-headline';
+import { getWeekendStyle } from '../../utils/chart-weekend';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const AXIS_COLOR = '#eee';
 const BAR_COLOR = '#6366f1';
-const WEEKEND_COLOR = '#7c3aed';
 const PAD_LEFT = 32;
 const PAD_RIGHT = 16;
 const PAD_TOP = 8;
@@ -52,6 +52,7 @@ export function DayOfWeekChart({
   }, [values, dates]);
 
   const maxVal = useMemo(() => (bars ? Math.max(...bars.map((b) => b.avg), 1) : 1), [bars]);
+  const weekendStyle = useMemo(() => getWeekendStyle(), []);
   const chartWidth = 400;
   const chartHeight = HEIGHT - PAD_TOP - PAD_BOTTOM;
   const barW = (chartWidth - PAD_LEFT - PAD_RIGHT) / 7;
@@ -99,8 +100,10 @@ export function DayOfWeekChart({
                 y={y}
                 width={barW - gap}
                 height={h}
-                fill={highlightWeekend && b.isWeekend ? WEEKEND_COLOR : BAR_COLOR}
-                opacity={highlightWeekend && b.isWeekend ? 0.9 : 0.7}
+                fill={highlightWeekend && b.isWeekend ? weekendStyle.backgroundColor : BAR_COLOR}
+                stroke={highlightWeekend && b.isWeekend ? weekendStyle.borderColor : 'none'}
+                strokeWidth={highlightWeekend && b.isWeekend ? 0.85 : 0}
+                opacity={highlightWeekend && b.isWeekend ? 1 : 0.7}
               />
               <text x={x + (barW - gap) / 2} y={HEIGHT - PAD_BOTTOM + 14} textAnchor="middle" fontSize="10" fill="#6b7280">
                 {DAY_LABELS[i]}

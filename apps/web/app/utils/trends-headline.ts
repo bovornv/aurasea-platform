@@ -2,6 +2,8 @@
  * Headline metric and "vs last week" for Trends chart cards.
  * Uses last 7 days avg vs previous 7 days avg when ≥14 points; otherwise null.
  */
+import { getChartDayOfWeek, isWeekend as isWeekendChartDate } from './chart-weekend';
+
 export function headlineDelta(
   values: number[],
   _dates?: string[]
@@ -36,8 +38,7 @@ export function formatHeadline(
 
 /** 0 = Sun, 6 = Sat. Uses noon to avoid timezone date-boundary issues. */
 export function getDayOfWeek(dateStr: string): number {
-  const d = new Date(dateStr + 'T12:00:00');
-  return d.getDay();
+  return getChartDayOfWeek(dateStr);
 }
 
 /** Short date for x-axis: e.g. "Mar 1", "Mar 10". Uses noon for consistent day. */
@@ -47,8 +48,7 @@ export function formatShortDate(dateStr: string): string {
 }
 
 export function isWeekend(dateStr: string): boolean {
-  const dow = getDayOfWeek(dateStr);
-  return dow === 0 || dow === 6;
+  return isWeekendChartDate(dateStr);
 }
 
 /** Rolling 7-day average for baseline. Returns same length; first 6 values are null. */
