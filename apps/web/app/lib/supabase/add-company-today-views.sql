@@ -10,7 +10,8 @@
 --
 -- Unified alerts pipeline (recommended): run the **entire** rebuild-alerts-enriched-engine.sql script
 -- (not bare view names). Uses branch_business_status (backed by today_summary_clean + signals).
---   alerts_enriched → alerts_today → alerts_critical, alerts_top3_revenue_leaks
+--   alerts_enriched → alerts_today → branch_alerts_today (alias), alerts_critical, alerts_top3_revenue_leaks, alerts_fix_this_first
+-- Branch Today UI: add-branch-alerts-today.sql or rebuild (fixes /rest/v1/branch_alerts_today 404)
 -- Verify: SELECT * FROM alerts_today LIMIT 5;
 --
 -- 1) branch_business_status (see add-branch-performance-signal-and-business-status.sql for full definition)

@@ -323,7 +323,19 @@ export async function getAlertsFromBranchAlertsToday(
       .select('*')
       .eq('branch_id', branchId)
       .order('metric_date', { ascending: false });
-    if (error) return [];
+    if (error) {
+      if (process.env.NODE_ENV === 'development') {
+        const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
+        if (base) {
+          console.warn(
+            '[kpi-analytics] branch_alerts_today:',
+            error.message,
+            `${base}/rest/v1/branch_alerts_today?select=*&branch_id=eq.${encodeURIComponent(branchId)}`
+          );
+        }
+      }
+      return [];
+    }
     const rows = (data ?? []) as BranchAlertsTodayRow[];
     rows.sort((a, b) => {
       const orderA = severityOrder(a.alert_severity);

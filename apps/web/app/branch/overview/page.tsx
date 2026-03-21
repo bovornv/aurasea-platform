@@ -1267,9 +1267,7 @@ export default function BranchOverviewPage() {
             <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
           ) : branchTodayAlerts.length === 0 ? (
             <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.55 }}>
-              {locale === 'th'
-                ? 'ระบบทำงานเป็นปกติ — ไม่พบความเสี่ยงด้านรายได้'
-                : 'All systems operating normally — no revenue risks detected'}
+              {locale === 'th' ? 'ไม่พบประเด็นที่ต้องดำเนินการ' : 'No issues detected'}
             </div>
           ) : (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>

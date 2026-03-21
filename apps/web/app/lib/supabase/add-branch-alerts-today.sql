@@ -1,15 +1,16 @@
--- Branch Today → “Alerts & Recommendations” reads branch_alerts_today with .eq('branch_id', id).
--- Columns are mapped flexibly in getBranchAlertsTodayForBranchOverview (latest-metrics-service.ts).
+-- branch_alerts_today — Branch Today “What needs attention” (PostgREST)
+-- Same rows as alerts_today; filter with branch_id=eq.{id}. No current_date in the view — latest rows come from underlying metrics.
 --
--- If you only have alerts_today, you can expose the same rows under this name:
+-- Requires: public.alerts_today (run rebuild-alerts-enriched-engine.sql first).
 --
--- CREATE OR REPLACE VIEW branch_alerts_today AS
--- SELECT *
--- FROM alerts_today;
---
--- Typical columns: branch_id, metric_date, alert_type, alert_message,
---   impact_estimate_thb (or estimated_revenue_impact),
---   recommended_action (or recommendation, action),
---   alert_category, severity / alert_severity (optional, for opportunity styling)
---
--- GRANT SELECT ON branch_alerts_today TO authenticated;
+-- DROP + CREATE (not OR REPLACE): Postgres forbids OR REPLACE when column names/order differ from the old view.
+
+DROP VIEW IF EXISTS public.branch_alerts_today CASCADE;
+
+CREATE VIEW public.branch_alerts_today AS
+SELECT * FROM public.alerts_today;
+
+COMMENT ON VIEW public.branch_alerts_today IS
+  'Passthrough of alerts_today for /rest/v1/branch_alerts_today; eq(branch_id) in the client.';
+
+GRANT SELECT ON public.branch_alerts_today TO anon, authenticated;

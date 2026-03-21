@@ -615,9 +615,18 @@ export interface BranchTodayOverviewAlertRow {
   isOpportunity: boolean;
 }
 
+function debugBranchAlertsTodayRestUrl(branchId: string, message: string): void {
+  if (process.env.NODE_ENV !== 'development') return;
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
+  if (!base) return;
+  const url = `${base}/rest/v1/branch_alerts_today?select=*&branch_id=eq.${encodeURIComponent(branchId)}`;
+  console.warn(`[LatestMetricsService] branch_alerts_today ${message}:`, url);
+}
+
 /**
  * Today’s alerts for one branch from branch_alerts_today (not alerts_top / alerts_critical).
  * Sorted by impact_estimate_thb DESC, then metric_date DESC.
+ * No current_date filter — backend returns latest rows per branch from the view.
  */
 export async function getBranchAlertsTodayForBranchOverview(
   branchId: string
@@ -632,7 +641,8 @@ export async function getBranchAlertsTodayForBranchOverview(
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[LatestMetricsService] branch_alerts_today error:', error.message);
+      console.warn('[LatestMetricsService] branch_alerts_today error:', error.message, error);
+      debugBranchAlertsTodayRestUrl(branchId, 'test in browser (add Authorization: Bearer <access_token>)');
     }
     return [];
   }

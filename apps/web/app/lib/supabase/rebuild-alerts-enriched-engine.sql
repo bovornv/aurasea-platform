@@ -16,6 +16,7 @@
 
 -- STEP 1 — Drop dependents first (children → parent). CASCADE cleans legacy dependents.
 DROP VIEW IF EXISTS alerts_fix_this_first CASCADE;
+DROP VIEW IF EXISTS branch_alerts_today CASCADE;
 DROP VIEW IF EXISTS alerts_critical CASCADE;
 DROP VIEW IF EXISTS alerts_top3_revenue_leaks CASCADE;
 DROP VIEW IF EXISTS alerts_today CASCADE;
@@ -228,6 +229,13 @@ WHERE alert_type IS NOT NULL
 CREATE OR REPLACE VIEW alerts_today AS
 SELECT * FROM alerts_enriched;
 
+-- STEP 3b — branch_alerts_today: same as alerts_today (stable /rest/v1/branch_alerts_today; no current_date filter)
+CREATE OR REPLACE VIEW branch_alerts_today AS
+SELECT * FROM alerts_today;
+
+COMMENT ON VIEW branch_alerts_today IS
+    'Branch Today alerts; filter branch_id in API. Latest metric_date per row from pipeline, not restricted to today().';
+
 -- STEP 4 — Critical: severity >= 3, dedupe (branch_id, alert_type), best severity then impact, top 5 per branch
 CREATE OR REPLACE VIEW alerts_critical AS
 SELECT
@@ -358,12 +366,14 @@ COMMENT ON VIEW alerts_fix_this_first IS
 -- Grants (adjust roles if you do not use anon)
 GRANT SELECT ON alerts_enriched TO anon, authenticated;
 GRANT SELECT ON alerts_today TO anon, authenticated;
+GRANT SELECT ON branch_alerts_today TO anon, authenticated;
 GRANT SELECT ON alerts_critical TO anon, authenticated;
 GRANT SELECT ON alerts_top3_revenue_leaks TO anon, authenticated;
 GRANT SELECT ON alerts_fix_this_first TO anon, authenticated;
 
 -- STEP 7 — Verify (run these as separate statements after the script succeeds)
 -- SELECT * FROM alerts_today LIMIT 5;
+-- SELECT * FROM branch_alerts_today WHERE branch_id = 'your-branch-id' LIMIT 5;
 -- SELECT * FROM alerts_enriched LIMIT 10;
 -- SELECT * FROM alerts_critical LIMIT 5;
 -- SELECT * FROM alerts_top3_revenue_leaks LIMIT 5;
