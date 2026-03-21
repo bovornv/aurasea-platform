@@ -111,8 +111,10 @@ problems AS (
                 )
         END AS impact_estimate_thb,
         CASE
-            WHEN revenue_delta_day IS NOT NULL AND revenue_delta_day <= -10
-                THEN 'Launch short-term promotion or boost OTA visibility'
+            WHEN revenue_delta_day IS NOT NULL AND revenue_delta_day <= -10 AND branch_type = 'fnb' THEN
+                'Run same-day promos, meal bundles, or boost walk-in and delivery'
+            WHEN revenue_delta_day IS NOT NULL AND revenue_delta_day <= -10 THEN
+                'Launch short-term promotion or boost OTA visibility'
             WHEN occupancy_delta_week IS NOT NULL AND occupancy_delta_week <= -10
                 THEN 'Adjust pricing or create package deals'
         END AS recommended_action,

@@ -144,16 +144,38 @@ function extractPercentFromMessage(msg: string | null): string | null {
   return m ? m[1]! : null;
 }
 
+export type AlertTopDisplayContext = {
+  /** When `fnb`, Revenue Drop uses F&B actions (no OTA). */
+  moduleType?: string | null;
+};
+
 /**
- * Localized display strings for an alert from alerts_top.
- * Use when locale === 'th' to show alert content in Thai.
+ * Localized display strings for an alert from alerts_top / branch_alerts_today.
  */
 export function getAlertTopDisplay(
   alert: { alert_type: string | null; alert_message: string | null; cause: string | null; recommendation: string | null; expected_recovery: string | null },
-  locale: string
+  locale: string,
+  context?: AlertTopDisplayContext
 ): AlertTopDisplay {
   const type = alert.alert_type ?? 'Alert';
   const isTh = locale === 'th';
+  const isFnb = context?.moduleType === 'fnb';
+
+  if (isTh && type === 'Revenue Drop' && isFnb) {
+    const pct = extractPercentFromMessage(alert.alert_message);
+    const message =
+      pct != null
+        ? `รายได้ลดลง ${pct}% เมื่อเทียบวันก่อน`
+        : (alert.alert_message ?? '');
+    return {
+      type: 'รายได้ลดลง',
+      message,
+      cause: 'ต่ำกว่าแนวโน้มล่าสุด',
+      recommendation: 'จัดโปรหรือแพ็กเมนู และดัน walk-in / เดลิเวอรี่',
+      expected_recovery: 'รายได้ฟื้นตัว +5–10%',
+    };
+  }
+
   const th = isTh && ALERT_TOP_TH[type];
 
   if (th) {
@@ -168,11 +190,17 @@ export function getAlertTopDisplay(
     };
   }
 
+  let recommendation = alert.recommendation;
+  if (isFnb && type === 'Revenue Drop' && recommendation && /ota/i.test(recommendation)) {
+    recommendation =
+      'Run same-day promos, meal bundles, or boost walk-in and delivery.';
+  }
+
   return {
     type,
     message: alert.alert_message ?? '',
     cause: alert.cause,
-    recommendation: alert.recommendation,
+    recommendation,
     expected_recovery: alert.expected_recovery,
   };
 }

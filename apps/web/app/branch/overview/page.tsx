@@ -726,6 +726,26 @@ export default function BranchOverviewPage() {
     return null;
   }, [driverChartData, isAccommodation, isFnb, locale]);
 
+  const branchTodayAlertsOrdered = useMemo(() => {
+    const copy = [...branchTodayAlerts];
+    copy.sort((a, b) => {
+      if (a.isOpportunity !== b.isOpportunity) return a.isOpportunity ? -1 : 1;
+      if (b.impact_estimate_thb !== a.impact_estimate_thb) return b.impact_estimate_thb - a.impact_estimate_thb;
+      return (b.metric_date ?? '').localeCompare(a.metric_date ?? '');
+    });
+    return copy;
+  }, [branchTodayAlerts]);
+
+  const branchTodayOpportunities = useMemo(
+    () => branchTodayAlertsOrdered.filter((a) => a.isOpportunity).slice(0, 3),
+    [branchTodayAlertsOrdered]
+  );
+
+  const branchTodayProblems = useMemo(
+    () => branchTodayAlertsOrdered.filter((a) => !a.isOpportunity).slice(0, 3),
+    [branchTodayAlertsOrdered]
+  );
+
   // STEP 6 & 7: Debug logging will be added after recommendedActions is defined
 
   const activeAlerts = useMemo(() => {
@@ -1323,56 +1343,115 @@ export default function BranchOverviewPage() {
           </h2>
           {branchTodayAlertsLoading ? (
             <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
-          ) : branchTodayAlerts.length === 0 ? (
+          ) : branchTodayOpportunities.length === 0 && branchTodayProblems.length === 0 ? (
             <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.55 }}>
               {locale === 'th'
                 ? 'ทุกอย่างเรียบร้อย — ไม่พบประเด็นวันนี้'
                 : 'All good — no issues detected today'}
             </div>
           ) : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {branchTodayAlerts.slice(0, 3).map((alert, idx) => {
-                const accentColor = alert.isOpportunity ? '#059669' : '#dc2626';
-                const d = getAlertTopDisplay(
-                  {
-                    alert_type: alert.alert_type,
-                    alert_message: alert.alert_message,
-                    cause: null,
-                    recommendation: alert.recommended_action,
-                    expected_recovery: null,
-                  },
-                  locale === 'th' ? 'th' : 'en'
-                );
-                const actionFallback = locale === 'th' ? 'ทบทวนประสิทธิภาพ' : 'Review performance';
-                const actionText =
-                  (alert.recommended_action || d.recommendation || '').trim() || actionFallback;
-                const numLoc = locale === 'th' ? 'th-TH' : 'en-US';
-                return (
-                  <li
-                    key={`${alert.branch_id}-${alert.metric_date}-${alert.alert_type}-${idx}`}
-                    style={{
-                      padding: '12px 16px',
-                      borderLeft: `4px solid ${accentColor}`,
-                      lineHeight: 1.5,
-                      color: '#1f2937',
-                    }}
-                  >
-                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{d.type}</div>
-                    {d.message ? (
-                      <div style={{ fontSize: 14, color: '#374151', marginBottom: 6 }}>{d.message}</div>
-                    ) : null}
-                    <div style={{ fontSize: 13, color: '#b91c1c', fontWeight: 600, marginBottom: 4 }}>
-                      {locale === 'th' ? 'ผลกระทบ: ' : 'Impact: '}
-                      ฿{formatCurrency(alert.impact_estimate_thb, numLoc)}
-                    </div>
-                    <div style={{ fontSize: 14, color: '#374151' }}>
-                      <span style={{ fontWeight: 600 }}>{locale === 'th' ? 'แนวทาง: ' : 'Action: '}</span>
-                      {actionText}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <>
+              {branchTodayOpportunities.length > 0 && branchTodayProblems.length > 0 ? (
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#059669', margin: '0 0 8px 0' }}>
+                  {locale === 'th' ? 'โอกาส' : 'Opportunities'}
+                </h3>
+              ) : null}
+              {branchTodayOpportunities.length > 0 ? (
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {branchTodayOpportunities.map((alert, idx) => {
+                    const accentColor = '#059669';
+                    const d = getAlertTopDisplay(
+                      {
+                        alert_type: alert.alert_type,
+                        alert_message: alert.alert_message,
+                        cause: null,
+                        recommendation: alert.recommended_action,
+                        expected_recovery: null,
+                      },
+                      locale === 'th' ? 'th' : 'en',
+                      { moduleType: branch?.moduleType }
+                    );
+                    const actionFallback = locale === 'th' ? 'ทบทวนประสิทธิภาพ' : 'Review performance';
+                    const actionText = (d.recommendation || alert.recommended_action || '').trim() || actionFallback;
+                    const numLoc = locale === 'th' ? 'th-TH' : 'en-US';
+                    return (
+                      <li
+                        key={`opp-${alert.branch_id}-${alert.metric_date}-${alert.alert_type}-${idx}`}
+                        style={{
+                          padding: '12px 16px',
+                          borderLeft: `4px solid ${accentColor}`,
+                          lineHeight: 1.5,
+                          color: '#1f2937',
+                        }}
+                      >
+                        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{d.type}</div>
+                        {d.message ? (
+                          <div style={{ fontSize: 14, color: '#374151', marginBottom: 6 }}>{d.message}</div>
+                        ) : null}
+                        <div style={{ fontSize: 13, color: '#059669', fontWeight: 600, marginBottom: 4 }}>
+                          {locale === 'th' ? 'โอกาสรายได้ (ประมาณ): ' : 'Opportunity (est.): '}
+                          ฿{formatCurrency(alert.impact_estimate_thb, numLoc)}
+                        </div>
+                        <div style={{ fontSize: 14, color: '#374151' }}>
+                          <span style={{ fontWeight: 600 }}>{locale === 'th' ? 'แนวทาง: ' : 'Action: '}</span>
+                          {actionText}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+              {branchTodayOpportunities.length > 0 && branchTodayProblems.length > 0 ? (
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#b91c1c', margin: '16px 0 8px 0' }}>
+                  {locale === 'th' ? 'ประเด็นที่ควรดู' : 'Needs attention'}
+                </h3>
+              ) : null}
+              {branchTodayProblems.length > 0 ? (
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {branchTodayProblems.map((alert, idx) => {
+                    const accentColor = '#dc2626';
+                    const d = getAlertTopDisplay(
+                      {
+                        alert_type: alert.alert_type,
+                        alert_message: alert.alert_message,
+                        cause: null,
+                        recommendation: alert.recommended_action,
+                        expected_recovery: null,
+                      },
+                      locale === 'th' ? 'th' : 'en',
+                      { moduleType: branch?.moduleType }
+                    );
+                    const actionFallback = locale === 'th' ? 'ทบทวนประสิทธิภาพ' : 'Review performance';
+                    const actionText = (d.recommendation || alert.recommended_action || '').trim() || actionFallback;
+                    const numLoc = locale === 'th' ? 'th-TH' : 'en-US';
+                    return (
+                      <li
+                        key={`prob-${alert.branch_id}-${alert.metric_date}-${alert.alert_type}-${idx}`}
+                        style={{
+                          padding: '12px 16px',
+                          borderLeft: `4px solid ${accentColor}`,
+                          lineHeight: 1.5,
+                          color: '#1f2937',
+                        }}
+                      >
+                        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{d.type}</div>
+                        {d.message ? (
+                          <div style={{ fontSize: 14, color: '#374151', marginBottom: 6 }}>{d.message}</div>
+                        ) : null}
+                        <div style={{ fontSize: 13, color: '#b91c1c', fontWeight: 600, marginBottom: 4 }}>
+                          {locale === 'th' ? 'ผลกระทบ: ' : 'Impact: '}
+                          ฿{formatCurrency(alert.impact_estimate_thb, numLoc)}
+                        </div>
+                        <div style={{ fontSize: 14, color: '#374151' }}>
+                          <span style={{ fontWeight: 600 }}>{locale === 'th' ? 'แนวทาง: ' : 'Action: '}</span>
+                          {actionText}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </>
           )}
         </div>
 

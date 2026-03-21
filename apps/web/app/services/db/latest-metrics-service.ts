@@ -641,6 +641,19 @@ function resolveAlertStream(
 
 export type BranchAlertsTodayStream = 'accommodation' | 'fnb';
 
+/** One row per (alert_stream, alert_type): keeps highest-impact / latest row after sort. */
+function dedupeBranchTodayAlertsByType(rows: BranchTodayOverviewAlertRow[]): BranchTodayOverviewAlertRow[] {
+  const seen = new Set<string>();
+  const out: BranchTodayOverviewAlertRow[] = [];
+  for (const r of rows) {
+    const k = `${r.alert_stream ?? 'none'}::${(r.alert_type || 'Alert').trim().toLowerCase()}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+}
+
 function debugBranchAlertsTodayRestUrl(
   branchId: string,
   stream: BranchAlertsTodayStream | null,
@@ -691,7 +704,7 @@ export async function getBranchAlertsTodayForBranchOverview(
   }
 
   const raw = (data ?? []) as Record<string, unknown>[];
-  const rows: BranchTodayOverviewAlertRow[] = [];
+  let rows: BranchTodayOverviewAlertRow[] = [];
 
   for (const r of raw) {
     const bid = pickBranchAlertStr(r, 'branch_id', 'branchId');
@@ -751,12 +764,11 @@ export async function getBranchAlertsTodayForBranchOverview(
   });
 
   if (stream === 'fnb') {
-    return rows.filter((a) => a.alert_stream === 'fnb');
+    rows = rows.filter((a) => a.alert_stream === 'fnb');
+  } else if (stream === 'accommodation') {
+    rows = rows.filter((a) => a.alert_stream === 'accommodation');
   }
-  if (stream === 'accommodation') {
-    return rows.filter((a) => a.alert_stream === 'accommodation');
-  }
-  return rows;
+  return dedupeBranchTodayAlertsByType(rows);
 }
 
 /**
