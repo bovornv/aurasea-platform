@@ -241,13 +241,21 @@ export default function BranchTrendsPage() {
                     locale={locale === 'th' ? 'th' : 'en'}
                     problem={
                       occupancyValues.length >= 7 && occupancyValues[occupancyValues.length - 1]! < 50
-                        ? (locale === 'th' ? 'วันธรรมดามีอัตราการเข้าพักต่ำอย่างต่อเนื่อง' : 'Weekday occupancy consistently low')
-                        : undefined
+                        ? locale === 'th'
+                          ? 'วันธรรมดามีอัตราการเข้าพักต่ำอย่างต่อเนื่อง'
+                          : 'Weekday occupancy consistently low'
+                        : locale === 'th'
+                          ? 'อัตราการเข้าพักกับราคาห้องอาจดึงคนละทาง'
+                          : 'Occupancy and ADR can pull in different directions'
                     }
                     recommendation={
                       occupancyValues.length >= 7 && occupancyValues[occupancyValues.length - 1]! < 50
-                        ? (locale === 'th' ? 'ทำโปรโมชั่นช่วงวันธรรมดา' : 'Run weekday promotion')
-                        : undefined
+                        ? locale === 'th'
+                          ? 'ทำโปรโมชั่นช่วงวันธรรมดา'
+                          : 'Run weekday promotion'
+                        : locale === 'th'
+                          ? 'ปรับราคาหรือข้อจำกัดเมื่ออุปสงค์กับราคาไม่ตรงกัน'
+                          : 'Adjust rates or stay restrictions when demand and pricing disagree'
                     }
                   >
                     <DecisionTrendChart
