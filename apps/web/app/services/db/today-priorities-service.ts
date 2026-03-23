@@ -1,16 +1,16 @@
 /**
- * GET /rest/v1/today_action_plan?select=*&order=sort_score.desc&limit=5
+ * GET /rest/v1/today_priorities?select=*&order=sort_score.desc&limit=5
  * Optional: organization_id=eq.{uuid}
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 
-export interface TodayActionPlanRow {
+export interface TodayPrioritiesRow {
   branch_id: string;
   organization_id: string | null;
   branch_name: string | null;
-  action_title: string | null;
+  alert_type: string | null;
   action_text: string | null;
-  reason: string | null;
+  action_short: string | null;
   impact: number | null;
   sort_score: number | null;
 }
@@ -35,20 +35,17 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
   return null;
 }
 
-/**
- * Top action-plan rows for the org (default limit 5, max 10).
- */
-export async function fetchTodayActionPlan(
+export async function fetchTodayPriorities(
   organizationId: string | null,
   limit: number = 5
-): Promise<TodayActionPlanRow[]> {
+): Promise<TodayPrioritiesRow[]> {
   if (!organizationId?.trim() || !isSupabaseAvailable()) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
   const cap = Math.min(10, Math.max(1, limit));
   const { data, error } = await supabase
-    .from('today_action_plan')
+    .from('today_priorities')
     .select('*')
     .eq('organization_id', organizationId.trim())
     .order('sort_score', { ascending: false })
@@ -56,7 +53,7 @@ export async function fetchTodayActionPlan(
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[today_action_plan]', error.message);
+      console.warn('[today_priorities]', error.message);
     }
     return [];
   }
@@ -68,9 +65,9 @@ export async function fetchTodayActionPlan(
       branch_id: pickStr(r, 'branch_id', 'branchId'),
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_name: pickStr(r, 'branch_name', 'branchName') || null,
-      action_title: pickStr(r, 'action_title', 'actionTitle', 'alert_type') || null,
+      alert_type: pickStr(r, 'alert_type', 'alertType') || null,
       action_text: pickStr(r, 'action_text', 'actionText', 'recommended_action') || null,
-      reason: pickStr(r, 'reason', 'cause') || null,
+      action_short: pickStr(r, 'action_short', 'actionShort') || null,
       impact: pickNum(r, 'impact', 'impact_estimate_thb'),
       sort_score: pickNum(r, 'sort_score', 'priority_score'),
     };

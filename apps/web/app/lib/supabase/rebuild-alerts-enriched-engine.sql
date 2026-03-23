@@ -15,6 +15,7 @@
 -- =============================================================================
 
 -- STEP 1 — Drop dependents first (children → parent). CASCADE cleans legacy dependents.
+DROP VIEW IF EXISTS today_priorities CASCADE;
 DROP VIEW IF EXISTS today_action_plan CASCADE;
 DROP VIEW IF EXISTS alerts_fix_this_first CASCADE;
 DROP VIEW IF EXISTS branch_alerts_today CASCADE;
@@ -417,21 +418,30 @@ FROM (
 COMMENT ON VIEW alerts_fix_this_first IS
     'Company Today: deduped actionable alerts; order by priority_score DESC for PostgREST.';
 
--- STEP 6b — Today’s Action Plan: stable owner-facing copy (no alerts_priority_ranking)
-CREATE OR REPLACE VIEW today_action_plan AS
+-- STEP 6b — Today’s Priorities: single owner-facing feed (replaces fix-this-first + action plan UIs)
+CREATE OR REPLACE VIEW today_priorities AS
 SELECT
     f.organization_id,
     f.branch_id,
     f.branch_name,
-    f.alert_type AS action_title,
-    COALESCE(f.recommended_action, ''::text) AS action_text,
-    COALESCE(f.cause, ''::text) AS reason,
+    f.alert_type,
+    COALESCE(NULLIF(TRIM(BOTH FROM f.recommended_action), ''), ''::text) AS action_text,
+    (
+        CASE
+            WHEN NULLIF(TRIM(BOTH FROM f.recommended_action), '') IS NULL THEN
+                NULLIF(TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text)), ''::text)
+            WHEN LENGTH(TRIM(BOTH FROM f.recommended_action)) <= 100 THEN
+                TRIM(BOTH FROM f.recommended_action)
+            ELSE
+                LEFT(TRIM(BOTH FROM f.recommended_action), 97) || '...'::text
+        END
+    ) AS action_short,
     COALESCE(f.impact_estimate_thb, 0::numeric) AS impact,
     f.priority_score AS sort_score
 FROM alerts_fix_this_first f;
 
-COMMENT ON VIEW today_action_plan IS
-    'Company Today: action plan lines from alerts_fix_this_first; GET order=sort_score.desc&limit=5';
+COMMENT ON VIEW today_priorities IS
+    'Company Today: priorities from alerts_fix_this_first; GET order=sort_score.desc&limit=5';
 
 -- Grants (adjust roles if you do not use anon)
 GRANT SELECT ON alerts_enriched TO anon, authenticated;
@@ -440,7 +450,7 @@ GRANT SELECT ON branch_alerts_today TO anon, authenticated;
 GRANT SELECT ON alerts_critical TO anon, authenticated;
 GRANT SELECT ON alerts_top3_revenue_leaks TO anon, authenticated;
 GRANT SELECT ON alerts_fix_this_first TO anon, authenticated;
-GRANT SELECT ON today_action_plan TO anon, authenticated;
+GRANT SELECT ON today_priorities TO anon, authenticated;
 
 -- STEP 7 — Verify (run these as separate statements after the script succeeds)
 -- SELECT * FROM alerts_today LIMIT 5;
@@ -449,4 +459,4 @@ GRANT SELECT ON today_action_plan TO anon, authenticated;
 -- SELECT * FROM alerts_critical LIMIT 5;
 -- SELECT * FROM alerts_top3_revenue_leaks LIMIT 5;
 -- SELECT * FROM alerts_fix_this_first ORDER BY priority_score DESC LIMIT 5;
--- SELECT * FROM today_action_plan ORDER BY sort_score DESC LIMIT 5;
+-- SELECT * FROM today_priorities ORDER BY sort_score DESC LIMIT 5;

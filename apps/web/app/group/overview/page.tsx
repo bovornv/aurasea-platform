@@ -47,16 +47,11 @@ import { OperatingFooterTrust } from '../../components/operating-layer/operating
 import { CompanyLastUpdated } from '../../components/company/company-last-updated';
 import { CompanyBusinessStatusTables } from '../../components/company/company-business-status-tables';
 import { CompanyBusinessTrendSummary } from '../../components/company/company-business-trend-summary';
-import { CompanyFixThisFirst } from '../../components/company/company-fix-this-first';
-import { CompanyTodaysActionPlan } from '../../components/company/company-todays-action-plan';
+import { CompanyTodaysPriorities } from '../../components/company/company-todays-priorities';
 import {
-  fetchAlertsFixThisFirst,
-  type AlertsFixThisFirstRow,
-} from '../../services/db/alerts-fix-this-first-service';
-import {
-  fetchTodayActionPlan,
-  type TodayActionPlanRow,
-} from '../../services/db/today-action-plan-service';
+  fetchTodayPriorities,
+  type TodayPrioritiesRow,
+} from '../../services/db/today-priorities-service';
 import {
   getCompanyPortfolioTrendSnapshot,
   type CompanyPortfolioTrendSnapshot,
@@ -88,10 +83,8 @@ function OwnerSummaryContent() {
   const [aiDailySummaryLoading, setAiDailySummaryLoading] = useState(false);
   const [portfolioTrendSnapshot, setPortfolioTrendSnapshot] = useState<CompanyPortfolioTrendSnapshot | null>(null);
   const [portfolioTrendLoading, setPortfolioTrendLoading] = useState(false);
-  const [fixThisFirstRows, setFixThisFirstRows] = useState<AlertsFixThisFirstRow[]>([]);
-  const [fixThisFirstLoading, setFixThisFirstLoading] = useState(false);
-  const [actionPlanRows, setActionPlanRows] = useState<TodayActionPlanRow[]>([]);
-  const [actionPlanLoading, setActionPlanLoading] = useState(false);
+  const [prioritiesRows, setPrioritiesRows] = useState<TodayPrioritiesRow[]>([]);
+  const [prioritiesLoading, setPrioritiesLoading] = useState(false);
 
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
@@ -255,35 +248,21 @@ function OwnerSummaryContent() {
     if (!mounted) return;
     const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
     if (!orgId?.trim()) {
-      setFixThisFirstRows([]);
-      setFixThisFirstLoading(false);
-      setActionPlanRows([]);
-      setActionPlanLoading(false);
+      setPrioritiesRows([]);
+      setPrioritiesLoading(false);
       return;
     }
     let cancelled = false;
-    setFixThisFirstLoading(true);
-    setActionPlanLoading(true);
+    setPrioritiesLoading(true);
     (async () => {
       try {
-        const [fixRows, planRows] = await Promise.race([
-          Promise.all([
-            fetchAlertsFixThisFirst(orgId, 3),
-            fetchTodayActionPlan(orgId, 5),
-          ]),
-          new Promise<[AlertsFixThisFirstRow[], TodayActionPlanRow[]]>((resolve) =>
-            setTimeout(() => resolve([[], []]), 12000)
-          ),
+        const rows = await Promise.race([
+          fetchTodayPriorities(orgId, 5),
+          new Promise<TodayPrioritiesRow[]>((resolve) => setTimeout(() => resolve([]), 12000)),
         ]);
-        if (!cancelled) {
-          setFixThisFirstRows(fixRows);
-          setActionPlanRows(planRows);
-        }
+        if (!cancelled) setPrioritiesRows(rows);
       } finally {
-        if (!cancelled) {
-          setFixThisFirstLoading(false);
-          setActionPlanLoading(false);
-        }
+        if (!cancelled) setPrioritiesLoading(false);
       }
     })();
     return () => {
@@ -643,19 +622,10 @@ function OwnerSummaryContent() {
 
         {dailySummaryCard}
 
-        <MonitoringErrorBoundary componentName="Fix This First">
-          <CompanyFixThisFirst
-            rows={fixThisFirstRows}
-            loading={fixThisFirstLoading}
-            locale={locale}
-            maxItems={3}
-          />
-        </MonitoringErrorBoundary>
-
-        <MonitoringErrorBoundary componentName="Today's Action Plan">
-          <CompanyTodaysActionPlan
-            rows={actionPlanRows}
-            loading={actionPlanLoading}
+        <MonitoringErrorBoundary componentName="Today's Priorities">
+          <CompanyTodaysPriorities
+            rows={prioritiesRows}
+            loading={prioritiesLoading}
             locale={locale}
             maxItems={5}
           />
