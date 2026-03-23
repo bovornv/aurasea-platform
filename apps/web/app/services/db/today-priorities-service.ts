@@ -11,7 +11,9 @@ export interface TodayPrioritiesRow {
   alert_type: string | null;
   action_text: string | null;
   short_title: string | null;
-  impact: number | null;
+  impact_estimate_thb: number | null;
+  impact_label: string | null;
+  reason_short: string | null;
   sort_score: number | null;
 }
 
@@ -69,7 +71,9 @@ export async function fetchTodayPriorities(
       alert_type: pickStr(r, 'alert_type', 'alertType') || null,
       action_text: pickStr(r, 'action_text', 'actionText', 'recommended_action') || null,
       short_title: pickStr(r, 'short_title', 'shortTitle', 'action_short') || null,
-      impact: pickNum(r, 'impact', 'impact_estimate_thb'),
+      impact_estimate_thb: pickNum(r, 'impact_estimate_thb', 'impact'),
+      impact_label: pickStr(r, 'impact_label', 'impactLabel') || null,
+      reason_short: pickStr(r, 'reason_short', 'reasonShort', 'cause') || null,
       sort_score: pickNum(r, 'sort_score', 'priority_score'),
     };
   });

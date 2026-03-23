@@ -42,19 +42,28 @@ SELECT
   COALESCE(NULLIF(TRIM(BOTH FROM f.recommended_action), ''), ''::text) AS action_text,
   (
     CASE
-      WHEN NULLIF(TRIM(BOTH FROM f.recommended_action), '') IS NULL THEN
-        NULLIF(TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text)), ''::text)
-      WHEN LENGTH(TRIM(BOTH FROM f.recommended_action)) <= 48 THEN
-        TRIM(BOTH FROM f.recommended_action)
+      WHEN NULLIF(TRIM(BOTH FROM COALESCE(f.branch_name, ''::text)), '') IS NULL THEN
+        TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text))
       ELSE
-        LEFT(TRIM(BOTH FROM f.recommended_action), 45) || '...'::text
+        TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text))
+        || ' — '::text
+        || TRIM(BOTH FROM f.branch_name)
     END
   ) AS short_title,
-  COALESCE(f.impact_estimate_thb, 0::numeric) AS impact,
+  COALESCE(f.impact_estimate_thb, 0::numeric) AS impact_estimate_thb,
+  (
+    CASE
+      WHEN LOWER(COALESCE(f.alert_type, ''::text)) LIKE '%opportunity%'
+        OR LOWER(COALESCE(f.alert_stream, ''::text)) LIKE '%opportunity%'
+      THEN 'opportunity'::text
+      ELSE 'at risk'::text
+    END
+  ) AS impact_label,
+  COALESCE(NULLIF(TRIM(BOTH FROM f.cause), ''), ''::text) AS reason_short,
   f.priority_score AS sort_score
 FROM alerts_fix_this_first f;
 
 COMMENT ON VIEW today_priorities_clean IS
-  'Company Today: action-first priorities; order by sort_score DESC.';
+  'Company Today: short_title + impact_estimate_thb + impact_label; details use action_text + reason_short; order by sort_score DESC.';
 
 GRANT SELECT ON today_priorities_clean TO anon, authenticated;

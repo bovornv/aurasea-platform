@@ -34,7 +34,8 @@
 --    branch_id, organization_id, branch_name, alert_type, severity, impact_estimate_thb, cause, recommended_action, priority_score
 --
 -- 4c) today_priorities / today_priorities_clean — add-today-priorities-view.sql or rebuild-alerts-enriched-engine.sql
---    clean: branch_id, organization_id, branch_name, alert_type, action_text, short_title, impact, sort_score
+--    clean: branch_id, organization_id, branch_name, alert_type, action_text, short_title,
+--           impact_estimate_thb, impact_label (at risk|opportunity), reason_short, sort_score
 --
 -- 5) company_daily_summary — run add-company-daily-summary.sql (creates table + RLS; fixes /rest/v1/company_daily_summary 404)
 --    organization_id, summary_text, updated_at, created_at, summary_date, id
