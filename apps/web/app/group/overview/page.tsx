@@ -48,10 +48,15 @@ import { CompanyLastUpdated } from '../../components/company/company-last-update
 import { CompanyBusinessStatusTables } from '../../components/company/company-business-status-tables';
 import { CompanyBusinessTrendSummary } from '../../components/company/company-business-trend-summary';
 import { CompanyFixThisFirst } from '../../components/company/company-fix-this-first';
+import { CompanyTodaysActionPlan } from '../../components/company/company-todays-action-plan';
 import {
   fetchAlertsFixThisFirst,
   type AlertsFixThisFirstRow,
 } from '../../services/db/alerts-fix-this-first-service';
+import {
+  fetchTodayActionPlan,
+  type TodayActionPlanRow,
+} from '../../services/db/today-action-plan-service';
 import {
   getCompanyPortfolioTrendSnapshot,
   type CompanyPortfolioTrendSnapshot,
@@ -85,6 +90,8 @@ function OwnerSummaryContent() {
   const [portfolioTrendLoading, setPortfolioTrendLoading] = useState(false);
   const [fixThisFirstRows, setFixThisFirstRows] = useState<AlertsFixThisFirstRow[]>([]);
   const [fixThisFirstLoading, setFixThisFirstLoading] = useState(false);
+  const [actionPlanRows, setActionPlanRows] = useState<TodayActionPlanRow[]>([]);
+  const [actionPlanLoading, setActionPlanLoading] = useState(false);
 
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
@@ -250,19 +257,33 @@ function OwnerSummaryContent() {
     if (!orgId?.trim()) {
       setFixThisFirstRows([]);
       setFixThisFirstLoading(false);
+      setActionPlanRows([]);
+      setActionPlanLoading(false);
       return;
     }
     let cancelled = false;
     setFixThisFirstLoading(true);
+    setActionPlanLoading(true);
     (async () => {
       try {
-        const rows = await Promise.race([
-          fetchAlertsFixThisFirst(orgId, 3),
-          new Promise<AlertsFixThisFirstRow[]>((resolve) => setTimeout(() => resolve([]), 12000)),
+        const [fixRows, planRows] = await Promise.race([
+          Promise.all([
+            fetchAlertsFixThisFirst(orgId, 3),
+            fetchTodayActionPlan(orgId, 5),
+          ]),
+          new Promise<[AlertsFixThisFirstRow[], TodayActionPlanRow[]]>((resolve) =>
+            setTimeout(() => resolve([[], []]), 12000)
+          ),
         ]);
-        if (!cancelled) setFixThisFirstRows(rows);
+        if (!cancelled) {
+          setFixThisFirstRows(fixRows);
+          setActionPlanRows(planRows);
+        }
       } finally {
-        if (!cancelled) setFixThisFirstLoading(false);
+        if (!cancelled) {
+          setFixThisFirstLoading(false);
+          setActionPlanLoading(false);
+        }
       }
     })();
     return () => {
@@ -628,6 +649,15 @@ function OwnerSummaryContent() {
             loading={fixThisFirstLoading}
             locale={locale}
             maxItems={3}
+          />
+        </MonitoringErrorBoundary>
+
+        <MonitoringErrorBoundary componentName="Today's Action Plan">
+          <CompanyTodaysActionPlan
+            rows={actionPlanRows}
+            loading={actionPlanLoading}
+            locale={locale}
+            maxItems={5}
           />
         </MonitoringErrorBoundary>
 
