@@ -40,7 +40,6 @@ import {
 } from '../../services/db/company-today-data-service';
 import { fetchCompanyDailySummary } from '../../services/db/company-daily-summary-service';
 import { ActivationBlock } from '../../components/activation-block';
-import { useIntelligenceStageOrganization } from '../../hooks/use-intelligence-stage';
 import { validateOrganizationScenario } from '../../utils/validation-logger';
 import { useSystemValidation } from '../../hooks/use-system-validation';
 import { OperatingSection } from '../../components/operating-layer/operating-section';
@@ -67,9 +66,9 @@ import {
 } from '../../services/db/company-data-confidence-service';
 import { CompanyDataConfidence } from '../../components/company/company-data-confidence';
 import {
-  getCompanyPortfolioTrendSnapshot,
-  type CompanyPortfolioTrendSnapshot,
-} from '../../services/db/latest-metrics-service';
+  fetchCompanyTrendsSummary,
+  type CompanyTrendsSummaryRow,
+} from '../../services/db/company-trends-summary-service';
 function OwnerSummaryContent() {
   // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONALS, NO EARLY RETURNS
   const router = useRouter();
@@ -86,7 +85,6 @@ function OwnerSummaryContent() {
   const { testMode } = useTestMode();
   const { activeOrganizationId, activeOrganization } = useOrganization();
   const isReady = useRbacReady();
-  const { coverageDays } = useIntelligenceStageOrganization(activeOrganizationId ?? null);
   const [mounted, setMounted] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
@@ -95,8 +93,8 @@ function OwnerSummaryContent() {
   const [companyTodayLoading, setCompanyTodayLoading] = useState(false);
   const [aiDailySummaryText, setAiDailySummaryText] = useState<string | null>(null);
   const [aiDailySummaryLoading, setAiDailySummaryLoading] = useState(false);
-  const [portfolioTrendSnapshot, setPortfolioTrendSnapshot] = useState<CompanyPortfolioTrendSnapshot | null>(null);
-  const [portfolioTrendLoading, setPortfolioTrendLoading] = useState(false);
+  const [trendsSummaryRow, setTrendsSummaryRow] = useState<CompanyTrendsSummaryRow | null>(null);
+  const [trendsSummaryLoading, setTrendsSummaryLoading] = useState(false);
   const [prioritiesRows, setPrioritiesRows] = useState<TodayPrioritiesRow[]>([]);
   const [prioritiesLoading, setPrioritiesLoading] = useState(false);
   const [whatsWorkingRows, setWhatsWorkingRows] = useState<WhatsWorkingTodayRow[]>([]);
@@ -317,24 +315,31 @@ function OwnerSummaryContent() {
   }, [mounted, activeOrganizationId, permissions.organizationId, refreshTrigger]);
 
   useEffect(() => {
-    if (!mounted || groupBranchIds.length === 0) {
-      setPortfolioTrendSnapshot(null);
-      setPortfolioTrendLoading(false);
+    if (!mounted) return;
+    const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
+    if (!orgId?.trim()) {
+      setTrendsSummaryRow(null);
+      setTrendsSummaryLoading(false);
       return;
     }
     let cancelled = false;
-    setPortfolioTrendLoading(true);
+    setTrendsSummaryLoading(true);
     (async () => {
-      const snap = await getCompanyPortfolioTrendSnapshot(groupBranchIds, 24);
+      const r = await Promise.race([
+        fetchCompanyTrendsSummary(orgId),
+        new Promise<CompanyTrendsSummaryRow | null>((resolve) =>
+          setTimeout(() => resolve(null), 14000)
+        ),
+      ]);
       if (!cancelled) {
-        setPortfolioTrendSnapshot(snap);
-        setPortfolioTrendLoading(false);
+        setTrendsSummaryRow(r);
+        setTrendsSummaryLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [mounted, groupBranchIds, refreshTrigger]);
+  }, [mounted, activeOrganizationId, permissions.organizationId, refreshTrigger]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get branch scores sorted by lowest health score first
@@ -623,30 +628,30 @@ function OwnerSummaryContent() {
     );
   })();
 
-  const aiDailySummaryDisplay =
+  const aiSummaryBody =
     aiDailySummaryLoading
       ? locale === 'th'
         ? 'กำลังโหลดสรุป…'
         : 'Loading summary…'
-      : aiDailySummaryText ??
-        (locale === 'th'
-          ? 'ยังไม่มีข้อมูลเพียงพอสำหรับสรุปวันนี้'
-          : "Not enough data for today's summary yet.");
+      : (aiDailySummaryText?.trim() ?? '');
+  const showAiDailySummaryBlock = aiDailySummaryLoading || aiSummaryBody.length > 0;
 
   return (
     <PageLayout title="" subtitle="">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        <p
-          style={{
-            margin: 0,
-            fontSize: '15px',
-            fontWeight: 600,
-            lineHeight: 1.5,
-            color: aiDailySummaryLoading ? '#64748b' : '#0f172a',
-          }}
-        >
-          {aiDailySummaryDisplay}
-        </p>
+        {showAiDailySummaryBlock ? (
+          <p
+            style={{
+              margin: 0,
+              fontSize: '15px',
+              fontWeight: 600,
+              lineHeight: 1.5,
+              color: aiDailySummaryLoading ? '#64748b' : '#0f172a',
+            }}
+          >
+            {aiSummaryBody}
+          </p>
+        ) : null}
 
         {showAccessDenied && (
           <div
@@ -695,21 +700,12 @@ function OwnerSummaryContent() {
           </OperatingSection>
         )}
 
-        <OperatingSection
-          title={locale === 'th' ? 'แนวโน้มธุรกิจ' : 'Business trends'}
-          subtitle={
-            locale === 'th'
-              ? 'สรุปจากเมตริกรายวันของสาขาในกลุ่ม (รายได้ · เทียบสัปดาห์ก่อน · เข้าพัก/ลูกค้า)'
-              : 'From daily branch metrics (revenue · week-over-week · occupancy/customers).'
-          }
-        >
+        <OperatingSection title={locale === 'th' ? 'แนวโน้มธุรกิจ' : 'Business trends'}>
           <MonitoringErrorBoundary componentName="Company business trends">
             <CompanyBusinessTrendSummary
-              snapshot={portfolioTrendSnapshot}
-              loading={portfolioTrendLoading}
+              row={trendsSummaryRow}
+              loading={trendsSummaryLoading}
               locale={locale}
-              coverageDays={coverageDays}
-              trendsUrl={paths.companyTrends}
             />
           </MonitoringErrorBoundary>
         </OperatingSection>

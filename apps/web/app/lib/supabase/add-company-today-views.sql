@@ -55,4 +55,9 @@
 --    GET /rest/v1/company_data_confidence?select=*&organization_id=eq.{uuid}
 --    organization_id, data_days, max_days (30), confidence_level (Low|Medium|High)
 --
+-- 7) company_trends_summary — add-company-trends-summary-view.sql
+--    GET /rest/v1/company_trends_summary?select=*&organization_id=eq.{uuid}
+--    is_ready, revenue_pct_vs_prior_week, drivers_text, occupancy_pct, customers_total,
+--    mix_rooms_pct, mix_fnb_pct, trend_line
+--
 -- GRANT SELECT ON … TO authenticated;

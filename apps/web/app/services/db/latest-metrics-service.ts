@@ -807,8 +807,8 @@ export interface CompanyPortfolioTrendSnapshot {
 }
 
 /**
- * Portfolio-level trend summary for company Today page.
- * Aggregates per calendar day across branch_ids, then last 7 days vs prior 7 (when 14+ days exist).
+ * Portfolio-level trend summary (client-side aggregation).
+ * @deprecated Prefer REST `company_trends_summary` + fetchCompanyTrendsSummary for company Today.
  */
 export async function getCompanyPortfolioTrendSnapshot(
   branchIds: string[],
