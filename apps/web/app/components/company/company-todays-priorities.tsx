@@ -1,5 +1,6 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { formatCurrency } from '../../utils/formatting';
 import type { TodayPrioritiesRow } from '../../services/db/today-priorities-service';
 
@@ -7,25 +8,32 @@ interface Props {
   rows: TodayPrioritiesRow[];
   locale: string;
   loading?: boolean;
-  maxItems?: number;
 }
 
-function bulletLine(row: TodayPrioritiesRow, th: boolean): string {
-  const branch = row.branch_name?.trim() || row.branch_id || (th ? 'สาขา' : 'Branch');
-  const short =
-    row.action_short?.trim() ||
+function titleLine(row: TodayPrioritiesRow, th: boolean): string {
+  return (
+    row.short_title?.trim() ||
     row.alert_type?.replace(/_/g, ' ').trim() ||
-    (th ? 'ลำดับความสำคัญ' : 'Priority');
-  return `${short} — ${branch}`;
+    (th ? 'ลำดับความสำคัญ' : 'Priority')
+  );
 }
 
-export function CompanyTodaysPriorities({ rows, locale, loading, maxItems = 5 }: Props) {
+const actionClamp: CSSProperties = {
+  display: '-webkit-box',
+  WebkitLineClamp: 4,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+};
+
+export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
   const th = locale === 'th';
   const numLocale = th ? 'th-TH' : 'en-US';
-  const cap = Math.min(10, Math.max(1, maxItems));
-  const visible = rows.slice(0, cap);
+  const visible = rows.slice(0, 3);
 
   const title = th ? 'ลำดับความสำคัญวันนี้' : "Today's Priorities";
+  const part1 = th ? 'ทำอะไรตอนนี้' : 'What to do now';
+  const part2 = th ? 'รายละเอียด' : 'Details';
+  const doThis = th ? 'ทำแบบนี้' : 'Do this';
   const emptyMsg = th ? 'ทุกอย่างโอเค — ไม่มีลำดับความสำคัญวันนี้' : 'All good — no priorities today';
   const loadingMsg = th ? 'กำลังโหลด…' : 'Loading…';
 
@@ -39,7 +47,7 @@ export function CompanyTodaysPriorities({ rows, locale, loading, maxItems = 5 }:
         marginBottom: '0.25rem',
       }}
     >
-      <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', marginBottom: '14px' }}>{title}</div>
+      <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', marginBottom: '16px' }}>{title}</div>
 
       {loading ? (
         <p style={{ margin: 0, fontSize: '14px', color: '#6b7280' }}>{loadingMsg}</p>
@@ -47,24 +55,53 @@ export function CompanyTodaysPriorities({ rows, locale, loading, maxItems = 5 }:
         <p style={{ margin: 0, fontSize: '14px', color: '#6b7280', lineHeight: 1.45 }}>{emptyMsg}</p>
       ) : (
         <>
-          <ul
+          <div
             style={{
-              margin: '0 0 18px 0',
-              paddingLeft: '1.1rem',
-              color: '#0f172a',
-              fontSize: '14px',
-              fontWeight: 600,
-              lineHeight: 1.55,
+              fontSize: '12px',
+              fontWeight: 700,
+              color: '#64748b',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              marginBottom: '10px',
             }}
           >
-            {visible.map((row, idx) => (
-              <li key={`b-${row.branch_id}-${row.alert_type}-${idx}`} style={{ marginBottom: '6px' }}>
-                {bulletLine(row, th)}
-              </li>
-            ))}
-          </ul>
+            {part1}
+          </div>
+          <ol
+            style={{
+              margin: '0 0 22px 0',
+              paddingLeft: '1.25rem',
+              fontSize: '15px',
+              lineHeight: 1.5,
+              color: '#0f172a',
+            }}
+          >
+            {visible.map((row, idx) => {
+              const impact = row.impact ?? 0;
+              const impactStr = formatCurrency(impact, numLocale);
+              const key = `n-${row.branch_id}-${row.alert_type}-${idx}`;
+              return (
+                <li key={key} style={{ marginBottom: '8px', paddingLeft: '4px' }}>
+                  <span style={{ fontWeight: 700 }}>{titleLine(row, th)}</span>{' '}
+                  <span style={{ fontWeight: 700, color: '#dc2626' }}>(฿{impactStr})</span>
+                </li>
+              );
+            })}
+          </ol>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div
+            style={{
+              fontSize: '12px',
+              fontWeight: 700,
+              color: '#64748b',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              marginBottom: '12px',
+            }}
+          >
+            {part2}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {visible.map((item, idx) => {
               const branch = item.branch_name?.trim() || item.branch_id || (th ? 'สาขา' : 'Branch');
               const alertLabel =
@@ -79,26 +116,27 @@ export function CompanyTodaysPriorities({ rows, locale, loading, maxItems = 5 }:
                   key={key}
                   style={{
                     padding: '14px 16px',
-                    backgroundColor: '#fafafa',
+                    backgroundColor: '#f8fafc',
                     borderRadius: '10px',
-                    border: '1px solid #f1f5f9',
+                    border: '1px solid #e2e8f0',
                   }}
                 >
                   <div
                     style={{
                       fontSize: '14px',
                       fontWeight: 600,
-                      color: '#111827',
-                      marginBottom: '12px',
-                      letterSpacing: '-0.01em',
+                      color: '#0f172a',
+                      marginBottom: '10px',
                     }}
                   >
                     {branch} — {alertLabel}
                   </div>
                   {action !== '' && (
-                    <div style={{ fontSize: '14px', lineHeight: 1.5, marginBottom: '10px' }}>
-                      <span style={{ fontWeight: 700, color: '#0f172a' }}>{th ? 'การดำเนินการ' : 'Action'}:</span>{' '}
-                      <span style={{ fontWeight: 600, color: '#1e293b' }}>{action}</span>
+                    <div style={{ fontSize: '14px', lineHeight: 1.45, marginBottom: '10px' }}>
+                      <span style={{ fontWeight: 700, color: '#0f172a' }}>{doThis}:</span>{' '}
+                      <div style={{ ...actionClamp, fontWeight: 600, color: '#1e293b', marginTop: '2px' }}>
+                        {action}
+                      </div>
                     </div>
                   )}
                   <div style={{ fontSize: '13px' }}>

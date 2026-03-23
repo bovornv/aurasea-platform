@@ -1,5 +1,5 @@
 /**
- * GET /rest/v1/today_priorities?select=*&order=sort_score.desc&limit=5
+ * GET /rest/v1/today_priorities_clean?select=*&order=sort_score.desc&limit=3
  * Optional: organization_id=eq.{uuid}
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
@@ -10,7 +10,7 @@ export interface TodayPrioritiesRow {
   branch_name: string | null;
   alert_type: string | null;
   action_text: string | null;
-  action_short: string | null;
+  short_title: string | null;
   impact: number | null;
   sort_score: number | null;
 }
@@ -35,17 +35,18 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
   return null;
 }
 
+/** Top priorities for the org (max 3 rows). */
 export async function fetchTodayPriorities(
   organizationId: string | null,
-  limit: number = 5
+  limit: number = 3
 ): Promise<TodayPrioritiesRow[]> {
   if (!organizationId?.trim() || !isSupabaseAvailable()) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
-  const cap = Math.min(10, Math.max(1, limit));
+  const cap = Math.min(3, Math.max(1, limit));
   const { data, error } = await supabase
-    .from('today_priorities')
+    .from('today_priorities_clean')
     .select('*')
     .eq('organization_id', organizationId.trim())
     .order('sort_score', { ascending: false })
@@ -53,7 +54,7 @@ export async function fetchTodayPriorities(
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[today_priorities]', error.message);
+      console.warn('[today_priorities_clean]', error.message);
     }
     return [];
   }
@@ -67,7 +68,7 @@ export async function fetchTodayPriorities(
       branch_name: pickStr(r, 'branch_name', 'branchName') || null,
       alert_type: pickStr(r, 'alert_type', 'alertType') || null,
       action_text: pickStr(r, 'action_text', 'actionText', 'recommended_action') || null,
-      action_short: pickStr(r, 'action_short', 'actionShort') || null,
+      short_title: pickStr(r, 'short_title', 'shortTitle', 'action_short') || null,
       impact: pickNum(r, 'impact', 'impact_estimate_thb'),
       sort_score: pickNum(r, 'sort_score', 'priority_score'),
     };

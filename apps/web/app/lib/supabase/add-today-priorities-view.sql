@@ -29,3 +29,32 @@ COMMENT ON VIEW today_priorities IS
   'Company Today: priorities; order by sort_score DESC.';
 
 GRANT SELECT ON today_priorities TO anon, authenticated;
+
+-- Clean feed for redesigned UI (numbered “what to do” + cards)
+DROP VIEW IF EXISTS today_priorities_clean CASCADE;
+
+CREATE VIEW today_priorities_clean AS
+SELECT
+  f.organization_id,
+  f.branch_id,
+  f.branch_name,
+  f.alert_type,
+  COALESCE(NULLIF(TRIM(BOTH FROM f.recommended_action), ''), ''::text) AS action_text,
+  (
+    CASE
+      WHEN NULLIF(TRIM(BOTH FROM f.recommended_action), '') IS NULL THEN
+        NULLIF(TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text)), ''::text)
+      WHEN LENGTH(TRIM(BOTH FROM f.recommended_action)) <= 48 THEN
+        TRIM(BOTH FROM f.recommended_action)
+      ELSE
+        LEFT(TRIM(BOTH FROM f.recommended_action), 45) || '...'::text
+    END
+  ) AS short_title,
+  COALESCE(f.impact_estimate_thb, 0::numeric) AS impact,
+  f.priority_score AS sort_score
+FROM alerts_fix_this_first f;
+
+COMMENT ON VIEW today_priorities_clean IS
+  'Company Today: action-first priorities; order by sort_score DESC.';
+
+GRANT SELECT ON today_priorities_clean TO anon, authenticated;

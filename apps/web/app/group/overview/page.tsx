@@ -257,7 +257,7 @@ function OwnerSummaryContent() {
     (async () => {
       try {
         const rows = await Promise.race([
-          fetchTodayPriorities(orgId, 5),
+          fetchTodayPriorities(orgId, 3),
           new Promise<TodayPrioritiesRow[]>((resolve) => setTimeout(() => resolve([]), 12000)),
         ]);
         if (!cancelled) setPrioritiesRows(rows);
@@ -623,12 +623,7 @@ function OwnerSummaryContent() {
         {dailySummaryCard}
 
         <MonitoringErrorBoundary componentName="Today's Priorities">
-          <CompanyTodaysPriorities
-            rows={prioritiesRows}
-            loading={prioritiesLoading}
-            locale={locale}
-            maxItems={5}
-          />
+          <CompanyTodaysPriorities rows={prioritiesRows} loading={prioritiesLoading} locale={locale} />
         </MonitoringErrorBoundary>
 
         {!groupHealthScore && <ActivationBlock />}

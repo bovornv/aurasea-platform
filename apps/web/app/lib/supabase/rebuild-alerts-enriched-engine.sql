@@ -15,6 +15,7 @@
 -- =============================================================================
 
 -- STEP 1 — Drop dependents first (children → parent). CASCADE cleans legacy dependents.
+DROP VIEW IF EXISTS today_priorities_clean CASCADE;
 DROP VIEW IF EXISTS today_priorities CASCADE;
 DROP VIEW IF EXISTS today_action_plan CASCADE;
 DROP VIEW IF EXISTS alerts_fix_this_first CASCADE;
@@ -443,6 +444,31 @@ FROM alerts_fix_this_first f;
 COMMENT ON VIEW today_priorities IS
     'Company Today: priorities from alerts_fix_this_first; GET order=sort_score.desc&limit=5';
 
+-- STEP 6c — Today’s Priorities (clean UI feed): short_title + cards; GET order=sort_score.desc&limit=3
+CREATE OR REPLACE VIEW today_priorities_clean AS
+SELECT
+    f.organization_id,
+    f.branch_id,
+    f.branch_name,
+    f.alert_type,
+    COALESCE(NULLIF(TRIM(BOTH FROM f.recommended_action), ''), ''::text) AS action_text,
+    (
+        CASE
+            WHEN NULLIF(TRIM(BOTH FROM f.recommended_action), '') IS NULL THEN
+                NULLIF(TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text)), ''::text)
+            WHEN LENGTH(TRIM(BOTH FROM f.recommended_action)) <= 48 THEN
+                TRIM(BOTH FROM f.recommended_action)
+            ELSE
+                LEFT(TRIM(BOTH FROM f.recommended_action), 45) || '...'::text
+        END
+    ) AS short_title,
+    COALESCE(f.impact_estimate_thb, 0::numeric) AS impact,
+    f.priority_score AS sort_score
+FROM alerts_fix_this_first f;
+
+COMMENT ON VIEW today_priorities_clean IS
+    'Company Today: action-first priorities; GET order=sort_score.desc&limit=3';
+
 -- Grants (adjust roles if you do not use anon)
 GRANT SELECT ON alerts_enriched TO anon, authenticated;
 GRANT SELECT ON alerts_today TO anon, authenticated;
@@ -451,6 +477,7 @@ GRANT SELECT ON alerts_critical TO anon, authenticated;
 GRANT SELECT ON alerts_top3_revenue_leaks TO anon, authenticated;
 GRANT SELECT ON alerts_fix_this_first TO anon, authenticated;
 GRANT SELECT ON today_priorities TO anon, authenticated;
+GRANT SELECT ON today_priorities_clean TO anon, authenticated;
 
 -- STEP 7 — Verify (run these as separate statements after the script succeeds)
 -- SELECT * FROM alerts_today LIMIT 5;
@@ -460,3 +487,4 @@ GRANT SELECT ON today_priorities TO anon, authenticated;
 -- SELECT * FROM alerts_top3_revenue_leaks LIMIT 5;
 -- SELECT * FROM alerts_fix_this_first ORDER BY priority_score DESC LIMIT 5;
 -- SELECT * FROM today_priorities ORDER BY sort_score DESC LIMIT 5;
+-- SELECT * FROM today_priorities_clean ORDER BY sort_score DESC LIMIT 3;
