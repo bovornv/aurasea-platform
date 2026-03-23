@@ -51,4 +51,8 @@
 -- 5) company_daily_summary — run add-company-daily-summary.sql (creates table + RLS; fixes /rest/v1/company_daily_summary 404)
 --    organization_id, summary_text, updated_at, created_at, summary_date, id
 --
+-- 6) company_data_confidence — add-company-data-confidence-view.sql
+--    GET /rest/v1/company_data_confidence?select=*&organization_id=eq.{uuid}
+--    organization_id, data_days, max_days (30), confidence_level (Low|Medium|High)
+--
 -- GRANT SELECT ON … TO authenticated;

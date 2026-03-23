@@ -62,6 +62,11 @@ import {
   type OpportunitiesTodayRow,
 } from '../../services/db/opportunities-today-service';
 import {
+  fetchCompanyDataConfidence,
+  type CompanyDataConfidenceRow,
+} from '../../services/db/company-data-confidence-service';
+import { CompanyDataConfidence } from '../../components/company/company-data-confidence';
+import {
   getCompanyPortfolioTrendSnapshot,
   type CompanyPortfolioTrendSnapshot,
 } from '../../services/db/latest-metrics-service';
@@ -98,6 +103,8 @@ function OwnerSummaryContent() {
   const [whatsWorkingLoading, setWhatsWorkingLoading] = useState(false);
   const [opportunitiesRows, setOpportunitiesRows] = useState<OpportunitiesTodayRow[]>([]);
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(false);
+  const [dataConfidenceRow, setDataConfidenceRow] = useState<CompanyDataConfidenceRow | null>(null);
+  const [dataConfidenceLoading, setDataConfidenceLoading] = useState(false);
 
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
@@ -267,34 +274,40 @@ function OwnerSummaryContent() {
       setWhatsWorkingLoading(false);
       setOpportunitiesRows([]);
       setOpportunitiesLoading(false);
+      setDataConfidenceRow(null);
+      setDataConfidenceLoading(false);
       return;
     }
     let cancelled = false;
     setPrioritiesLoading(true);
     setWhatsWorkingLoading(true);
     setOpportunitiesLoading(true);
+    setDataConfidenceLoading(true);
     (async () => {
       try {
-        const [prio, working, opps] = await Promise.race([
+        const [prio, working, opps, conf] = await Promise.race([
           Promise.all([
             fetchTodayPriorities(orgId, 3),
             fetchWhatsWorkingToday(orgId, 3),
             fetchOpportunitiesToday(orgId, 3),
+            fetchCompanyDataConfidence(orgId),
           ]),
-          new Promise<[TodayPrioritiesRow[], WhatsWorkingTodayRow[], OpportunitiesTodayRow[]]>((resolve) =>
-            setTimeout(() => resolve([[], [], []]), 12000)
-          ),
+          new Promise<
+            [TodayPrioritiesRow[], WhatsWorkingTodayRow[], OpportunitiesTodayRow[], CompanyDataConfidenceRow | null]
+          >((resolve) => setTimeout(() => resolve([[], [], [], null]), 12000)),
         ]);
         if (!cancelled) {
           setPrioritiesRows(prio);
           setWhatsWorkingRows(working);
           setOpportunitiesRows(opps);
+          setDataConfidenceRow(conf);
         }
       } finally {
         if (!cancelled) {
           setPrioritiesLoading(false);
           setWhatsWorkingLoading(false);
           setOpportunitiesLoading(false);
+          setDataConfidenceLoading(false);
         }
       }
     })();
@@ -654,6 +667,12 @@ function OwnerSummaryContent() {
         <CompanyLastUpdated iso={lastUpdated?.toISOString?.()} locale={locale} />
 
         {dailySummaryCard}
+
+        <CompanyDataConfidence
+          row={dataConfidenceRow}
+          loading={dataConfidenceLoading}
+          locale={locale}
+        />
 
         <MonitoringErrorBoundary componentName="Today's Priorities">
           <CompanyTodaysPriorities rows={prioritiesRows} loading={prioritiesLoading} locale={locale} />
