@@ -38,6 +38,10 @@
 --    branch_id, organization_id, branch_name, alert_type, severity, impact_estimate_thb, cause, recommended_action, priority_score
 --
 -- 4c) today_priorities / today_priorities_clean — add-today-priorities-view.sql or rebuild-alerts-enriched-engine.sql
+--     400 on API: run fix-today-priorities-clean-400.sql (ensures organization_id + sort_score columns).
+--
+-- 4d) whats_working_today — add-whats-working-today-view.sql or rebuild-alerts-enriched-engine.sql
+--     Positive signals from today_summary_clean; highlight_text for company Today page.
 --    clean: branch_id, organization_id, branch_name, alert_type, action_text, short_title,
 --           impact_estimate_thb, impact_label (at risk|opportunity), reason_short, sort_score
 --

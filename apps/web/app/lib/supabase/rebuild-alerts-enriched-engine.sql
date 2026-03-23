@@ -15,6 +15,7 @@
 -- =============================================================================
 
 -- STEP 1 — Drop dependents first (children → parent). CASCADE cleans legacy dependents.
+DROP VIEW IF EXISTS whats_working_today CASCADE;
 DROP VIEW IF EXISTS today_priorities_clean CASCADE;
 DROP VIEW IF EXISTS today_priorities CASCADE;
 DROP VIEW IF EXISTS today_action_plan CASCADE;
@@ -447,7 +448,7 @@ COMMENT ON VIEW today_priorities IS
 -- STEP 6c — Today’s Priorities (clean UI): summary line + cards; no truncation on text columns
 CREATE OR REPLACE VIEW today_priorities_clean AS
 SELECT
-    f.organization_id,
+    COALESCE(f.organization_id, b.organization_id) AS organization_id,
     f.branch_id,
     f.branch_name,
     f.alert_type,
@@ -473,10 +474,11 @@ SELECT
     ) AS impact_label,
     COALESCE(NULLIF(TRIM(BOTH FROM f.cause), ''), ''::text) AS reason_short,
     f.priority_score AS sort_score
-FROM alerts_fix_this_first f;
+FROM alerts_fix_this_first f
+LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM f.branch_id::text);
 
 COMMENT ON VIEW today_priorities_clean IS
-    'Company Today: priorities clean feed; GET order=sort_score.desc&limit=3';
+    'organization_id + sort_score for PostgREST; sort_score = priority_score; org from branch if null on alert.';
 
 -- Grants (adjust roles if you do not use anon)
 GRANT SELECT ON alerts_enriched TO anon, authenticated;
@@ -488,6 +490,96 @@ GRANT SELECT ON alerts_fix_this_first TO anon, authenticated;
 GRANT SELECT ON today_priorities TO anon, authenticated;
 GRANT SELECT ON today_priorities_clean TO anon, authenticated;
 
+-- STEP 6d — What’s Working (positive signals): WITH base → latest → signals → final
+CREATE OR REPLACE VIEW whats_working_today AS
+WITH base AS (
+    SELECT
+        t.branch_id::text AS branch_id,
+        t.metric_date::date AS metric_date,
+        COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
+        t.revenue_delta_day::numeric AS revenue_delta_day,
+        t.occupancy_delta_week::numeric AS occupancy_delta_week,
+        b.organization_id,
+        b.name AS branch_name,
+        CASE
+            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+                'accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'
+            ) THEN 'accommodation'::text
+            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+                'fnb', 'restaurant', 'cafe', 'cafe_restaurant'
+            ) THEN 'fnb'::text
+            ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
+        END AS branch_type
+    FROM today_summary_clean t
+    LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
+),
+latest AS (
+    SELECT DISTINCT ON (branch_id)
+        branch_id,
+        metric_date,
+        total_revenue,
+        revenue_delta_day,
+        occupancy_delta_week,
+        organization_id,
+        branch_name,
+        branch_type
+    FROM base
+    ORDER BY branch_id, metric_date DESC NULLS LAST
+),
+signals AS (
+    SELECT
+        l.organization_id,
+        l.branch_id,
+        l.branch_name,
+        l.metric_date,
+        'Customer traffic up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%) (' || l.branch_name || ')' AS highlight_text,
+        (COALESCE(l.revenue_delta_day, 0) * 1000::numeric + COALESCE(l.total_revenue, 0)) AS sort_score
+    FROM latest l
+    WHERE l.branch_type = 'fnb'
+      AND l.organization_id IS NOT NULL
+      AND l.revenue_delta_day IS NOT NULL
+      AND l.revenue_delta_day >= 10
+    UNION ALL
+    SELECT
+        l.organization_id,
+        l.branch_id,
+        l.branch_name,
+        l.metric_date,
+        'Revenue trending up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%) (' || l.branch_name || ')',
+        (COALESCE(l.revenue_delta_day, 0) * 1000::numeric + COALESCE(l.total_revenue, 0))
+    FROM latest l
+    WHERE l.branch_type = 'accommodation'
+      AND l.organization_id IS NOT NULL
+      AND l.revenue_delta_day IS NOT NULL
+      AND l.revenue_delta_day >= 10
+    UNION ALL
+    SELECT
+        l.organization_id,
+        l.branch_id,
+        l.branch_name,
+        l.metric_date,
+        'Occupancy improving (+' || ROUND(ABS(l.occupancy_delta_week))::text || '%) (' || l.branch_name || ')',
+        (COALESCE(l.occupancy_delta_week, 0) * 800::numeric + COALESCE(l.total_revenue, 0))
+    FROM latest l
+    WHERE l.branch_type = 'accommodation'
+      AND l.organization_id IS NOT NULL
+      AND l.occupancy_delta_week IS NOT NULL
+      AND l.occupancy_delta_week >= 10
+)
+SELECT
+    s.organization_id,
+    s.branch_id,
+    s.branch_name,
+    s.metric_date,
+    s.highlight_text,
+    s.sort_score
+FROM signals s;
+
+COMMENT ON VIEW whats_working_today IS
+    'Latest row per branch → positive signals; GET order=sort_score.desc&limit=3';
+
+GRANT SELECT ON whats_working_today TO anon, authenticated;
+
 -- STEP 7 — Verify (run these as separate statements after the script succeeds)
 -- SELECT * FROM alerts_today LIMIT 5;
 -- SELECT * FROM branch_alerts_today WHERE branch_id = 'your-branch-id' LIMIT 5;
@@ -497,3 +589,4 @@ GRANT SELECT ON today_priorities_clean TO anon, authenticated;
 -- SELECT * FROM alerts_fix_this_first ORDER BY priority_score DESC LIMIT 5;
 -- SELECT * FROM today_priorities ORDER BY sort_score DESC LIMIT 5;
 -- SELECT * FROM today_priorities_clean ORDER BY sort_score DESC LIMIT 3;
+-- SELECT * FROM whats_working_today ORDER BY sort_score DESC LIMIT 3;

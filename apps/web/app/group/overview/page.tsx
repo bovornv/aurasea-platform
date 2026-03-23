@@ -26,7 +26,7 @@ import { useI18n } from '../../hooks/use-i18n';
 import { useTestMode } from '../../providers/test-mode-provider';
 import { businessGroupService } from '../../services/business-group-service';
 import { getBranchHealthScores } from '../../services/health-score-service';
-import { CompanyRevenueLeaksDb } from '../../components/company/company-revenue-leaks-db';
+import { CompanyWhatsWorkingToday } from '../../components/company/company-whats-working-today';
 import { MonitoringErrorBoundary } from '../../components/monitoring-error-boundary';
 import { useOrganization } from '../../contexts/organization-context';
 import { useRbacReady } from '../../hooks/use-route-guard';
@@ -52,6 +52,10 @@ import {
   fetchTodayPriorities,
   type TodayPrioritiesRow,
 } from '../../services/db/today-priorities-service';
+import {
+  fetchWhatsWorkingToday,
+  type WhatsWorkingTodayRow,
+} from '../../services/db/whats-working-today-service';
 import {
   getCompanyPortfolioTrendSnapshot,
   type CompanyPortfolioTrendSnapshot,
@@ -85,6 +89,8 @@ function OwnerSummaryContent() {
   const [portfolioTrendLoading, setPortfolioTrendLoading] = useState(false);
   const [prioritiesRows, setPrioritiesRows] = useState<TodayPrioritiesRow[]>([]);
   const [prioritiesLoading, setPrioritiesLoading] = useState(false);
+  const [whatsWorkingRows, setWhatsWorkingRows] = useState<WhatsWorkingTodayRow[]>([]);
+  const [whatsWorkingLoading, setWhatsWorkingLoading] = useState(false);
 
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
@@ -250,19 +256,33 @@ function OwnerSummaryContent() {
     if (!orgId?.trim()) {
       setPrioritiesRows([]);
       setPrioritiesLoading(false);
+      setWhatsWorkingRows([]);
+      setWhatsWorkingLoading(false);
       return;
     }
     let cancelled = false;
     setPrioritiesLoading(true);
+    setWhatsWorkingLoading(true);
     (async () => {
       try {
-        const rows = await Promise.race([
-          fetchTodayPriorities(orgId, 3),
-          new Promise<TodayPrioritiesRow[]>((resolve) => setTimeout(() => resolve([]), 12000)),
+        const [prio, working] = await Promise.race([
+          Promise.all([
+            fetchTodayPriorities(orgId, 3),
+            fetchWhatsWorkingToday(orgId, 3),
+          ]),
+          new Promise<[TodayPrioritiesRow[], WhatsWorkingTodayRow[]]>((resolve) =>
+            setTimeout(() => resolve([[], []]), 12000)
+          ),
         ]);
-        if (!cancelled) setPrioritiesRows(rows);
+        if (!cancelled) {
+          setPrioritiesRows(prio);
+          setWhatsWorkingRows(working);
+        }
       } finally {
-        if (!cancelled) setPrioritiesLoading(false);
+        if (!cancelled) {
+          setPrioritiesLoading(false);
+          setWhatsWorkingLoading(false);
+        }
       }
     })();
     return () => {
@@ -662,9 +682,22 @@ function OwnerSummaryContent() {
           </MonitoringErrorBoundary>
         </OperatingSection>
 
-        <MonitoringErrorBoundary componentName="Revenue Leaks DB">
-          <CompanyRevenueLeaksDb rows={companyTodayBundle?.revenueLeaks ?? []} locale={locale} />
-        </MonitoringErrorBoundary>
+        <OperatingSection
+          title={locale === 'th' ? 'สิ่งที่ทำได้ดี' : "What's Working"}
+          subtitle={
+            locale === 'th'
+              ? 'เมื่อแนวโน้มล่าสุดเป็นบวก'
+              : 'When recent trends are moving in a good direction.'
+          }
+        >
+          <MonitoringErrorBoundary componentName="What's Working">
+            <CompanyWhatsWorkingToday
+              rows={whatsWorkingRows}
+              loading={whatsWorkingLoading}
+              locale={locale}
+            />
+          </MonitoringErrorBoundary>
+        </OperatingSection>
 
         <OperatingFooterTrust />
       </div>

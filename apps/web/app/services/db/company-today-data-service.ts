@@ -44,19 +44,6 @@ export interface NormalizedCriticalAlertRow {
   rowKey: string;
 }
 
-export interface NormalizedRevenueLeakRow {
-  branchId: string;
-  branchName: string;
-  /** Title line: branch — alert_type */
-  alertType: string;
-  impactThb: number;
-  cause: string;
-  /** Null/empty from DB → UI shows “Review performance”. */
-  recommendedAction: string | null;
-  rank: number;
-  rowKey: string;
-}
-
 export interface CompanyTodayDailySummary {
   underperformingBelow80: number;
   revenueAtRiskFromAlertsTodayThb: number;
@@ -65,7 +52,6 @@ export interface CompanyTodayDailySummary {
 export interface CompanyTodayBundle {
   businessStatus: NormalizedBusinessRow[];
   criticalAlerts: NormalizedCriticalAlertRow[];
-  revenueLeaks: NormalizedRevenueLeakRow[];
   alertsTodayRaw: Record<string, unknown>[];
   dailySummary: CompanyTodayDailySummary;
   errors: string[];
@@ -307,7 +293,6 @@ export function createEmptyCompanyTodayBundle(errorTags: string[]): CompanyToday
   return {
     businessStatus: [],
     criticalAlerts: [],
-    revenueLeaks: [],
     alertsTodayRaw: [],
     dailySummary: { underperformingBelow80: 0, revenueAtRiskFromAlertsTodayThb: 0 },
     errors: errorTags,
@@ -325,7 +310,6 @@ export async function fetchCompanyTodayBundle(
   const empty: CompanyTodayBundle = {
     businessStatus: [],
     criticalAlerts: [],
-    revenueLeaks: [],
     alertsTodayRaw: [],
     dailySummary: { underperformingBelow80: 0, revenueAtRiskFromAlertsTodayThb: 0 },
     errors: [],
@@ -340,10 +324,9 @@ export async function fetchCompanyTodayBundle(
 
   const idFilter = branchIds;
 
-  const [bsRes, critRes, leaksRes, todayRes] = await Promise.all([
+  const [bsRes, critRes, todayRes] = await Promise.all([
     supabase.from('branch_business_status').select('*').in('branch_id', idFilter),
     supabase.from('alerts_critical').select('*').in('branch_id', idFilter),
-    supabase.from('alerts_top3_revenue_leaks').select('*').in('branch_id', idFilter),
     supabase.from('alerts_today').select('*').in('branch_id', idFilter),
   ]);
 
@@ -360,11 +343,9 @@ export async function fetchCompanyTodayBundle(
   logDev('branch_business_status', bsRes);
   logDev('alerts_today', todayRes);
   logDev('alerts_critical', critRes);
-  logDev('alerts_top3_revenue_leaks', leaksRes);
 
   if (bsRes.error) errors.push(`branch_business_status:${bsRes.error.message}`);
   if (critRes.error) errors.push(`alerts_critical:${critRes.error.message}`);
-  if (leaksRes.error) errors.push(`alerts_top3_revenue_leaks:${leaksRes.error.message}`);
   if (todayRes.error) errors.push(`alerts_today:${todayRes.error.message}`);
 
   let bsRows = asRecordArray(bsRes.data);
@@ -449,46 +430,9 @@ export async function fetchCompanyTodayBundle(
 
   const criticalAlerts = dedupeCriticalAlertsByBranchTypeCause(criticalAlertsRaw);
 
-  const revenueLeaks: NormalizedRevenueLeakRow[] = asRecordArray(leaksRes.data)
-    .map((r, i) => {
-      const branchId = pickStr(r, 'branch_id', 'branchId');
-      const alertType = pickStr(
-        r,
-        'alert_type',
-        'alert_title',
-        'alert_name',
-        'issue',
-        'title',
-        'name'
-      );
-      const rec = pickStr(r, 'recommended_action', 'recommendation', 'action', 'suggested_action');
-      const rowKey =
-        pickStr(r, 'id', 'alert_id', 'uuid', 'row_id') ||
-        `${branchId}:${slugDedupePart(alertType)}:${i}`;
-      return {
-        branchId,
-        branchName: pickStr(r, 'branch_name', 'branchName') || branchNameFromLocal(branchId),
-        alertType,
-        impactThb: pickNum(
-          r,
-          'impact_estimate_thb',
-          'impact_estimate',
-          'estimated_revenue_impact',
-          'money_leak_thb'
-        ),
-        cause: pickStr(r, 'cause', 'reason', 'alert_message', 'message', 'description'),
-        recommendedAction: rec || null,
-        rank: pickNum(r, 'rank', 'leak_rank') || i + 1,
-        rowKey,
-      };
-    })
-    .filter((x) => x.branchId)
-    .sort((a, b) => b.impactThb - a.impactThb || a.rank - b.rank);
-
   return {
     businessStatus,
     criticalAlerts,
-    revenueLeaks,
     alertsTodayRaw,
     dailySummary: {
       underperformingBelow80: underperformingBelow80.size,

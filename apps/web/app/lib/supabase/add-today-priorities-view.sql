@@ -35,7 +35,7 @@ DROP VIEW IF EXISTS today_priorities_clean CASCADE;
 
 CREATE VIEW today_priorities_clean AS
 SELECT
-  f.organization_id,
+  COALESCE(f.organization_id, b.organization_id) AS organization_id,
   f.branch_id,
   f.branch_name,
   f.alert_type,
@@ -61,9 +61,10 @@ SELECT
   ) AS impact_label,
   COALESCE(NULLIF(TRIM(BOTH FROM f.cause), ''), ''::text) AS reason_short,
   f.priority_score AS sort_score
-FROM alerts_fix_this_first f;
+FROM alerts_fix_this_first f
+LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM f.branch_id::text);
 
 COMMENT ON VIEW today_priorities_clean IS
-  'Company Today: short_title + impact_estimate_thb + impact_label; details use action_text + reason_short; order by sort_score DESC.';
+  'organization_id + sort_score (from priority_score) for PostgREST; COALESCE org from branches when missing on alert row.';
 
 GRANT SELECT ON today_priorities_clean TO anon, authenticated;
