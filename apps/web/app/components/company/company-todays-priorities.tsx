@@ -9,13 +9,10 @@ interface Props {
   loading?: boolean;
 }
 
-function summaryTitle(row: TodayPrioritiesRow, th: boolean): string {
-  const s = row.short_title?.trim();
-  if (s) return s;
-  const at = row.alert_type?.replace(/_/g, ' ').trim();
-  const br = row.branch_name?.trim();
-  if (at && br) return `${at} — ${br}`;
-  return at || br || (th ? 'ลำดับความสำคัญ' : 'Priority');
+function humanAlertType(raw: string | null | undefined, th: boolean): string {
+  const s = raw?.replace(/_/g, ' ').trim();
+  if (!s) return th ? 'แจ้งเตือน' : 'Alert';
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function impactLabelUi(raw: string | null | undefined, th: boolean): string {
@@ -34,9 +31,7 @@ export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
   const visible = rows.slice(0, 3);
 
   const title = th ? 'ลำดับความสำคัญวันนี้' : "Today's Priorities";
-  const whatNow = th ? 'ทำอะไรตอนนี้:' : 'What to do now:';
-  const doThis = th ? 'ทำแบบนี้' : 'Do this';
-  const why = th ? 'เหตุผล' : 'Why';
+  const whyLabel = th ? 'เหตุผล' : 'Why';
   const emptyMsg = th ? 'ทุกอย่างโอเค — ไม่มีลำดับความสำคัญวันนี้' : 'All good — no priorities today';
   const loadingMsg = th ? 'กำลังโหลด…' : 'Loading…';
 
@@ -50,7 +45,15 @@ export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
         marginBottom: '0.25rem',
       }}
     >
-      <div style={{ fontSize: '15px', fontWeight: 600, color: '#334155', marginBottom: '18px', letterSpacing: '-0.02em' }}>
+      <div
+        style={{
+          fontSize: '15px',
+          fontWeight: 600,
+          color: '#475569',
+          marginBottom: '16px',
+          letterSpacing: '-0.02em',
+        }}
+      >
         {title}
       </div>
 
@@ -59,77 +62,54 @@ export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
       ) : visible.length === 0 ? (
         <p style={{ margin: 0, fontSize: '14px', color: '#64748b', lineHeight: 1.5 }}>{emptyMsg}</p>
       ) : (
-        <>
-          <p style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 600, color: '#0f172a' }}>{whatNow}</p>
-          <ol
-            style={{
-              margin: '0 0 28px 0',
-              paddingLeft: '1.35rem',
-              fontSize: '15px',
-              lineHeight: 1.55,
-              color: '#0f172a',
-            }}
-          >
-            {visible.map((row, idx) => {
-              const amt = row.impact_estimate_thb ?? 0;
-              const amtStr = formatCurrency(amt, numLocale);
-              const label = impactLabelUi(row.impact_label, th);
-              const key = `n-${row.branch_id}-${row.alert_type}-${idx}`;
-              return (
-                <li key={key} style={{ marginBottom: '10px', paddingLeft: '2px' }}>
-                  <span style={{ fontWeight: 600 }}>{summaryTitle(row, th)}</span>{' '}
-                  <span style={{ fontWeight: 600, color: '#b91c1c' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {visible.map((row, idx) => {
+            const branch = row.branch_name?.trim() || row.branch_id || (th ? 'สาขา' : 'Branch');
+            const alertLabel = humanAlertType(row.alert_type, th);
+            const action = (row.action_text ?? '').trim();
+            const amt = row.impact_estimate_thb ?? 0;
+            const amtStr = formatCurrency(amt, numLocale);
+            const label = impactLabelUi(row.impact_label, th);
+            const reason = (row.reason_short ?? '').trim();
+            const key = `p-${row.branch_id}-${row.alert_type}-${idx}`;
+            const lead =
+              action !== ''
+                ? `${branch} — ${alertLabel}: ${action}`
+                : `${branch} — ${alertLabel}`;
+
+            return (
+              <div key={key}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '15px',
+                    lineHeight: 1.5,
+                    fontWeight: 700,
+                    color: '#0f172a',
+                  }}
+                >
+                  {lead}{' '}
+                  <span style={{ fontWeight: 700, color: '#dc2626' }}>
                     (฿{amtStr} {label})
                   </span>
-                </li>
-              );
-            })}
-          </ol>
-
-          <div
-            style={{
-              height: '1px',
-              background: 'linear-gradient(90deg, transparent, #e2e8f0 12%, #e2e8f0 88%, transparent)',
-              marginBottom: '20px',
-            }}
-          />
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {visible.map((item, idx) => {
-              const branch = item.branch_name?.trim() || item.branch_id || (th ? 'สาขา' : 'Branch');
-              const alertLabel =
-                item.alert_type?.replace(/_/g, ' ').trim() || (th ? 'แจ้งเตือน' : 'Alert');
-              const action = (item.action_text ?? '').trim();
-              const reason = (item.reason_short ?? '').trim();
-              const key = `c-${item.branch_id}-${item.alert_type}-${idx}`;
-
-              return (
-                <div key={key} style={{ padding: 0 }}>
-                  <div
+                </p>
+                {reason !== '' && (
+                  <p
                     style={{
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      color: '#1e293b',
-                      marginBottom: '10px',
+                      margin: '6px 0 0 0',
+                      fontSize: '13px',
+                      lineHeight: 1.45,
+                      fontWeight: 400,
+                      color: '#94a3b8',
                     }}
                   >
-                    {branch} — {alertLabel}
-                  </div>
-                  {action !== '' && (
-                    <p style={{ margin: '0 0 8px 0', fontSize: '14px', lineHeight: 1.55, color: '#334155' }}>
-                      <span style={{ fontWeight: 700, color: '#0f172a' }}>{doThis}:</span> {action}
-                    </p>
-                  )}
-                  {reason !== '' && (
-                    <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, color: '#64748b' }}>
-                      <span style={{ fontWeight: 600, color: '#475569' }}>{why}:</span> {reason}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </>
+                    {whyLabel}: {reason}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

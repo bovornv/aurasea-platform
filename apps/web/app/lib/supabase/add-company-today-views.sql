@@ -1,4 +1,8 @@
 -- Company Today page reads these objects (create in Supabase to match your summary pipeline).
+--
+-- daily_metrics (read-only UNION view): if /rest/v1/daily_metrics returns 502, run
+-- recreate-daily-metrics-view.sql (branch_id as uuid; splits accommodation_daily_metrics + fnb_daily_metrics).
+-- If daily_metrics is still a legacy TABLE, rename it before recreating the view (see script header).
 -- Expected columns are flexible; the web app maps common aliases (see company-today-data-service.ts).
 --
 -- **Run `add-branch-performance-signal-and-business-status.sql`** — app reads `branch_business_status` + `branch_performance_signal`
