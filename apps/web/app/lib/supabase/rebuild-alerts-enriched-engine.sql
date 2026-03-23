@@ -15,6 +15,7 @@
 -- =============================================================================
 
 -- STEP 1 — Drop dependents first (children → parent). CASCADE cleans legacy dependents.
+DROP VIEW IF EXISTS opportunities_today CASCADE;
 DROP VIEW IF EXISTS whats_working_today CASCADE;
 DROP VIEW IF EXISTS today_priorities_clean CASCADE;
 DROP VIEW IF EXISTS today_priorities CASCADE;
@@ -580,6 +581,79 @@ COMMENT ON VIEW whats_working_today IS
 
 GRANT SELECT ON whats_working_today TO anon, authenticated;
 
+-- STEP 6e — Opportunities (advisor-style lines from opportunity alerts)
+CREATE OR REPLACE VIEW opportunities_today AS
+WITH base AS (
+    SELECT
+        e.organization_id,
+        e.branch_id::text AS branch_id,
+        e.branch_name,
+        e.branch_type,
+        e.metric_date::date AS metric_date,
+        COALESCE(e.impact_estimate_thb, 0)::numeric AS impact_estimate_thb,
+        e.recommended_action
+    FROM alerts_enriched e
+    WHERE e.alert_category = 'opportunity'
+),
+enriched AS (
+    SELECT
+        COALESCE(b.organization_id, base.organization_id) AS organization_id,
+        base.branch_id,
+        COALESCE(NULLIF(TRIM(BOTH FROM base.branch_name), ''), b.name, base.branch_id) AS branch_name,
+        base.branch_type,
+        base.metric_date,
+        base.impact_estimate_thb,
+        base.recommended_action
+    FROM base
+    LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM base.branch_id::text)
+),
+latest AS (
+    SELECT DISTINCT ON (branch_id)
+        organization_id,
+        branch_id,
+        branch_name,
+        branch_type,
+        metric_date,
+        impact_estimate_thb,
+        recommended_action
+    FROM enriched
+    WHERE organization_id IS NOT NULL
+    ORDER BY branch_id, metric_date DESC NULLS LAST
+),
+final AS (
+    SELECT
+        l.organization_id,
+        l.branch_id,
+        l.branch_name,
+        l.metric_date,
+        (
+            CASE
+                WHEN l.branch_type = 'accommodation'
+                    AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5 THEN
+                    'Strong weekend pattern → add package (' || l.branch_name || ')'
+                WHEN l.branch_type = 'fnb' THEN
+                    'Customer traffic rising → increase avg ticket (' || l.branch_name || ')'
+                ELSE
+                    'High demand detected → raise price slightly (' || l.branch_name || ')'
+            END
+        ) AS opportunity_text,
+        (l.impact_estimate_thb * 100::numeric + EXTRACT(EPOCH FROM l.metric_date::timestamp)::numeric) AS sort_score
+    FROM latest l
+)
+SELECT
+    f.organization_id,
+    f.branch_id,
+    f.branch_name,
+    f.metric_date,
+    f.opportunity_text,
+    f.sort_score
+FROM final f;
+
+COMMENT ON VIEW opportunities_today IS
+    'Opportunity alerts; latest per branch; GET order=sort_score.desc&limit=3';
+
+GRANT SELECT ON opportunities_today TO anon, authenticated;
+
 -- STEP 7 — Verify (run these as separate statements after the script succeeds)
 -- SELECT * FROM alerts_today LIMIT 5;
 -- SELECT * FROM branch_alerts_today WHERE branch_id = 'your-branch-id' LIMIT 5;
@@ -590,3 +664,4 @@ GRANT SELECT ON whats_working_today TO anon, authenticated;
 -- SELECT * FROM today_priorities ORDER BY sort_score DESC LIMIT 5;
 -- SELECT * FROM today_priorities_clean ORDER BY sort_score DESC LIMIT 3;
 -- SELECT * FROM whats_working_today ORDER BY sort_score DESC LIMIT 3;
+-- SELECT * FROM opportunities_today ORDER BY sort_score DESC LIMIT 3;

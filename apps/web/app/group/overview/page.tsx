@@ -27,6 +27,7 @@ import { useTestMode } from '../../providers/test-mode-provider';
 import { businessGroupService } from '../../services/business-group-service';
 import { getBranchHealthScores } from '../../services/health-score-service';
 import { CompanyWhatsWorkingToday } from '../../components/company/company-whats-working-today';
+import { CompanyOpportunitiesToday } from '../../components/company/company-opportunities-today';
 import { MonitoringErrorBoundary } from '../../components/monitoring-error-boundary';
 import { useOrganization } from '../../contexts/organization-context';
 import { useRbacReady } from '../../hooks/use-route-guard';
@@ -56,6 +57,10 @@ import {
   fetchWhatsWorkingToday,
   type WhatsWorkingTodayRow,
 } from '../../services/db/whats-working-today-service';
+import {
+  fetchOpportunitiesToday,
+  type OpportunitiesTodayRow,
+} from '../../services/db/opportunities-today-service';
 import {
   getCompanyPortfolioTrendSnapshot,
   type CompanyPortfolioTrendSnapshot,
@@ -91,6 +96,8 @@ function OwnerSummaryContent() {
   const [prioritiesLoading, setPrioritiesLoading] = useState(false);
   const [whatsWorkingRows, setWhatsWorkingRows] = useState<WhatsWorkingTodayRow[]>([]);
   const [whatsWorkingLoading, setWhatsWorkingLoading] = useState(false);
+  const [opportunitiesRows, setOpportunitiesRows] = useState<OpportunitiesTodayRow[]>([]);
+  const [opportunitiesLoading, setOpportunitiesLoading] = useState(false);
 
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
@@ -258,30 +265,36 @@ function OwnerSummaryContent() {
       setPrioritiesLoading(false);
       setWhatsWorkingRows([]);
       setWhatsWorkingLoading(false);
+      setOpportunitiesRows([]);
+      setOpportunitiesLoading(false);
       return;
     }
     let cancelled = false;
     setPrioritiesLoading(true);
     setWhatsWorkingLoading(true);
+    setOpportunitiesLoading(true);
     (async () => {
       try {
-        const [prio, working] = await Promise.race([
+        const [prio, working, opps] = await Promise.race([
           Promise.all([
             fetchTodayPriorities(orgId, 3),
             fetchWhatsWorkingToday(orgId, 3),
+            fetchOpportunitiesToday(orgId, 3),
           ]),
-          new Promise<[TodayPrioritiesRow[], WhatsWorkingTodayRow[]]>((resolve) =>
-            setTimeout(() => resolve([[], []]), 12000)
+          new Promise<[TodayPrioritiesRow[], WhatsWorkingTodayRow[], OpportunitiesTodayRow[]]>((resolve) =>
+            setTimeout(() => resolve([[], [], []]), 12000)
           ),
         ]);
         if (!cancelled) {
           setPrioritiesRows(prio);
           setWhatsWorkingRows(working);
+          setOpportunitiesRows(opps);
         }
       } finally {
         if (!cancelled) {
           setPrioritiesLoading(false);
           setWhatsWorkingLoading(false);
+          setOpportunitiesLoading(false);
         }
       }
     })();
@@ -694,6 +707,23 @@ function OwnerSummaryContent() {
             <CompanyWhatsWorkingToday
               rows={whatsWorkingRows}
               loading={whatsWorkingLoading}
+              locale={locale}
+            />
+          </MonitoringErrorBoundary>
+        </OperatingSection>
+
+        <OperatingSection
+          title={locale === 'th' ? 'โอกาส' : 'Opportunities'}
+          subtitle={
+            locale === 'th'
+              ? 'แนวคิดเชิงรุกจากสัญญาณความต้องการ'
+              : 'Proactive moves when demand signals are strong.'
+          }
+        >
+          <MonitoringErrorBoundary componentName="Opportunities">
+            <CompanyOpportunitiesToday
+              rows={opportunitiesRows}
+              loading={opportunitiesLoading}
               locale={locale}
             />
           </MonitoringErrorBoundary>

@@ -42,6 +42,9 @@
 --
 -- 4d) whats_working_today — add-whats-working-today-view.sql or rebuild-alerts-enriched-engine.sql
 --     Positive signals from today_summary_clean; highlight_text for company Today page.
+--
+-- 4e) opportunities_today — add-opportunities-today-view.sql or rebuild-alerts-enriched-engine.sql
+--     opportunity_text from alerts_enriched (alert_category = opportunity); requires alerts pipeline.
 --    clean: branch_id, organization_id, branch_name, alert_type, action_text, short_title,
 --           impact_estimate_thb, impact_label (at risk|opportunity), reason_short, sort_score
 --
