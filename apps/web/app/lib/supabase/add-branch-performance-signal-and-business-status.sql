@@ -1,4 +1,14 @@
 -- Company Today: profitability signals + branch_business_status
+--
+-- PostgreSQL: CREATE OR REPLACE VIEW cannot remove/rename columns vs the existing
+-- view → ERROR: cannot drop columns from view. Always DROP first (this file does).
+--
+-- Runbook (Supabase SQL editor):
+--   1) Optional: run drop-branch-business-status-for-recreate.sql if you only want
+--      an explicit Step 1 before pasting custom SQL.
+--   2) Run THIS ENTIRE FILE from line 1 (drops + both CREATE VIEWs + GRANTs).
+--   3) VERIFY: SELECT * FROM branch_business_status LIMIT 5;
+--
 -- Run in this order: (1) drop dependent views (2) branch_performance_signal (3) branch_business_status
 --
 -- Requires:

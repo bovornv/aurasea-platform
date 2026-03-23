@@ -5,11 +5,38 @@ import type { NormalizedBusinessRow } from '../../services/db/company-today-data
 import type { ProfitabilityTrend } from '../../services/db/latest-metrics-service';
 import { formatCurrency } from '../../utils/formatting';
 
-function healthColor(score: number | null): string {
-  if (score == null || isNaN(score)) return '#6b7280';
-  if (score <= 60) return '#b91c1c';
-  if (score <= 80) return '#ca8a04';
-  return '#15803d';
+/** Sticky column offset: health badge column */
+const STICKY_HEALTH_W = 84;
+
+function healthBadgeStyle(score: number | null): { bg: string; fg: string } {
+  if (score == null || isNaN(score)) return { bg: '#f3f4f6', fg: '#6b7280' };
+  const n = Math.round(score);
+  if (n <= 60) return { bg: '#fee2e2', fg: '#b91c1c' };
+  if (n <= 80) return { bg: '#ffedd5', fg: '#c2410c' };
+  return { bg: '#dcfce7', fg: '#15803d' };
+}
+
+function HealthBadge({ score }: { score: number | null }) {
+  const { bg, fg } = healthBadgeStyle(score);
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: '2.5rem',
+        padding: '4px 10px',
+        borderRadius: '9999px',
+        fontSize: '13px',
+        fontWeight: 700,
+        background: bg,
+        color: fg,
+        lineHeight: 1.2,
+      }}
+    >
+      {score != null && !isNaN(score) ? Math.round(score) : '—'}
+    </span>
+  );
 }
 
 function trendGlyph(t: ProfitabilityTrend | null): { glyph: string; color: string } | null {
@@ -31,22 +58,78 @@ function TrendOnlyCell({ trend }: { trend: ProfitabilityTrend | null }) {
 
 const tableStyle: CSSProperties = {
   width: '100%',
-  borderCollapse: 'collapse',
+  borderCollapse: 'separate',
+  borderSpacing: 0,
   fontSize: '13px',
+  minWidth: 640,
 };
-const thStyle: CSSProperties = {
-  textAlign: 'left',
+
+const thBase: CSSProperties = {
   padding: '8px 10px',
   borderBottom: '1px solid #e5e7eb',
   color: '#64748b',
   fontWeight: 600,
   whiteSpace: 'nowrap',
+  background: '#fff',
 };
-const tdStyle: CSSProperties = {
+
+const tdBase: CSSProperties = {
   padding: '10px',
   borderBottom: '1px solid #f1f5f9',
   color: '#0f172a',
+  verticalAlign: 'middle',
+  background: '#fff',
 };
+
+const stickyHealthTh: CSSProperties = {
+  ...thBase,
+  position: 'sticky',
+  left: 0,
+  zIndex: 4,
+  textAlign: 'left',
+  minWidth: STICKY_HEALTH_W,
+  maxWidth: STICKY_HEALTH_W,
+  width: STICKY_HEALTH_W,
+  boxShadow: '4px 0 8px -4px rgba(15, 23, 42, 0.12)',
+};
+
+const stickyHealthTd: CSSProperties = {
+  ...tdBase,
+  position: 'sticky',
+  left: 0,
+  zIndex: 2,
+  textAlign: 'left',
+  minWidth: STICKY_HEALTH_W,
+  maxWidth: STICKY_HEALTH_W,
+  width: STICKY_HEALTH_W,
+  boxShadow: '4px 0 8px -4px rgba(15, 23, 42, 0.08)',
+};
+
+const stickyBranchTh: CSSProperties = {
+  ...thBase,
+  position: 'sticky',
+  left: STICKY_HEALTH_W,
+  zIndex: 4,
+  textAlign: 'left',
+  minWidth: 140,
+  boxShadow: '4px 0 8px -4px rgba(15, 23, 42, 0.12)',
+};
+
+const stickyBranchTd: CSSProperties = {
+  ...tdBase,
+  position: 'sticky',
+  left: STICKY_HEALTH_W,
+  zIndex: 2,
+  textAlign: 'left',
+  minWidth: 140,
+  maxWidth: 220,
+  boxShadow: '4px 0 8px -4px rgba(15, 23, 42, 0.08)',
+};
+
+const thNum: CSSProperties = { ...thBase, textAlign: 'right' };
+const tdNum: CSSProperties = { ...tdBase, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
+const thArrow: CSSProperties = { ...thBase, textAlign: 'center' };
+const tdArrow: CSSProperties = { ...tdBase, textAlign: 'center' };
 
 function branchFreshnessLine(
   row: NormalizedBusinessRow,
@@ -110,6 +193,8 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
     <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a', margin: '1rem 0 0.5rem' }}>{label}</h3>
   );
 
+  const branchHeader = isTh ? 'สาขา' : 'Branch name';
+
   return (
     <div>
       {subTitle(isTh ? 'ที่พัก' : 'Accommodation')}
@@ -120,34 +205,40 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
             : 'No accommodation branches in branch_business_status.'}
         </p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div
+          style={{
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            marginBottom: '0.25rem',
+          }}
+        >
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>{isTh ? 'สาขา' : 'Branch'}</th>
-                <th style={thStyle}>Occupancy (%)</th>
-                <th style={thStyle}>Revenue (฿)</th>
-                <th style={thStyle}>ADR (฿)</th>
-                <th style={thStyle}>RevPAR (฿)</th>
-                <th style={thStyle}>{isTh ? 'กำไร' : 'Profitability'}</th>
-                <th style={thStyle}>Health</th>
+                <th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th>
+                <th style={stickyBranchTh}>{branchHeader}</th>
+                <th style={thNum}>Revenue (฿)</th>
+                <th style={thNum}>Occupancy (%)</th>
+                <th style={thNum}>ADR (฿)</th>
+                <th style={thNum}>RevPAR (฿)</th>
+                <th style={thArrow}>{isTh ? 'กำไร' : 'Profitability'}</th>
               </tr>
             </thead>
             <tbody>
               {accommodationRows.map((r) => (
                 <tr key={`${r.branchId}-${r.branchType}`}>
-                  <td style={tdStyle}>
+                  <td style={stickyHealthTd}>
+                    <HealthBadge score={r.healthScore} />
+                  </td>
+                  <td style={stickyBranchTd}>
                     <BranchNameCell row={r} locale={locale} />
                   </td>
-                  <td style={tdStyle}>{Math.round(r.occupancyPct)}%</td>
-                  <td style={tdStyle}>฿{formatCurrency(r.revenueThb)}</td>
-                  <td style={tdStyle}>฿{formatCurrency(r.adrThb)}</td>
-                  <td style={tdStyle}>฿{formatCurrency(r.revparThb)}</td>
-                  <td style={tdStyle}>
+                  <td style={tdNum}>฿{formatCurrency(r.revenueThb)}</td>
+                  <td style={tdNum}>{Math.round(r.occupancyPct)}%</td>
+                  <td style={tdNum}>฿{formatCurrency(r.adrThb)}</td>
+                  <td style={tdNum}>฿{formatCurrency(r.revparThb)}</td>
+                  <td style={tdArrow}>
                     <TrendOnlyCell trend={r.profitabilityTrend} />
-                  </td>
-                  <td style={{ ...tdStyle, fontWeight: 600, color: healthColor(r.healthScore) }}>
-                    {r.healthScore != null ? Math.round(r.healthScore) : '—'}
                   </td>
                 </tr>
               ))}
@@ -164,38 +255,38 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
             : 'No F&B branches in branch_business_status.'}
         </p>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={tableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>{isTh ? 'สาขา' : 'Branch'}</th>
-                <th style={thStyle}>Revenue (฿)</th>
-                <th style={thStyle}>Customers</th>
-                <th style={thStyle}>Avg ticket (฿)</th>
-                <th style={thStyle}>{isTh ? 'ต้นทุนเฉลี่ย' : 'Avg Cost'}</th>
-                <th style={thStyle}>{isTh ? 'มาร์จิ้น' : 'Margin'}</th>
-                <th style={thStyle}>Health</th>
+                <th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th>
+                <th style={stickyBranchTh}>{branchHeader}</th>
+                <th style={thNum}>Revenue (฿)</th>
+                <th style={thNum}>Customers</th>
+                <th style={thNum}>Avg ticket (฿)</th>
+                <th style={thNum}>Avg Cost (฿)</th>
+                <th style={thArrow}>{isTh ? 'มาร์จิ้น' : 'Margin'}</th>
               </tr>
             </thead>
             <tbody>
               {fnbRows.map((r) => (
                 <tr key={`${r.branchId}-${r.branchType}`}>
-                  <td style={tdStyle}>
+                  <td style={stickyHealthTd}>
+                    <HealthBadge score={r.healthScore} />
+                  </td>
+                  <td style={stickyBranchTd}>
                     <BranchNameCell row={r} locale={locale} />
                   </td>
-                  <td style={tdStyle}>฿{formatCurrency(r.revenueThb)}</td>
-                  <td style={tdStyle}>{formatCurrency(r.customers, 'en-US')}</td>
-                  <td style={tdStyle}>฿{formatCurrency(r.avgTicketThb)}</td>
-                  <td style={tdStyle}>
+                  <td style={tdNum}>฿{formatCurrency(r.revenueThb)}</td>
+                  <td style={tdNum}>{formatCurrency(r.customers, 'en-US')}</td>
+                  <td style={tdNum}>฿{formatCurrency(r.avgTicketThb)}</td>
+                  <td style={tdNum}>
                     {r.avgDailyCostThb != null && Number.isFinite(r.avgDailyCostThb)
                       ? `฿${formatCurrency(r.avgDailyCostThb)}`
                       : '—'}
                   </td>
-                  <td style={tdStyle}>
+                  <td style={tdArrow}>
                     <TrendOnlyCell trend={r.marginTrend} />
-                  </td>
-                  <td style={{ ...tdStyle, fontWeight: 600, color: healthColor(r.healthScore) }}>
-                    {r.healthScore != null ? Math.round(r.healthScore) : '—'}
                   </td>
                 </tr>
               ))}
