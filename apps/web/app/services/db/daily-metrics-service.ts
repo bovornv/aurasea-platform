@@ -25,6 +25,10 @@ const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
 ]);
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isTransientNetworkError,
+  logTransientNetworkOnce,
+} from '../../lib/network/transient-fetch-error';
 import type { DailyMetric, DailyMetricInput } from '../../models/daily-metrics';
 import { dailyMetricFromDb, dailyMetricToDb } from '../../models/daily-metrics';
 
@@ -157,7 +161,8 @@ export async function getFreshnessDatesFromRawTable(
       console.log('getFreshnessDatesFromRawTable branchId:', branchId, 'table:', table, 'accommodation data:', table === TABLE_ACCOMMODATION ? data : undefined, 'fnb data:', table === TABLE_FNB ? data : undefined);
     }
     if (error) {
-      if (process.env.NODE_ENV === 'development') {
+      logTransientNetworkOnce(`freshness:${table}:${branchId}`, error, 'DailyMetricsService');
+      if (process.env.NODE_ENV === 'development' && !isTransientNetworkError(error)) {
         console.warn('[DailyMetricsService] getFreshnessDatesFromRawTable error:', table, error.message);
       }
       return [];
@@ -262,7 +267,10 @@ export async function saveDailyMetric(
       if (error.code === '42501') {
         throw new Error('Permission error: You are not assigned to this branch');
       }
-      console.error('[DailyMetricsService] Failed to save daily metric:', error);
+      logTransientNetworkOnce(`save:${metric.branchId}`, error, 'DailyMetricsService');
+      if (!isTransientNetworkError(error)) {
+        console.error('[DailyMetricsService] Failed to save daily metric:', error);
+      }
       return false;
     }
 
@@ -276,7 +284,10 @@ export async function saveDailyMetric(
     if (err instanceof Error && (err.message.includes("don't have permission") || err.message.includes('not assigned'))) {
       throw err;
     }
-    console.error('[DailyMetricsService] Error saving daily metric:', err);
+    logTransientNetworkOnce(`saveCatch:${metric.branchId}`, err, 'DailyMetricsService');
+    if (!isTransientNetworkError(err)) {
+      console.error('[DailyMetricsService] Error saving daily metric:', err);
+    }
     return false;
   }
 }
@@ -319,7 +330,10 @@ export async function getTodayDailyMetric(
     if (fromAcc) return fromAcc;
     return await tryTable(TABLE_FNB);
   } catch (e) {
-    console.error('[DailyMetricsService] getTodayDailyMetric error:', e);
+    logTransientNetworkOnce(`today:${branchId}`, e, 'DailyMetricsService');
+    if (!isTransientNetworkError(e)) {
+      console.error('[DailyMetricsService] getTodayDailyMetric error:', e);
+    }
     return null;
   }
 }
@@ -358,7 +372,8 @@ export async function getLastEntryDate(
     if (fromAcc) return fromAcc;
     return await tryTable(TABLE_FNB);
   } catch (e) {
-    if (process.env.NODE_ENV === 'development') {
+    logTransientNetworkOnce(`lastEntry:${branchId}`, e, 'DailyMetricsService');
+    if (process.env.NODE_ENV === 'development' && !isTransientNetworkError(e)) {
       console.warn('[DailyMetricsService] getLastEntryDate error:', e);
     }
     return null;
@@ -415,8 +430,10 @@ export async function getDailyMetrics(
     const { data, error } = await query;
     
     if (error) {
-      console.error('[DailyMetricsService] Failed to get daily metrics:', error);
-      // Data Guard: Return empty array on error, don't fallback
+      logTransientNetworkOnce(`getDaily:${branchId}`, error, 'DailyMetricsService');
+      if (!isTransientNetworkError(error)) {
+        console.error('[DailyMetricsService] Failed to get daily metrics:', error);
+      }
       return [];
     }
     
@@ -461,8 +478,10 @@ export async function getDailyMetrics(
     
     return result;
   } catch (error) {
-    console.error('[DailyMetricsService] Error getting daily metrics:', error);
-    // Data Guard: Return empty array on error
+    logTransientNetworkOnce(`getDailyCatch:${branchId}`, error, 'DailyMetricsService');
+    if (!isTransientNetworkError(error)) {
+      console.error('[DailyMetricsService] Error getting daily metrics:', error);
+    }
     return [];
   }
 }
@@ -510,7 +529,10 @@ export async function getAccommodationMonthlyFixedCostStatus(
     const hasValue = currentValue != null;
     return { hasValue, dataDaysCount, currentValue };
   } catch (e) {
-    if (process.env.NODE_ENV === 'development') console.warn('[DailyMetricsService] getAccommodationMonthlyFixedCostStatus error:', e);
+    logTransientNetworkOnce(`mfcStatus:${branchId}`, e, 'DailyMetricsService');
+    if (process.env.NODE_ENV === 'development' && !isTransientNetworkError(e)) {
+      console.warn('[DailyMetricsService] getAccommodationMonthlyFixedCostStatus error:', e);
+    }
     return { hasValue: false, dataDaysCount: 0, currentValue: null };
   }
 }
@@ -555,7 +577,10 @@ export async function setAccommodationMonthlyFixedCost(
         .update({ monthly_fixed_cost: value } as never)
         .eq('id', (latest as { id: string }).id);
       if (updateError) {
-        console.error('[DailyMetricsService] setAccommodationMonthlyFixedCost update error:', updateError);
+        logTransientNetworkOnce(`mfcUp:${branchId}`, updateError, 'DailyMetricsService');
+        if (!isTransientNetworkError(updateError)) {
+          console.error('[DailyMetricsService] setAccommodationMonthlyFixedCost update error:', updateError);
+        }
         return { ok: false, error: updateError.message };
       }
     } else {
@@ -571,7 +596,10 @@ export async function setAccommodationMonthlyFixedCost(
         .from(TABLE_ACCOMMODATION as 'accommodation_daily_metrics')
         .insert(insertPayload as never);
       if (insertError) {
-        console.error('[DailyMetricsService] setAccommodationMonthlyFixedCost insert error:', insertError);
+        logTransientNetworkOnce(`mfcIn:${branchId}`, insertError, 'DailyMetricsService');
+        if (!isTransientNetworkError(insertError)) {
+          console.error('[DailyMetricsService] setAccommodationMonthlyFixedCost insert error:', insertError);
+        }
         return { ok: false, error: insertError.message };
       }
     }
@@ -579,7 +607,10 @@ export async function setAccommodationMonthlyFixedCost(
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error('[DailyMetricsService] setAccommodationMonthlyFixedCost error:', e);
+    logTransientNetworkOnce(`mfcCatch:${branchId}`, e, 'DailyMetricsService');
+    if (!isTransientNetworkError(e)) {
+      console.error('[DailyMetricsService] setAccommodationMonthlyFixedCost error:', e);
+    }
     return { ok: false, error: msg };
   }
 }

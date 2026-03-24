@@ -13,6 +13,8 @@ import { HtmlLangSetter } from './components/html-lang';
 import { AppErrorBoundary } from './components/error-boundary';
 import { KeyboardShortcutsProvider } from './components/keyboard-shortcuts-provider';
 import { RootContentWrapper } from './components/root-content-wrapper';
+import { ConnectivityProvider } from './contexts/connectivity-context';
+import { ConnectionStatusBanner } from './components/connection-status-banner';
 
 const BASE_URL = 'https://auraseaos.com';
 
@@ -106,27 +108,30 @@ export default function RootLayout({
         <AppErrorBoundary>
           <LanguageProvider>
             <HtmlLangSetter />
-            <TestModeProvider>
-              <UserSessionProvider>
-                <OrganizationProvider>
-                  <UserRoleProvider>
-                    <BusinessSetupProvider>
-                      <AlertStoreProvider>
-                        <KeyboardShortcutsProvider>
-                          <RouteGuard>
-                            <BranchPermissionGuard>
-                              <RootContentWrapper>
-                                {children}
-                              </RootContentWrapper>
-                            </BranchPermissionGuard>
-                          </RouteGuard>
-                        </KeyboardShortcutsProvider>
-                      </AlertStoreProvider>
-                    </BusinessSetupProvider>
-                  </UserRoleProvider>
-                </OrganizationProvider>
-              </UserSessionProvider>
-            </TestModeProvider>
+            <ConnectivityProvider>
+              <ConnectionStatusBanner />
+              <TestModeProvider>
+                <UserSessionProvider>
+                  <OrganizationProvider>
+                    <UserRoleProvider>
+                      <BusinessSetupProvider>
+                        <AlertStoreProvider>
+                          <KeyboardShortcutsProvider>
+                            <RouteGuard>
+                              <BranchPermissionGuard>
+                                <RootContentWrapper>
+                                  {children}
+                                </RootContentWrapper>
+                              </BranchPermissionGuard>
+                            </RouteGuard>
+                          </KeyboardShortcutsProvider>
+                        </AlertStoreProvider>
+                      </BusinessSetupProvider>
+                    </UserRoleProvider>
+                  </OrganizationProvider>
+                </UserSessionProvider>
+              </TestModeProvider>
+            </ConnectivityProvider>
           </LanguageProvider>
         </AppErrorBoundary>
       </body>
