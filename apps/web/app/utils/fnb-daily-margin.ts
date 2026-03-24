@@ -56,10 +56,14 @@ export function getFnbCurrentAndPrevDailyMetric(
   }
   const datesDesc = [...metricsByDate.keys()].sort((a, b) => b.localeCompare(a));
   const latestDate = datesDesc[0] ?? null;
-  const referenceDate =
+  const rawRef =
     referenceDateRaw && String(referenceDateRaw).trim() !== ''
       ? String(referenceDateRaw).slice(0, 10)
-      : latestDate;
+      : null;
+  // Match Branch Today revenue row: prefer a date that exists in fnb_daily_metrics. If the UI view
+  // (e.g. fnb_today_metrics_ui.metric_date) is missing or off from the feed, fall back to latest row.
+  const referenceDate =
+    rawRef && metricsByDate.has(rawRef) ? rawRef : latestDate;
 
   if (!referenceDate) return { current: null, previous: null };
 
