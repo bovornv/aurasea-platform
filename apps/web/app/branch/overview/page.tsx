@@ -833,9 +833,19 @@ export default function BranchOverviewPage() {
           ),
         ]);
         if (cancelled) return;
+        const branchLabel = (branch?.branchName || '').trim() || 'This branch';
         const working = Array.isArray(workingRes.data)
           ? workingRes.data
               .map((r: any) => String(r.highlight_text ?? '').trim())
+              .map((txt: string) => {
+                if (/performance stable across branches/i.test(txt)) {
+                  return `${branchLabel} operating normally — no major issues detected`;
+                }
+                if (/no major operational risks detected/i.test(txt)) {
+                  return `${branchLabel} operating normally — no major issues detected`;
+                }
+                return txt;
+              })
               .filter(Boolean)
               .slice(0, 3)
           : [];
