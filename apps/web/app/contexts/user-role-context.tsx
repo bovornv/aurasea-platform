@@ -9,10 +9,9 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname } from 'next/navigation';
 import { useUserSession } from './user-session-context';
 import { useOrganization } from './organization-context';
-import { useCurrentBranch } from '../hooks/use-current-branch';
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
 import { resolveAccessViaRpc } from '../services/access-resolution-service';
 import { devLog } from '../lib/dev-log';
@@ -50,6 +49,15 @@ export function resolveEffectiveRole(
   if (org === 'owner' || org === 'admin') return org as EffectiveRoleValue;
   if (branch && (branch === 'manager' || branch === 'staff' || branch === 'owner')) return branch as EffectiveRoleValue;
   return null;
+}
+
+/** Branch segment from /org/:orgId/branch/:branchId/... (must not call useCurrentBranch here — provider runs outside its own context). */
+function branchIdFromOrgBranchPath(pathname: string | null): string | null {
+  if (!pathname) return null;
+  const m = pathname.match(/\/org\/[^/]+\/branch\/([^/]+)/);
+  const id = m?.[1];
+  if (!id || id === '__all__') return null;
+  return id;
 }
 
 function effectiveRoleFromRpc(
@@ -111,9 +119,10 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
   const { isLoggedIn, email } = useUserSession();
   const { activeOrganizationId } = useOrganization();
   const params = useParams();
+  const pathname = usePathname();
   const orgIdFromUrl = (params?.orgId as string) ?? null;
-  const branchIdFromUrl = (params?.branchId as string) ?? null;
-  const { branch: currentBranch, branchId: currentBranchId } = useCurrentBranch();
+  const branchIdFromParams = (params?.branchId as string) ?? null;
+  const branchIdFromPath = branchIdFromOrgBranchPath(pathname);
   const [role, setRole] = useState<UserRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -167,11 +176,9 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
       // URL org wins over context during refresh / tab restore until OrganizationContext syncs.
       const targetOrgId = orgIdFromUrl ?? activeOrganizationId ?? null;
       const targetBranchId =
-        branchIdFromUrl && branchIdFromUrl !== '__all__'
-          ? branchIdFromUrl
-          : currentBranchId && currentBranchId !== '__all__'
-            ? currentBranchId
-            : null;
+        branchIdFromParams && branchIdFromParams !== '__all__'
+          ? branchIdFromParams
+          : branchIdFromPath;
 
       const { orgAccess, branchAccess, accessible } = await resolveAccessViaRpc(supabase, {
         organizationId: targetOrgId,
@@ -202,9 +209,7 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
 
       const branchRoleForCurrent = targetBranchId
         ? (accessible.branch_memberships ?? []).find((m) => m.branch_id === targetBranchId)?.role ?? null
-        : currentBranch?.id != null
-          ? (accessible.branch_memberships ?? []).find((m) => m.branch_id === currentBranch.id)?.role ?? null
-          : null;
+        : null;
 
       let effective: EffectiveRoleValue | null = resolveEffectiveRole(
         organizationMemberRole,
@@ -282,15 +287,7 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [
-    isLoggedIn,
-    email,
-    activeOrganizationId,
-    orgIdFromUrl,
-    branchIdFromUrl,
-    currentBranchId,
-    currentBranch?.id,
-  ]);
+  }, [isLoggedIn, email, activeOrganizationId, orgIdFromUrl, branchIdFromParams, branchIdFromPath]);
 
   useEffect(() => {
     fetchUserRole();
