@@ -1,7 +1,7 @@
 /**
  * Branch Anomaly Signals Service
  *
- * Read-only: branch_business_status for latest revenue + health as confidence proxy.
+ * Read-only: `branch_business_status_api` for latest revenue + health as confidence proxy.
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
@@ -12,6 +12,12 @@ import {
   POSTGREST_RESOURCE_KEYS,
 } from '../lib/supabase/postgrest-missing-resource';
 import type { AlertContract } from '../../../../core/sme-os/contracts/alerts';
+import {
+  logBranchBusinessStatusApiDev,
+  SELECT_BRANCH_BUSINESS_STATUS_API_ANOMALY,
+  TABLE_BRANCH_BUSINESS_STATUS_API,
+  type BranchBusinessStatusApiUiSurface,
+} from './db/branch-business-status-api-columns';
 
 export interface BranchAnomalySignalRow {
   branch_id: string;
@@ -28,50 +34,70 @@ export interface AnomalyAlert {
   severity: 'critical' | 'warning' | 'informational';
 }
 
+const latestAnomalyInFlight = new Map<string, Promise<BranchAnomalySignalRow | null>>();
+
 /**
- * Latest revenue + health from branch_business_status.
+ * Latest revenue + health from `branch_business_status_api`.
  */
 export async function getLatestAnomalySignal(
-  branchId: string
+  branchId: string,
+  opts?: { uiSurface?: BranchBusinessStatusApiUiSurface }
 ): Promise<BranchAnomalySignalRow | null> {
   if (!branchId || !isSupabaseAvailable()) return null;
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
-  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status)) {
-    return null;
-  }
+  const inflight = latestAnomalyInFlight.get(branchId);
+  if (inflight) return inflight;
 
-  const { data, error } = await supabase
-    .from('branch_business_status')
-    .select('branch_id, metric_date, revenue_thb, health_score')
-    .eq('branch_id', branchId)
-    .maybeSingle();
-
-  if (error) {
-    if (isPostgrestObjectMissingError(error)) {
-      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
-    } else if (process.env.NODE_ENV === 'development') {
-      console.warn('[AnomalySignals] branch_business_status error:', error.message);
+  const promise = (async (): Promise<BranchAnomalySignalRow | null> => {
+    if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api)) {
+      return null;
     }
-    return null;
-  }
-  if (!data) return null;
-  const row = data as {
-    branch_id: string;
-    metric_date?: string | null;
-    revenue_thb?: number | null;
-    health_score?: number | null;
-  };
-  const rev = row.revenue_thb;
-  return {
-    branch_id: row.branch_id,
-    metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : '',
-    total_revenue_thb: rev != null ? Number(rev) : null,
-    revenue_avg_7d: null,
-    revenue_anomaly_score: null,
-    confidence_score: row.health_score != null ? Number(row.health_score) / 100 : null,
-  };
+
+    const select = SELECT_BRANCH_BUSINESS_STATUS_API_ANOMALY;
+    const { data, error } = await supabase
+      .from(TABLE_BRANCH_BUSINESS_STATUS_API)
+      .select(select)
+      .eq('branch_id', branchId)
+      .maybeSingle();
+
+    logBranchBusinessStatusApiDev('anomaly_signals', {
+      select,
+      branchIds: [branchId],
+      data,
+      error,
+      uiSurface: opts?.uiSurface ?? 'unknown',
+    });
+
+    if (error) {
+      if (isPostgrestObjectMissingError(error)) {
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api);
+      }
+      return null;
+    }
+    if (!data) return null;
+    const row = data as {
+      branch_id: string;
+      metric_date?: string | null;
+      revenue_thb?: number | null;
+      health_score?: number | null;
+    };
+    const rev = row.revenue_thb;
+    return {
+      branch_id: row.branch_id,
+      metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : '',
+      total_revenue_thb: rev != null ? Number(rev) : null,
+      revenue_avg_7d: null,
+      revenue_anomaly_score: null,
+      confidence_score: row.health_score != null ? Number(row.health_score) / 100 : null,
+    };
+  })().finally(() => {
+    latestAnomalyInFlight.delete(branchId);
+  });
+
+  latestAnomalyInFlight.set(branchId, promise);
+  return promise;
 }
 
 /**

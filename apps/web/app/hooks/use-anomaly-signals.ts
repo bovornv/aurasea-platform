@@ -28,7 +28,8 @@ export interface UseAnomalySignalsResult {
 
 export function useAnomalySignals(
   branchId: string | null,
-  locale: 'th' | 'en' = 'en'
+  locale: 'th' | 'en' = 'en',
+  moduleType?: 'accommodation' | 'fnb' | null
 ): UseAnomalySignalsResult {
   const [anomaly, setAnomaly] = useState<BranchAnomalySignalRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +46,10 @@ export function useAnomalySignals(
 
     (async () => {
       try {
-        const row = await getLatestAnomalySignal(branchId);
+        const row = await getLatestAnomalySignal(branchId, {
+          uiSurface:
+            moduleType === 'fnb' ? 'fnb' : moduleType === 'accommodation' ? 'accommodation' : 'unknown',
+        });
         if (!cancelled) setAnomaly(row);
       } catch {
         if (!cancelled) setAnomaly(null);
@@ -57,7 +61,7 @@ export function useAnomalySignals(
     return () => {
       cancelled = true;
     };
-  }, [branchId]);
+  }, [branchId, moduleType]);
 
   const anomalyAlerts = getAnomalyAlertsFromSignal(anomaly, branchId ?? '', locale);
   const anomalyAlertsAsContracts =

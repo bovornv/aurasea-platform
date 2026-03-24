@@ -6,7 +6,8 @@
 const missing = new Set<string>();
 
 export const POSTGREST_RESOURCE_KEYS = {
-  branch_business_status: 'table:branch_business_status',
+  /** Stable PostgREST contract: `public.branch_business_status_api` */
+  branch_business_status_api: 'table:branch_business_status_api',
   alerts_today: 'table:alerts_today',
   get_alerts_critical: 'rpc:get_alerts_critical',
   today_priorities_view: 'table:today_priorities_view',

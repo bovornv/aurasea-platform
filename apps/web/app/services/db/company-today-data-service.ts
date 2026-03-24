@@ -1,5 +1,5 @@
 /**
- * Company Today — branch_business_status + alerts_* (no today_summary_clean_safe).
+ * Company Today — `branch_business_status_api` + alerts_* (no today_summary_clean_safe).
  * When views/RPC are missing in PostgREST, we remember per-session and fall back to branches + daily_metrics.
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
@@ -10,6 +10,11 @@ import {
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
 import { normalizeProfitabilityTrend, type ProfitabilityTrend } from './latest-metrics-service';
+import {
+  logBranchBusinessStatusApiDev,
+  SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY,
+  TABLE_BRANCH_BUSINESS_STATUS_API,
+} from './branch-business-status-api-columns';
 
 const companyTodayBundleInFlight = new Map<string, Promise<CompanyTodayBundle>>();
 
@@ -18,21 +23,23 @@ export interface NormalizedBusinessRow {
   branchName: string;
   branchType: 'accommodation' | 'fnb';
   healthScore: number | null;
-  occupancyPct: number;
+  /** Null when API view omits hotel KPIs (slim `branch_business_status_api` row). */
+  occupancyPct: number | null;
   revenueThb: number;
-  adrThb: number;
+  adrThb: number | null;
   roomsSold: number;
   roomsTotal: number;
-  revparThb: number;
-  customers: number;
-  avgTicketThb: number;
-  /** Accommodation: ↑ / → / ↓ from branch_business_status.profitability_trend */
+  revparThb: number | null;
+  /** F&B; null for accommodation or missing in API. */
+  customers: number | null;
+  avgTicketThb: number | null;
+  /** Accommodation: ↑ / → / ↓ from legacy view columns (API projection may omit). */
   profitabilityTrend: ProfitabilityTrend | null;
   /** F&B: ↑ / → / ↓ from margin_trend */
   marginTrend: ProfitabilityTrend | null;
   /** F&B: avg daily cost (฿) */
   avgDailyCostThb: number | null;
-  /** From branch_business_status (YYYY-MM-DD or ISO). */
+  /** From API / legacy (YYYY-MM-DD or ISO). */
   metricDate: string | null;
   /** Calendar days since metric / last update; null if unknown. */
   daysSinceUpdate: number | null;
@@ -276,8 +283,17 @@ function normalizeBusinessRow(r: Record<string, unknown>, branchNameFallback: st
       (roomsTotal > 0 && occ > 0 ? Math.round((occ / 100) * roomsTotal) : 0),
     roomsTotal,
     revparThb,
-    customers: Math.round(pickNum(r, 'customers', 'total_customers', 'customers_7d', 'customer_count')),
-    avgTicketThb: pickNum(r, 'avg_ticket', 'average_ticket', 'avg_ticket_thb'),
+    customers:
+      bt === 'fnb'
+        ? (() => {
+            const c = pickNumOrNull(r, 'customers', 'total_customers', 'customers_7d', 'customer_count');
+            return c != null ? Math.round(c) : null;
+          })()
+        : null,
+    avgTicketThb:
+      bt === 'fnb'
+        ? pickNumOrNull(r, 'avg_ticket', 'average_ticket', 'avg_ticket_thb')
+        : null,
     profitabilityTrend,
     marginTrend,
     avgDailyCostThb,
@@ -285,6 +301,92 @@ function normalizeBusinessRow(r: Record<string, unknown>, branchNameFallback: st
     daysSinceUpdate,
     freshnessStatus: pickStr(r, 'freshness_status', 'data_freshness', 'freshness') || null,
   };
+}
+
+/** Metric date from slim API row: `metric_date`, else leading YYYY-MM-DD of `updated_at`. */
+function metricDateFromApiRow(r: Record<string, unknown>): string {
+  let metricDateRaw = pickStr(r, 'metric_date', 'as_of_date', 'snapshot_date', 'data_date');
+  if (!metricDateRaw) {
+    const u = pickStr(r, 'updated_at');
+    const m = u.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (m) metricDateRaw = m[1];
+  }
+  return metricDateRaw;
+}
+
+/**
+ * Normalize a row from `branch_business_status_api` (no branch_type / hotel KPI columns).
+ * `branchType` comes from `branches.module_type`.
+ */
+function normalizeBusinessRowFromApiView(
+  r: Record<string, unknown>,
+  branchType: 'accommodation' | 'fnb',
+  branchNameFallback: string
+): NormalizedBusinessRow | null {
+  const branchId = pickStr(r, 'branch_id', 'branchId');
+  if (!branchId) return null;
+
+  const revenueThb = pickNum(r, 'revenue_thb', 'revenue');
+  const healthFromRow = pickNumOrNull(r, 'health_score', 'healthScore');
+  const healthScore =
+    healthFromRow != null && !Number.isNaN(healthFromRow)
+      ? Math.min(100, Math.max(0, healthFromRow))
+      : null;
+
+  const metricDateRaw = metricDateFromApiRow(r);
+  let daysSinceUpdate = pickNumOrNull(
+    r,
+    'days_since_update',
+    'days_since_metric',
+    'days_since_snapshot',
+    'stale_days'
+  );
+  if (daysSinceUpdate == null && metricDateRaw) {
+    daysSinceUpdate = daysSinceMetricDate(metricDateRaw);
+  }
+
+  const custRaw = pickNumOrNull(r, 'customers', 'total_customers');
+  const avgRaw = pickNumOrNull(r, 'avg_ticket', 'average_ticket');
+
+  return {
+    branchId,
+    branchName: pickStr(r, 'branch_name', 'branchName', 'name') || branchNameFallback,
+    branchType,
+    healthScore,
+    occupancyPct: null,
+    revenueThb,
+    adrThb: null,
+    roomsSold: 0,
+    roomsTotal: 0,
+    revparThb: null,
+    customers: branchType === 'fnb' ? (custRaw != null ? Math.round(custRaw) : null) : null,
+    avgTicketThb: branchType === 'fnb' ? avgRaw : null,
+    profitabilityTrend: null,
+    marginTrend: null,
+    avgDailyCostThb: null,
+    metricDate: metricDateRaw || null,
+    daysSinceUpdate,
+    freshnessStatus: pickStr(r, 'status_label', 'status_subtitle', 'freshness_status') || null,
+  };
+}
+
+function branchModuleTypeMapFromBranches(
+  branchRows: Record<string, unknown>[],
+  allowedIds: string[],
+  organizationId: string | null
+): Map<string, 'accommodation' | 'fnb'> {
+  const map = new Map<string, 'accommodation' | 'fnb'>();
+  for (const b of branchRows) {
+    const id = pickStr(b, 'id');
+    if (!id || !allowedIds.includes(id)) continue;
+    if (organizationId) {
+      const oid = pickStr(b, 'organization_id', 'organizationId');
+      if (oid && oid !== organizationId.trim()) continue;
+    }
+    const bt = normalizeBranchType(pickStr(b, 'module_type', 'moduleType', 'business_type'));
+    if (bt) map.set(id, bt);
+  }
+  return map;
 }
 
 function branchNameFromLocal(branchId: string): string {
@@ -435,14 +537,18 @@ async function fetchCompanyTodayBundleCore(
   const idFilter = branchIds;
   const getAlertsCriticalArgs = { branch_ids: idFilter } as never;
 
-  const skipBs = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
+  const skipBs = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api);
   const skipCrit = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.get_alerts_critical);
   const skipToday = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.alerts_today);
 
-  const [bsRes, critRes, todayRes] = await Promise.all([
+  const [bsRes, branchesRes, critRes, todayRes] = await Promise.all([
     skipBs
       ? Promise.resolve({ data: null, error: null } as const)
-      : supabase.from('branch_business_status').select('*').in('branch_id', idFilter),
+      : supabase
+          .from(TABLE_BRANCH_BUSINESS_STATUS_API)
+          .select(SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY)
+          .in('branch_id', idFilter),
+    supabase.from('branches').select('id,module_type,branch_name,name,organization_id').in('id', idFilter),
     skipCrit
       ? Promise.resolve({ data: null, error: null } as const)
       : supabase.rpc('get_alerts_critical', getAlertsCriticalArgs),
@@ -450,6 +556,17 @@ async function fetchCompanyTodayBundleCore(
       ? Promise.resolve({ data: null, error: null } as const)
       : supabase.from('alerts_today').select('*').in('branch_id', idFilter),
   ]);
+
+  if (!skipBs) {
+    logBranchBusinessStatusApiDev('company_today_bundle', {
+      select: SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY,
+      branchIds: idFilter,
+      organizationId,
+      data: bsRes.data,
+      error: bsRes.error,
+      uiSurface: 'company_today',
+    });
+  }
 
   const logDev = (label: string, res: { data?: unknown; error?: { message?: string } | null }) => {
     if (process.env.NODE_ENV !== 'development') return;
@@ -461,7 +578,11 @@ async function fetchCompanyTodayBundleCore(
     }
   };
 
-  if (!skipBs) logDev('branch_business_status', bsRes);
+  const branchRows = asRecordArray(branchesRes.data);
+  const moduleByBranch = branchModuleTypeMapFromBranches(branchRows, idFilter, organizationId);
+  if (branchesRes.error && process.env.NODE_ENV === 'development') {
+    console.warn('[CompanyToday] branches (module_type) error:', branchesRes.error.message ?? null);
+  }
   if (!skipToday) logDev('alerts_today', todayRes);
   if (!skipCrit) {
     if (process.env.NODE_ENV === 'development') {
@@ -484,10 +605,10 @@ async function fetchCompanyTodayBundleCore(
 
   if (bsRes.error) {
     if (isPostgrestObjectMissingError(bsRes.error)) {
-      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api);
     } else {
-      errors.push(`branch_business_status:${bsRes.error.message}`);
-      logSupabaseStructured('branch_business_status', idFilter, bsRes.error);
+      errors.push(`branch_business_status_api:${bsRes.error.message}`);
+      logSupabaseStructured('branch_business_status_api', idFilter, bsRes.error);
     }
   }
   if (critRes.error) {
@@ -509,13 +630,23 @@ async function fetchCompanyTodayBundleCore(
 
   let bsRows = asRecordArray(bsRes.data);
   if (!skipBs && bsRows.length === 0 && organizationId) {
-    const orgRes = await supabase.from('branch_business_status').select('*').eq('organization_id', organizationId);
-    logDev('branch_business_status (org fallback)', orgRes);
+    const orgRes = await supabase
+      .from(TABLE_BRANCH_BUSINESS_STATUS_API)
+      .select(SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY)
+      .eq('organization_id', organizationId);
+    logBranchBusinessStatusApiDev('company_today_org_fallback', {
+      select: SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY,
+      branchIds: idFilter,
+      organizationId,
+      data: orgRes.data,
+      error: orgRes.error,
+      uiSurface: 'company_today',
+    });
     if (orgRes.error) {
       if (isPostgrestObjectMissingError(orgRes.error)) {
-        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api);
       } else {
-        logSupabaseStructured('branch_business_status(org_fallback)', idFilter, orgRes.error);
+        logSupabaseStructured('branch_business_status_api(org_fallback)', idFilter, orgRes.error);
       }
     } else {
       bsRows = asRecordArray(orgRes.data).filter((r) => idFilter.includes(pickStr(r, 'branch_id', 'branchId')));
@@ -530,7 +661,16 @@ async function fetchCompanyTodayBundleCore(
   const businessStatus: NormalizedBusinessRow[] = [];
   for (const r of bsRows) {
     const bid = pickStr(r, 'branch_id', 'branchId');
-    const normalized = normalizeBusinessRow(r, branchNameFromLocal(bid));
+    const btFromRow = normalizeBranchType(
+      pickStr(r, 'branch_type', 'branchType', 'module_type', 'business_type')
+    );
+    const fromMap = moduleByBranch.get(bid);
+    const normalized =
+      btFromRow != null
+        ? normalizeBusinessRow(r, branchNameFromLocal(bid))
+        : fromMap != null
+          ? normalizeBusinessRowFromApiView(r, fromMap, branchNameFromLocal(bid))
+          : null;
     if (normalized) businessStatus.push(normalized);
   }
 

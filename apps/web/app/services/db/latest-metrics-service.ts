@@ -13,6 +13,12 @@ import {
   markPostgrestResourceMissing,
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
+import {
+  logBranchBusinessStatusApiDev,
+  SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY,
+  TABLE_BRANCH_BUSINESS_STATUS_API,
+  type BranchBusinessStatusApiUiSurface,
+} from './branch-business-status-api-columns';
 
 export type BranchModuleType = 'accommodation' | 'fnb';
 
@@ -197,8 +203,8 @@ export async function getOperatingStatusData(
 }
 
 /**
- * Branch Today KPI row — sourced from branch_business_status (latest per branch).
- * Deltas / split revenue may be null when not exposed by that view.
+ * Branch Today KPI row — sourced from `branch_business_status_api` (slim columns).
+ * Hotel occupancy / ADR / RevPAR / rooms come from other sources when needed; often null here.
  */
 export interface TodaySummaryRow {
   branch_id: string;
@@ -220,8 +226,7 @@ export interface TodaySummaryRow {
   fnb_revenue?: number | null;
 }
 
-const BRANCH_BUSINESS_STATUS_TODAY_SELECT =
-  'branch_id, metric_date, revenue_thb, occupancy_pct, adr, revpar, health_score, rooms_sold, rooms_total, customers, avg_ticket';
+const todaySummaryInFlight = new Map<string, Promise<TodaySummaryRow | null>>();
 
 /** Trend series for Trends page: one value per day (oldest first). dates[i] = YYYY-MM-DD for values[i]. */
 export interface BranchTrendSeries {
@@ -323,9 +328,13 @@ export async function getBranchTrendSeriesWithFallback(
 }
 
 /**
- * Latest branch KPIs from branch_business_status (one row per branch).
+ * Latest branch KPIs from `branch_business_status_api` (one row per branch).
+ * Deduplicates concurrent calls (e.g. React StrictMode double mount).
  */
-export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow | null> {
+export async function getTodaySummary(
+  branchId: string,
+  opts?: { uiSurface?: BranchBusinessStatusApiUiSurface }
+): Promise<TodaySummaryRow | null> {
   if (branchId == null || branchId === '') return null;
   rejectMockBranchId(branchId);
   if (!isSupabaseAvailable()) return null;
@@ -333,49 +342,63 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
-  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status)) {
-    return null;
-  }
+  const inflight = todaySummaryInFlight.get(branchId);
+  if (inflight) return inflight;
 
-  const { data, error } = await supabase
-    .from('branch_business_status')
-    .select(BRANCH_BUSINESS_STATUS_TODAY_SELECT)
-    .eq('branch_id', branchId)
-    .maybeSingle();
-
-  if (error) {
-    if (isPostgrestObjectMissingError(error)) {
-      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
-    } else if (process.env.NODE_ENV === 'development') {
-      console.warn('[LatestMetricsService] branch_business_status error:', error.message);
+  const promise = (async (): Promise<TodaySummaryRow | null> => {
+    if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api)) {
+      return null;
     }
-    return null;
-  }
 
-  if (!data) return null;
-  const row = data as Record<string, unknown>;
-  const occRaw = row.occupancy_pct != null ? Number(row.occupancy_pct) : null;
-  const occPct =
-    occRaw != null && !Number.isNaN(occRaw) ? (occRaw > 0 && occRaw <= 1 ? occRaw * 100 : occRaw) : null;
-  const revThb = row.revenue_thb != null ? Number(row.revenue_thb) : null;
-  return {
-    branch_id: branchId,
-    metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
-    total_revenue: revThb,
-    revenue_yesterday: null,
-    revenue_delta_day: null,
-    occupancy_rate: occPct,
-    occupancy_delta_week: null,
-    rooms_sold: row.rooms_sold != null ? Number(row.rooms_sold) : null,
-    rooms_available: row.rooms_total != null ? Number(row.rooms_total) : null,
-    adr: row.adr != null ? Number(row.adr) : null,
-    revpar: row.revpar != null ? Number(row.revpar) : null,
-    customers: row.customers != null ? Number(row.customers) : null,
-    avg_ticket: row.avg_ticket != null ? Number(row.avg_ticket) : null,
-    health_score: row.health_score != null ? Number(row.health_score) : null,
-    accommodation_revenue: null,
-    fnb_revenue: null,
-  };
+    const select = SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY;
+    const { data, error } = await supabase
+      .from(TABLE_BRANCH_BUSINESS_STATUS_API)
+      .select(select)
+      .eq('branch_id', branchId)
+      .maybeSingle();
+
+    logBranchBusinessStatusApiDev('branch_today_summary', {
+      select,
+      branchIds: [branchId],
+      data,
+      error,
+      uiSurface: opts?.uiSurface ?? 'unknown',
+    });
+
+    if (error) {
+      if (isPostgrestObjectMissingError(error)) {
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api);
+      }
+      return null;
+    }
+
+    if (!data) return null;
+    const row = data as Record<string, unknown>;
+    const revThb = row.revenue_thb != null ? Number(row.revenue_thb) : null;
+    return {
+      branch_id: branchId,
+      metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
+      total_revenue: revThb,
+      revenue_yesterday: null,
+      revenue_delta_day: null,
+      occupancy_rate: null,
+      occupancy_delta_week: null,
+      rooms_sold: null,
+      rooms_available: null,
+      adr: null,
+      revpar: null,
+      customers: row.customers != null ? Number(row.customers) : null,
+      avg_ticket: row.avg_ticket != null ? Number(row.avg_ticket) : null,
+      health_score: row.health_score != null ? Number(row.health_score) : null,
+      accommodation_revenue: null,
+      fnb_revenue: null,
+    };
+  })().finally(() => {
+    todaySummaryInFlight.delete(branchId);
+  });
+
+  todaySummaryInFlight.set(branchId, promise);
+  return promise;
 }
 
 /** @deprecated Use getOperatingStatusData + raw row for cards. Kept for compatibility. */

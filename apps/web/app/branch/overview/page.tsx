@@ -132,7 +132,8 @@ export default function BranchOverviewPage() {
   // Early signal from branch_anomaly_signals (intelligence engine)
   const { anomaly: anomalySignal, confidenceScore: anomalyConfidenceScore, anomalyAlertsAsContracts } = useAnomalySignals(
     branch?.id ?? null,
-    locale === 'th' ? 'th' : 'en'
+    locale === 'th' ? 'th' : 'en',
+    branch?.moduleType === 'fnb' || branch?.moduleType === 'accommodation' ? branch.moduleType : null
   );
 
   useEffect(() => {
@@ -408,7 +409,9 @@ export default function BranchOverviewPage() {
       }
     }
     getBranchLearningStatus(branch.id).then(setLearningStatus);
-    getTodaySummary(branch.id).then(setTodaySummaryRow);
+    getTodaySummary(branch.id, {
+      uiSurface: branch.moduleType === 'fnb' ? 'fnb' : branch.moduleType === 'accommodation' ? 'accommodation' : 'unknown',
+    }).then(setTodaySummaryRow);
     getFreshnessDatesFromRawTable(branch.id, branch.moduleType).then((dates) => {
       setFreshnessDatesFromRaw(dates);
       setFreshnessLoaded(true);
@@ -472,14 +475,12 @@ export default function BranchOverviewPage() {
     }).catch(() => setKpiRecommendations([]));
   }, [branch?.id]);
 
-  // Business Health Score card: from accommodation_health_today (accommodation) or fnb_health_today (F&B) only
+  // F&B summary bar: health mirrors fnb_operating_status. Accommodation health is set in refreshOperatingStatus (branch_business_status_api) only — avoids duplicate fetch vs StrictMode.
   useEffect(() => {
     if (!branch?.id) return;
-    if (branch.moduleType === 'accommodation') {
-      getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
-    } else if (branch.moduleType === 'fnb') {
+    if (branch.moduleType === 'fnb') {
       setHealthScore(fnbOperatingStatus?.health_score != null ? Number(fnbOperatingStatus.health_score) : null);
-    } else {
+    } else if (branch.moduleType !== 'accommodation') {
       setHealthScore(null);
     }
   }, [branch?.id, branch?.moduleType, fnbOperatingStatus?.health_score]);

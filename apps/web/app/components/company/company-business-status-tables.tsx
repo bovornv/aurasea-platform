@@ -169,7 +169,7 @@ function BranchNameCell({ row, locale }: { row: NormalizedBusinessRow; locale: s
 }
 
 interface Props {
-  /** From `branch_business_status` (normalized). */
+  /** From `branch_business_status_api` (normalized). */
   rows: NormalizedBusinessRow[];
   locale?: string;
 }
@@ -201,8 +201,8 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
       {accommodationRows.length === 0 ? (
         <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
           {isTh
-            ? 'ไม่มีแถว branch_type = accommodation ใน branch_business_status'
-            : 'No accommodation branches in branch_business_status.'}
+            ? 'ไม่มีแถวที่พักใน branch_business_status_api'
+            : 'No accommodation branches in branch_business_status_api.'}
         </p>
       ) : (
         <div
@@ -234,9 +234,19 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
                     <BranchNameCell row={r} locale={locale} />
                   </td>
                   <td style={tdNum}>฿{formatCurrency(r.revenueThb)}</td>
-                  <td style={tdNum}>{Math.round(r.occupancyPct)}%</td>
-                  <td style={tdNum}>฿{formatCurrency(r.adrThb)}</td>
-                  <td style={tdNum}>฿{formatCurrency(r.revparThb)}</td>
+                  <td style={tdNum}>
+                    {r.occupancyPct != null && Number.isFinite(r.occupancyPct)
+                      ? `${Math.round(r.occupancyPct)}%`
+                      : '—'}
+                  </td>
+                  <td style={tdNum}>
+                    {r.adrThb != null && Number.isFinite(r.adrThb) ? `฿${formatCurrency(r.adrThb)}` : '—'}
+                  </td>
+                  <td style={tdNum}>
+                    {r.revparThb != null && Number.isFinite(r.revparThb)
+                      ? `฿${formatCurrency(r.revparThb)}`
+                      : '—'}
+                  </td>
                   <td style={tdArrow}>
                     <TrendOnlyCell trend={r.profitabilityTrend} />
                   </td>
@@ -251,8 +261,8 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
       {fnbRows.length === 0 ? (
         <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
           {isTh
-            ? 'ไม่มีแถว branch_type = fnb ใน branch_business_status'
-            : 'No F&B branches in branch_business_status.'}
+            ? 'ไม่มีแถว F&B ใน branch_business_status_api'
+            : 'No F&B branches in branch_business_status_api.'}
         </p>
       ) : (
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
@@ -278,8 +288,16 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
                     <BranchNameCell row={r} locale={locale} />
                   </td>
                   <td style={tdNum}>฿{formatCurrency(r.revenueThb)}</td>
-                  <td style={tdNum}>{formatCurrency(r.customers, 'en-US')}</td>
-                  <td style={tdNum}>฿{formatCurrency(r.avgTicketThb)}</td>
+                  <td style={tdNum}>
+                    {r.customers != null && Number.isFinite(r.customers)
+                      ? formatCurrency(r.customers, 'en-US')
+                      : '—'}
+                  </td>
+                  <td style={tdNum}>
+                    {r.avgTicketThb != null && Number.isFinite(r.avgTicketThb)
+                      ? `฿${formatCurrency(r.avgTicketThb)}`
+                      : '—'}
+                  </td>
                   <td style={tdNum}>
                     {r.avgDailyCostThb != null && Number.isFinite(r.avgDailyCostThb)
                       ? `฿${formatCurrency(r.avgDailyCostThb)}`
