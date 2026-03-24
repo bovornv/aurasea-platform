@@ -31,40 +31,60 @@ COMMENT ON VIEW today_priorities IS
 GRANT SELECT ON today_priorities TO anon, authenticated;
 
 -- Clean feed for redesigned UI (numbered “what to do” + cards)
+-- DROP + CREATE only (not OR REPLACE) when column set changes.
 DROP VIEW IF EXISTS today_priorities_clean CASCADE;
 
 CREATE VIEW today_priorities_clean AS
 SELECT
-  COALESCE(f.organization_id, b.organization_id) AS organization_id,
-  f.branch_id,
-  f.branch_name,
-  f.alert_type,
-  COALESCE(NULLIF(TRIM(BOTH FROM f.recommended_action), ''), ''::text) AS action_text,
-  (
-    CASE
-      WHEN NULLIF(TRIM(BOTH FROM COALESCE(f.branch_name, ''::text)), '') IS NULL THEN
-        TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text))
-      ELSE
-        TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text))
-        || ' — '::text
-        || TRIM(BOTH FROM f.branch_name)
-    END
-  ) AS short_title,
-  COALESCE(f.impact_estimate_thb, 0::numeric) AS impact_estimate_thb,
-  (
-    CASE
-      WHEN LOWER(COALESCE(f.alert_type, ''::text)) LIKE '%opportunity%'
-        OR LOWER(COALESCE(f.alert_stream, ''::text)) LIKE '%opportunity%'
-      THEN 'opportunity'::text
-      ELSE 'at risk'::text
-    END
-  ) AS impact_label,
-  COALESCE(NULLIF(TRIM(BOTH FROM f.cause), ''), ''::text) AS reason_short,
-  f.priority_score AS sort_score
-FROM alerts_fix_this_first f
-LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM f.branch_id::text);
+  ranked.organization_id,
+  ranked.branch_id,
+  ranked.branch_name,
+  ranked.alert_type,
+  ranked.action_text,
+  ranked.short_title,
+  ranked.impact_estimate_thb,
+  ranked.impact_label,
+  ranked.reason_short,
+  ranked.sort_score,
+  ranked.rank
+FROM (
+  SELECT
+    COALESCE(f.organization_id, b.organization_id) AS organization_id,
+    f.branch_id,
+    f.branch_name,
+    f.alert_type,
+    COALESCE(NULLIF(TRIM(BOTH FROM f.recommended_action), ''), ''::text) AS action_text,
+    (
+      CASE
+        WHEN NULLIF(TRIM(BOTH FROM COALESCE(f.branch_name, ''::text)), '') IS NULL THEN
+          TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text))
+        ELSE
+          TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text))
+          || ' — '::text
+          || TRIM(BOTH FROM f.branch_name)
+      END
+    ) AS short_title,
+    COALESCE(f.impact_estimate_thb, 0::numeric) AS impact_estimate_thb,
+    (
+      CASE
+        WHEN LOWER(COALESCE(f.alert_type, ''::text)) LIKE '%opportunity%'
+          OR LOWER(COALESCE(f.alert_stream, ''::text)) LIKE '%opportunity%'
+        THEN 'opportunity'::text
+        ELSE 'at risk'::text
+      END
+    ) AS impact_label,
+    COALESCE(NULLIF(TRIM(BOTH FROM f.cause), ''), ''::text) AS reason_short,
+    f.priority_score AS sort_score,
+    ROW_NUMBER() OVER (
+      PARTITION BY COALESCE(f.organization_id, b.organization_id)
+      ORDER BY f.priority_score DESC NULLS LAST, f.branch_id::text, COALESCE(f.alert_type, ''::text)
+    )::integer AS rank
+  FROM alerts_fix_this_first f
+  LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM f.branch_id::text)
+) ranked
+WHERE ranked.organization_id IS NOT NULL;
 
 COMMENT ON VIEW today_priorities_clean IS
-  'organization_id + sort_score (from priority_score) for PostgREST; COALESCE org from branches when missing on alert row.';
+  'organization_id, rank (1=top); order rank.asc, limit 3; branch in short_title.';
 
 GRANT SELECT ON today_priorities_clean TO anon, authenticated;

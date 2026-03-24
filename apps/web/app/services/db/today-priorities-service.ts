@@ -1,6 +1,5 @@
 /**
- * GET /rest/v1/today_priorities_clean?select=*&order=sort_score.desc&limit=3
- * Optional: organization_id=eq.{uuid}
+ * GET /rest/v1/today_priorities_clean?select=*&organization_id=eq.{uuid}&order=rank.asc&limit=3
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 
@@ -15,6 +14,8 @@ export interface TodayPrioritiesRow {
   impact_label: string | null;
   reason_short: string | null;
   sort_score: number | null;
+  /** 1 = highest priority within org (from SQL ROW_NUMBER). */
+  rank: number | null;
 }
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
@@ -51,7 +52,7 @@ export async function fetchTodayPriorities(
     .from('today_priorities_clean')
     .select('*')
     .eq('organization_id', organizationId.trim())
-    .order('sort_score', { ascending: false })
+    .order('rank', { ascending: true })
     .limit(cap);
 
   if (error) {
@@ -75,6 +76,7 @@ export async function fetchTodayPriorities(
       impact_label: pickStr(r, 'impact_label', 'impactLabel') || null,
       reason_short: pickStr(r, 'reason_short', 'reasonShort', 'cause') || null,
       sort_score: pickNum(r, 'sort_score', 'priority_score'),
+      rank: pickNum(r, 'rank'),
     };
   });
 }

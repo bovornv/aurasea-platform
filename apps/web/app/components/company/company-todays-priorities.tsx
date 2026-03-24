@@ -9,20 +9,12 @@ interface Props {
   loading?: boolean;
 }
 
-function humanAlertType(raw: string | null | undefined, th: boolean): string {
-  const s = raw?.replace(/_/g, ' ').trim();
-  if (!s) return th ? 'แจ้งเตือน' : 'Alert';
-  return s.replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function impactLabelUi(raw: string | null | undefined, th: boolean): string {
-  const x = (raw || 'at risk').toLowerCase();
-  if (th) {
-    if (x === 'opportunity') return 'โอกาส';
-    return 'เสี่ยง';
+function impactSuffix(th: boolean, impactLabel: string | null | undefined): string {
+  const x = (impactLabel || 'at risk').toLowerCase();
+  if (x === 'opportunity') {
+    return th ? 'โอกาส' : 'opportunity';
   }
-  if (x === 'opportunity') return 'opportunity';
-  return 'at risk';
+  return th ? 'เสี่ยง' : 'at risk';
 }
 
 export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
@@ -31,9 +23,9 @@ export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
   const visible = rows.slice(0, 3);
 
   const title = th ? 'ลำดับความสำคัญวันนี้' : "Today's Priorities";
-  const whyLabel = th ? 'เหตุผล' : 'Why';
   const emptyMsg = th ? 'ทุกอย่างโอเค — ไม่มีลำดับความสำคัญวันนี้' : 'All good — no priorities today';
   const loadingMsg = th ? 'กำลังโหลด…' : 'Loading…';
+  const actionFallback = th ? 'ดำเนินการตามสัญญาณ' : 'Take action on this signal';
 
   return (
     <div
@@ -62,54 +54,51 @@ export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
       ) : visible.length === 0 ? (
         <p style={{ margin: 0, fontSize: '14px', color: '#64748b', lineHeight: 1.5 }}>{emptyMsg}</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '18px' }}>
           {visible.map((row, idx) => {
+            const rank = row.rank ?? idx + 1;
             const branch = row.branch_name?.trim() || row.branch_id || (th ? 'สาขา' : 'Branch');
-            const alertLabel = humanAlertType(row.alert_type, th);
-            const action = (row.action_text ?? '').trim();
+            const headline =
+              (row.short_title?.trim() ||
+                `${(row.alert_type || 'alert').replace(/_/g, ' ')} — ${branch}`) || branch;
             const amt = row.impact_estimate_thb ?? 0;
             const amtStr = formatCurrency(amt, numLocale);
-            const label = impactLabelUi(row.impact_label, th);
-            const reason = (row.reason_short ?? '').trim();
+            const riskWord = impactSuffix(th, row.impact_label);
+            const titleLine = `${rank}. ${headline} (฿${amtStr} ${riskWord})`;
+            const action = (row.action_text ?? '').trim() || actionFallback;
             const key = `p-${row.branch_id}-${row.alert_type}-${idx}`;
-            const lead =
-              action !== ''
-                ? `${branch} — ${alertLabel}: ${action}`
-                : `${branch} — ${alertLabel}`;
 
             return (
-              <div key={key}>
+              <li key={key}>
                 <p
                   style={{
                     margin: 0,
                     fontSize: '15px',
-                    lineHeight: 1.5,
+                    lineHeight: 1.45,
                     fontWeight: 700,
                     color: '#0f172a',
                   }}
                 >
-                  {lead}{' '}
-                  <span style={{ fontWeight: 700, color: '#dc2626' }}>
-                    (฿{amtStr} {label})
-                  </span>
+                  {titleLine}
                 </p>
-                {reason !== '' && (
-                  <p
-                    style={{
-                      margin: '6px 0 0 0',
-                      fontSize: '13px',
-                      lineHeight: 1.45,
-                      fontWeight: 400,
-                      color: '#94a3b8',
-                    }}
-                  >
-                    {whyLabel}: {reason}
-                  </p>
-                )}
-              </div>
+                <p
+                  style={{
+                    margin: '6px 0 0 0',
+                    fontSize: '13px',
+                    lineHeight: 1.45,
+                    fontWeight: 500,
+                    color: '#64748b',
+                  }}
+                >
+                  <span aria-hidden style={{ marginRight: '0.25rem' }}>
+                    →
+                  </span>
+                  {action}
+                </p>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
     </div>
   );
