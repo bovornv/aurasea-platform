@@ -2,6 +2,10 @@
 
 import type { WatchlistTodayRow } from '../../services/db/watchlist-today-service';
 
+function normKey(s: string | null | undefined): string {
+  return (s ?? '').trim().toLowerCase().slice(0, 80);
+}
+
 interface Props {
   rows: WatchlistTodayRow[];
   locale: string;
@@ -33,9 +37,10 @@ export function CompanyWatchlistToday({ rows, locale, loading }: Props) {
         gap: '12px',
       }}
     >
-      {visible.map((row, idx) => {
-        const text = row.warning_text?.trim() || fallback;
-        const key = `wl-${row.branch_id || 'org'}-${idx}`;
+      {visible.map((row) => {
+        const text =
+          row.warning_text?.trim() || row.title?.trim() || row.description?.trim() || fallback;
+        const key = `wl-${row.branch_id || 'org'}-${row.metric_date ?? 'd'}-${normKey(row.warning_text || row.title)}`;
         return (
           <li
             key={key}

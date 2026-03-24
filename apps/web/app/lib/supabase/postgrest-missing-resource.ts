@@ -31,6 +31,7 @@ export function isPostgrestObjectMissingError(
   if ((msg.includes('does not exist') || msg.includes('undefined table')) && (msg.includes('relation') || msg.includes('view') || msg.includes('function')))
     return true;
   if (details.includes('does not exist') || hint.includes('does not exist')) return true;
+  if (code === '404') return true;
   return false;
 }
 

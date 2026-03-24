@@ -1,6 +1,5 @@
 /**
- * GET /rest/v1/whats_working_today?select=*&order=sort_score.desc&limit=3
- * Optional: organization_id=eq.{uuid}
+ * GET /rest/v1/whats_working_today — explicit column list (no select=*).
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -9,12 +8,21 @@ import {
   markPostgrestResourceMissing,
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
+import {
+  pickStr,
+  resolveTodayPanelDisplay,
+  SELECT_WHATS_WORKING_TODAY,
+} from './today-panels-columns';
 
 export interface WhatsWorkingTodayRow {
   organization_id: string | null;
   branch_id: string;
+  /** @deprecated Not in compatibility view; kept for typing only. */
   branch_name: string | null;
   metric_date: string | null;
+  title: string | null;
+  description: string | null;
+  /** Primary line for UI + dedupe: highlight_text if set, else title/description. */
   highlight_text: string | null;
   sort_score: number | null;
 }
@@ -28,7 +36,7 @@ function normalizeBranchIdKey(id: string | null | undefined): string {
   return (id ?? '').trim().toLowerCase();
 }
 
-/** Dedupe by branch_id + metric_date + normalized highlight_text; preserves first occurrence (highest sort_score if input pre-sorted desc). */
+/** Dedupe by branch_id + metric_date + normalized display line. */
 export function dedupeWhatsWorkingRows(rows: WhatsWorkingTodayRow[]): WhatsWorkingTodayRow[] {
   const seen = new Set<string>();
   const out: WhatsWorkingTodayRow[] = [];
@@ -52,14 +60,6 @@ export function dedupeWhatsWorkingHighlightLines(lines: string[]): string[] {
     out.push(line);
   }
   return out;
-}
-
-function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
-  for (const k of keys) {
-    const v = r[k];
-    if (v != null && String(v).trim() !== '') return String(v).trim();
-  }
-  return '';
 }
 
 function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
@@ -86,7 +86,7 @@ export async function fetchWhatsWorkingToday(
   const cap = Math.min(10, Math.max(1, limit));
   const { data, error } = await supabase
     .from('whats_working_today')
-    .select('*')
+    .select(SELECT_WHATS_WORKING_TODAY)
     .eq('organization_id', organizationId.trim())
     .order('sort_score', { ascending: false })
     .limit(cap);
@@ -103,12 +103,18 @@ export async function fetchWhatsWorkingToday(
   const raw = Array.isArray(data) ? data : [];
   const mapped = raw.map((row) => {
     const r = row as Record<string, unknown>;
+    const title = pickStr(r, 'title') || null;
+    const description = pickStr(r, 'description') || null;
+    const resolved =
+      resolveTodayPanelDisplay(r, ['highlight_text', 'highlightText']) || null;
     return {
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
-      branch_name: pickStr(r, 'branch_name', 'branchName') || null,
+      branch_name: null,
       metric_date: r.metric_date != null ? String(r.metric_date).slice(0, 10) : null,
-      highlight_text: pickStr(r, 'highlight_text', 'highlightText') || null,
+      title,
+      description,
+      highlight_text: resolved,
       sort_score: pickNum(r, 'sort_score'),
     };
   });

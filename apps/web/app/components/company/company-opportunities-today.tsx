@@ -2,6 +2,10 @@
 
 import type { OpportunitiesTodayRow } from '../../services/db/opportunities-today-service';
 
+function normKey(s: string | null | undefined): string {
+  return (s ?? '').trim().toLowerCase().slice(0, 80);
+}
+
 interface Props {
   rows: OpportunitiesTodayRow[];
   locale: string;
@@ -49,9 +53,10 @@ export function CompanyOpportunitiesToday({ rows, locale, loading }: Props) {
         gap: '12px',
       }}
     >
-      {visible.map((row, idx) => {
-        const text = row.opportunity_text?.trim() || row.branch_name || '—';
-        const key = `o-${row.branch_id}-${idx}`;
+      {visible.map((row) => {
+        const text =
+          row.opportunity_text?.trim() || row.title?.trim() || row.description?.trim() || row.branch_name || '—';
+        const key = `o-${row.branch_id}-${row.metric_date ?? 'd'}-${normKey(row.opportunity_text || row.title)}`;
         return (
           <li
             key={key}

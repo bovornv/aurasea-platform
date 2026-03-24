@@ -1,6 +1,5 @@
 /**
- * GET /rest/v1/opportunities_today?select=*&order=sort_score.desc&limit=3
- * Optional: organization_id=eq.{uuid}
+ * GET /rest/v1/opportunities_today — explicit column list (no select=*).
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -9,22 +8,23 @@ import {
   markPostgrestResourceMissing,
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
+import {
+  pickStr,
+  resolveTodayPanelDisplay,
+  SELECT_OPPORTUNITIES_TODAY,
+} from './today-panels-columns';
 
 export interface OpportunitiesTodayRow {
   organization_id: string | null;
   branch_id: string;
+  /** @deprecated Not in compatibility view. */
   branch_name: string | null;
   metric_date: string | null;
+  title: string | null;
+  description: string | null;
+  /** Primary line: opportunity_text if set, else title/description. */
   opportunity_text: string | null;
   sort_score: number | null;
-}
-
-function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
-  for (const k of keys) {
-    const v = r[k];
-    if (v != null && String(v).trim() !== '') return String(v).trim();
-  }
-  return '';
 }
 
 function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
@@ -51,7 +51,7 @@ export async function fetchOpportunitiesToday(
   const cap = Math.min(10, Math.max(1, limit));
   const { data, error } = await supabase
     .from('opportunities_today')
-    .select('*')
+    .select(SELECT_OPPORTUNITIES_TODAY)
     .eq('organization_id', organizationId.trim())
     .order('sort_score', { ascending: false })
     .limit(cap);
@@ -68,12 +68,16 @@ export async function fetchOpportunitiesToday(
   const raw = Array.isArray(data) ? data : [];
   return raw.map((row) => {
     const r = row as Record<string, unknown>;
+    const resolved =
+      resolveTodayPanelDisplay(r, ['opportunity_text', 'opportunityText']) || null;
     return {
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
-      branch_name: pickStr(r, 'branch_name', 'branchName') || null,
+      branch_name: null,
       metric_date: r.metric_date != null ? String(r.metric_date).slice(0, 10) : null,
-      opportunity_text: pickStr(r, 'opportunity_text', 'opportunityText') || null,
+      title: pickStr(r, 'title') || null,
+      description: pickStr(r, 'description') || null,
+      opportunity_text: resolved,
       sort_score: pickNum(r, 'sort_score'),
     };
   });

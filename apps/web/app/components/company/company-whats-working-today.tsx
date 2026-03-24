@@ -40,8 +40,9 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading }: Props) {
       }}
     >
       {visible.map((row) => {
-        const text = row.highlight_text?.trim() || row.branch_name || '—';
-        const norm = normalizeWhatsWorkingTitle(row.highlight_text || row.branch_name);
+        const text =
+          row.highlight_text?.trim() || row.title?.trim() || row.description?.trim() || row.branch_name || '—';
+        const norm = normalizeWhatsWorkingTitle(row.highlight_text || row.title || row.branch_name);
         const key = `w-${row.branch_id}-${row.metric_date ?? 'd'}-${norm.slice(0, 80)}`;
         return (
           <li

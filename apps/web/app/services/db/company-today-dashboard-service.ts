@@ -16,6 +16,12 @@ import {
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
 import { dedupeWhatsWorkingHighlightLines } from './whats-working-today-service';
+import {
+  resolveTodayPanelDisplay,
+  SELECT_OPPORTUNITIES_TODAY_BRANCH,
+  SELECT_WATCHLIST_TODAY_BRANCH,
+  SELECT_WHATS_WORKING_TODAY_BRANCH,
+} from './today-panels-columns';
 
 export interface CompanyTodayDashboardData {
   bundle: CompanyTodayBundle;
@@ -27,6 +33,7 @@ export interface CompanyTodayDashboardData {
 }
 
 const dashboardInFlight = new Map<string, Promise<CompanyTodayDashboardData>>();
+const branchPanelsInFlight = new Map<string, Promise<BranchTodayPanels>>();
 
 function dashboardKey(organizationId: string | null, branchIds: string[]): string {
   return `${organizationId ?? 'none'}::${[...branchIds].sort().join(',')}`;
@@ -80,53 +87,21 @@ export interface BranchTodayPanels {
   watchlistLines: string[];
 }
 
-/**
- * Branch Today: three panels that use org-level views filtered by branch_id (same as legacy branch overview).
- */
-export async function fetchBranchTodayPanels(branchId: string, branchLabel: string): Promise<BranchTodayPanels> {
+async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string): Promise<BranchTodayPanels> {
   const empty: BranchTodayPanels = { workingLines: [], opportunityLines: [], watchlistLines: [] };
   const bid = branchId?.trim();
   if (!bid || !isSupabaseAvailable()) return empty;
   const supabase = getSupabaseClient();
   if (!supabase) return empty;
 
-  const mapWorking = (rows: { highlight_text?: string | null }[] | null) => {
-    const lines = (rows ?? [])
-      .map((r) => String(r.highlight_text ?? '').trim())
-      .map((txt) => {
-        if (/performance stable across branches/i.test(txt)) {
-          return `${branchLabel} operating normally — no major issues detected`;
-        }
-        if (/no major operational risks detected/i.test(txt)) {
-          return `${branchLabel} operating normally — no major issues detected`;
-        }
-        return txt;
-      })
-      .filter(Boolean);
-    return dedupeWhatsWorkingHighlightLines(lines).slice(0, 3);
-  };
-
-  const fetchTable = async (
-    resource: (typeof POSTGREST_RESOURCE_KEYS)[keyof typeof POSTGREST_RESOURCE_KEYS],
-    table: string,
-    col: string
-  ): Promise<string[]> => {
-    if (isPostgrestResourceKnownMissing(resource)) return [];
-    const { data, error } = await supabase
-      .from(table)
-      .select(col)
-      .eq('branch_id', bid)
-      .order('sort_score', { ascending: false })
-      .limit(3);
-    if (error) {
-      if (isPostgrestObjectMissingError(error)) markPostgrestResourceMissing(resource);
-      return [];
+  const applyWorkingSubstitutions = (txt: string): string => {
+    if (/performance stable across branches/i.test(txt)) {
+      return `${branchLabel} operating normally — no major issues detected`;
     }
-    if (!Array.isArray(data)) return [];
-    return data
-      .map((r: Record<string, unknown>) => String(r[col] ?? '').trim())
-      .filter(Boolean)
-      .slice(0, 3);
+    if (/no major operational risks detected/i.test(txt)) {
+      return `${branchLabel} operating normally — no major issues detected`;
+    }
+    return txt;
   };
 
   const [workingRes, oppRes, watchRes] = await Promise.all([
@@ -134,7 +109,7 @@ export async function fetchBranchTodayPanels(branchId: string, branchLabel: stri
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.whats_working_today)) return [];
       const { data, error } = await supabase
         .from('whats_working_today')
-        .select('highlight_text')
+        .select(SELECT_WHATS_WORKING_TODAY_BRANCH)
         .eq('branch_id', bid)
         .order('sort_score', { ascending: false })
         .limit(3);
@@ -144,10 +119,60 @@ export async function fetchBranchTodayPanels(branchId: string, branchLabel: stri
         }
         return [];
       }
-      return mapWorking(data as { highlight_text?: string | null }[]);
+      if (!Array.isArray(data)) return [];
+      const lines = data
+        .map((row) =>
+          applyWorkingSubstitutions(
+            resolveTodayPanelDisplay(row as Record<string, unknown>, ['highlight_text', 'highlightText'])
+          )
+        )
+        .filter(Boolean);
+      return dedupeWhatsWorkingHighlightLines(lines).slice(0, 3);
     })(),
-    fetchTable(POSTGREST_RESOURCE_KEYS.opportunities_today, 'opportunities_today', 'opportunity_text'),
-    fetchTable(POSTGREST_RESOURCE_KEYS.watchlist_today, 'watchlist_today', 'warning_text'),
+    (async () => {
+      if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.opportunities_today)) return [];
+      const { data, error } = await supabase
+        .from('opportunities_today')
+        .select(SELECT_OPPORTUNITIES_TODAY_BRANCH)
+        .eq('branch_id', bid)
+        .order('sort_score', { ascending: false })
+        .limit(3);
+      if (error) {
+        if (isPostgrestObjectMissingError(error)) {
+          markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.opportunities_today);
+        }
+        return [];
+      }
+      if (!Array.isArray(data)) return [];
+      return data
+        .map((row) =>
+          resolveTodayPanelDisplay(row as Record<string, unknown>, ['opportunity_text', 'opportunityText'])
+        )
+        .filter(Boolean)
+        .slice(0, 3);
+    })(),
+    (async () => {
+      if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.watchlist_today)) return [];
+      const { data, error } = await supabase
+        .from('watchlist_today')
+        .select(SELECT_WATCHLIST_TODAY_BRANCH)
+        .eq('branch_id', bid)
+        .order('sort_score', { ascending: false })
+        .limit(3);
+      if (error) {
+        if (isPostgrestObjectMissingError(error)) {
+          markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.watchlist_today);
+        }
+        return [];
+      }
+      if (!Array.isArray(data)) return [];
+      return data
+        .map((row) =>
+          resolveTodayPanelDisplay(row as Record<string, unknown>, ['warning_text', 'warningText'])
+        )
+        .filter(Boolean)
+        .slice(0, 3);
+    })(),
   ]);
 
   return {
@@ -157,4 +182,25 @@ export async function fetchBranchTodayPanels(branchId: string, branchLabel: stri
     watchlistLines:
       watchRes.length > 0 ? watchRes : ['No early warning signals detected'],
   };
+}
+
+/**
+ * Branch Today: three panels; deduped in-flight per branchId (StrictMode / double mount).
+ */
+export async function fetchBranchTodayPanels(branchId: string, branchLabel: string): Promise<BranchTodayPanels> {
+  const bid = branchId?.trim() ?? '';
+  if (!bid) {
+    return {
+      workingLines: [],
+      opportunityLines: ['No clear opportunities today'],
+      watchlistLines: ['No early warning signals detected'],
+    };
+  }
+  const inflight = branchPanelsInFlight.get(bid);
+  if (inflight) return inflight;
+  const p = fetchBranchTodayPanelsCore(branchId, branchLabel).finally(() => {
+    branchPanelsInFlight.delete(bid);
+  });
+  branchPanelsInFlight.set(bid, p);
+  return p;
 }
