@@ -5,6 +5,12 @@
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../lib/supabase/postgrest-missing-resource';
 import type { AlertContract } from '../../../../core/sme-os/contracts/alerts';
 
 export interface BranchAnomalySignalRow {
@@ -32,6 +38,10 @@ export async function getLatestAnomalySignal(
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status)) {
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('branch_business_status')
     .select('branch_id, metric_date, revenue_thb, health_score')
@@ -39,7 +49,9 @@ export async function getLatestAnomalySignal(
     .maybeSingle();
 
   if (error) {
-    if (process.env.NODE_ENV === 'development') {
+    if (isPostgrestObjectMissingError(error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
+    } else if (process.env.NODE_ENV === 'development') {
       console.warn('[AnomalySignals] branch_business_status error:', error.message);
     }
     return null;

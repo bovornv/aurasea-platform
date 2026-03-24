@@ -3,6 +3,12 @@
  * Optional: organization_id=eq.{uuid}
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../../lib/supabase/postgrest-missing-resource';
 
 export interface WhatsWorkingTodayRow {
   organization_id: string | null;
@@ -73,6 +79,7 @@ export async function fetchWhatsWorkingToday(
   limit: number = 3
 ): Promise<WhatsWorkingTodayRow[]> {
   if (!organizationId?.trim() || !isSupabaseAvailable()) return [];
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.whats_working_today)) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
@@ -85,7 +92,9 @@ export async function fetchWhatsWorkingToday(
     .limit(cap);
 
   if (error) {
-    if (process.env.NODE_ENV === 'development') {
+    if (isPostgrestObjectMissingError(error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.whats_working_today);
+    } else if (process.env.NODE_ENV === 'development') {
       console.warn('[whats_working_today]', error.message);
     }
     return [];

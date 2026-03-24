@@ -2,6 +2,12 @@
  * GET /rest/v1/watchlist_today?select=*&organization_id=eq.{uuid}&order=sort_score.desc&limit=3
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../../lib/supabase/postgrest-missing-resource';
 
 export interface WatchlistTodayRow {
   organization_id: string | null;
@@ -37,6 +43,7 @@ export async function fetchWatchlistToday(
   limit: number = 3
 ): Promise<WatchlistTodayRow[]> {
   if (!organizationId?.trim() || !isSupabaseAvailable()) return [];
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.watchlist_today)) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
@@ -49,7 +56,9 @@ export async function fetchWatchlistToday(
     .limit(cap);
 
   if (error) {
-    if (process.env.NODE_ENV === 'development') {
+    if (isPostgrestObjectMissingError(error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.watchlist_today);
+    } else if (process.env.NODE_ENV === 'development') {
       console.warn('[watchlist_today]', error.message);
     }
     return [];

@@ -7,6 +7,12 @@
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../../lib/supabase/postgrest-missing-resource';
 
 export type BranchModuleType = 'accommodation' | 'fnb';
 
@@ -327,6 +333,10 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status)) {
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('branch_business_status')
     .select(BRANCH_BUSINESS_STATUS_TODAY_SELECT)
@@ -334,7 +344,9 @@ export async function getTodaySummary(branchId: string): Promise<TodaySummaryRow
     .maybeSingle();
 
   if (error) {
-    if (process.env.NODE_ENV === 'development') {
+    if (isPostgrestObjectMissingError(error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
+    } else if (process.env.NODE_ENV === 'development') {
       console.warn('[LatestMetricsService] branch_business_status error:', error.message);
     }
     return null;

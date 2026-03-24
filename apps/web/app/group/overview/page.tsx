@@ -35,10 +35,10 @@ import { useRbacReady } from '../../hooks/use-route-guard';
 import { calculateRevenueExposureFromAlerts } from '../../utils/revenue-exposure-calculator';
 import { formatDailySummaryCompactThb } from '../../services/daily-summary-service';
 import {
-  fetchCompanyTodayBundle,
   createEmptyCompanyTodayBundle,
   type CompanyTodayBundle,
 } from '../../services/db/company-today-data-service';
+import { fetchCompanyTodayDashboard } from '../../services/db/company-today-dashboard-service';
 import { fetchCompanyDailySummary } from '../../services/db/company-daily-summary-service';
 import { ActivationBlock } from '../../components/activation-block';
 import { validateOrganizationScenario } from '../../utils/validation-logger';
@@ -49,26 +49,11 @@ import { CompanyLastUpdated } from '../../components/company/company-last-update
 import { CompanyBusinessStatusTables } from '../../components/company/company-business-status-tables';
 import { CompanyBusinessTrendSummary } from '../../components/company/company-business-trend-summary';
 import { CompanyTodaysPriorities } from '../../components/company/company-todays-priorities';
-import {
-  fetchTodayPriorities,
-  type TodayPrioritiesRow,
-} from '../../services/db/today-priorities-service';
-import {
-  fetchWhatsWorkingToday,
-  type WhatsWorkingTodayRow,
-} from '../../services/db/whats-working-today-service';
-import {
-  fetchOpportunitiesToday,
-  type OpportunitiesTodayRow,
-} from '../../services/db/opportunities-today-service';
-import {
-  fetchWatchlistToday,
-  type WatchlistTodayRow,
-} from '../../services/db/watchlist-today-service';
-import {
-  fetchCompanyDataConfidence,
-  type CompanyDataConfidenceRow,
-} from '../../services/db/company-data-confidence-service';
+import type { TodayPrioritiesRow } from '../../services/db/today-priorities-service';
+import type { WhatsWorkingTodayRow } from '../../services/db/whats-working-today-service';
+import type { OpportunitiesTodayRow } from '../../services/db/opportunities-today-service';
+import type { WatchlistTodayRow } from '../../services/db/watchlist-today-service';
+import type { CompanyDataConfidenceRow } from '../../services/db/company-data-confidence-service';
 import { CompanyDataConfidence } from '../../components/company/company-data-confidence';
 import {
   fetchCompanyTrendsSummary,
@@ -207,39 +192,6 @@ function OwnerSummaryContent() {
   }, [mounted, businessGroup, refreshTrigger]);
 
   useEffect(() => {
-    if (!mounted || groupBranchIds.length === 0) {
-      setCompanyTodayBundle(null);
-      setCompanyTodayLoading(false);
-      return;
-    }
-    let cancelled = false;
-    const COMPANY_BUNDLE_TIMEOUT_MS = 28000;
-    setCompanyTodayLoading(true);
-    (async () => {
-      try {
-        const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
-        const bundle = await Promise.race([
-          fetchCompanyTodayBundle(orgId, groupBranchIds),
-          new Promise<CompanyTodayBundle>((resolve) =>
-            setTimeout(
-              () => resolve(createEmptyCompanyTodayBundle(['client_timeout'])),
-              COMPANY_BUNDLE_TIMEOUT_MS
-            )
-          ),
-        ]);
-        if (!cancelled) setCompanyTodayBundle(bundle);
-      } catch {
-        if (!cancelled) setCompanyTodayBundle(null);
-      } finally {
-        if (!cancelled) setCompanyTodayLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [mounted, groupBranchIds, refreshTrigger, activeOrganizationId, permissions.organizationId]);
-
-  useEffect(() => {
     if (!mounted) return;
     const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
     if (!orgId) {
@@ -273,6 +225,8 @@ function OwnerSummaryContent() {
     if (!mounted) return;
     const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
     if (!orgId?.trim()) {
+      setCompanyTodayBundle(null);
+      setCompanyTodayLoading(false);
       setPrioritiesRows([]);
       setPrioritiesLoading(false);
       setWhatsWorkingRows([]);
@@ -286,6 +240,8 @@ function OwnerSummaryContent() {
       return;
     }
     let cancelled = false;
+    const DASHBOARD_TIMEOUT_MS = 28000;
+    setCompanyTodayLoading(true);
     setPrioritiesLoading(true);
     setWhatsWorkingLoading(true);
     setOpportunitiesLoading(true);
@@ -293,27 +249,43 @@ function OwnerSummaryContent() {
     setDataConfidenceLoading(true);
     (async () => {
       try {
-        const [prio, working, opps, watch, conf] = await Promise.race([
-          Promise.all([
-            fetchTodayPriorities(orgId, null, 3),
-            fetchWhatsWorkingToday(orgId, 3),
-            fetchOpportunitiesToday(orgId, 3),
-            fetchWatchlistToday(orgId, 3),
-            fetchCompanyDataConfidence(orgId),
-          ]),
-          new Promise<
-            [TodayPrioritiesRow[], WhatsWorkingTodayRow[], OpportunitiesTodayRow[], WatchlistTodayRow[], CompanyDataConfidenceRow | null]
-          >((resolve) => setTimeout(() => resolve([[], [], [], [], null]), 12000)),
+        const dash = await Promise.race([
+          fetchCompanyTodayDashboard(orgId, groupBranchIds, { prioritiesLimit: 3, panelLimit: 3 }),
+          new Promise<Awaited<ReturnType<typeof fetchCompanyTodayDashboard>>>((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  bundle: createEmptyCompanyTodayBundle(['client_timeout']),
+                  priorities: [],
+                  whatsWorking: [],
+                  opportunities: [],
+                  watchlist: [],
+                  dataConfidence: null,
+                }),
+              DASHBOARD_TIMEOUT_MS
+            )
+          ),
         ]);
         if (!cancelled) {
-          setPrioritiesRows(prio);
-          setWhatsWorkingRows(working);
-          setOpportunitiesRows(opps);
-          setWatchlistRows(watch);
-          setDataConfidenceRow(conf);
+          setCompanyTodayBundle(dash.bundle);
+          setPrioritiesRows(dash.priorities);
+          setWhatsWorkingRows(dash.whatsWorking);
+          setOpportunitiesRows(dash.opportunities);
+          setWatchlistRows(dash.watchlist);
+          setDataConfidenceRow(dash.dataConfidence);
+        }
+      } catch {
+        if (!cancelled) {
+          setCompanyTodayBundle(null);
+          setPrioritiesRows([]);
+          setWhatsWorkingRows([]);
+          setOpportunitiesRows([]);
+          setWatchlistRows([]);
+          setDataConfidenceRow(null);
         }
       } finally {
         if (!cancelled) {
+          setCompanyTodayLoading(false);
           setPrioritiesLoading(false);
           setWhatsWorkingLoading(false);
           setOpportunitiesLoading(false);
@@ -325,7 +297,7 @@ function OwnerSummaryContent() {
     return () => {
       cancelled = true;
     };
-  }, [mounted, activeOrganizationId, permissions.organizationId, refreshTrigger]);
+  }, [mounted, groupBranchIds, refreshTrigger, activeOrganizationId, permissions.organizationId]);
 
   useEffect(() => {
     if (!mounted) return;

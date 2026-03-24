@@ -57,7 +57,7 @@ import { DecisionTrendChart } from '../../components/charts/decision-trend-chart
 import { trendInsightDual } from '../../utils/trend-chart-insights';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
-import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import { isSupabaseAvailable } from '../../lib/supabase/client';
 import {
   getAccommodationConfidenceLevel,
   getEarlySignalFromAccommodationEarlySignal,
@@ -71,10 +71,8 @@ import {
   fetchTodayBranchPriorities,
   type TodayBranchPriorityRow,
 } from '../../services/db/today-branch-priorities-service';
-import {
-  dedupeWhatsWorkingHighlightLines,
-  normalizeWhatsWorkingTitle,
-} from '../../services/db/whats-working-today-service';
+import { normalizeWhatsWorkingTitle } from '../../services/db/whats-working-today-service';
+import { fetchBranchTodayPanels } from '../../services/db/company-today-dashboard-service';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import type { DailyMetric } from '../../models/daily-metrics';
@@ -779,95 +777,30 @@ export default function BranchOverviewPage() {
       setBranchSectionLoading(false);
       return;
     }
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      setBranchWhatsWorkingRows([]);
-      setBranchOpportunitiesRows(['No clear opportunities today']);
-      setBranchWatchlistRows(['No early warning signals detected']);
-      setBranchSectionLoading(false);
-      return;
-    }
 
     let cancelled = false;
     setBranchSectionLoading(true);
+    const branchLabel = (branch?.branchName || '').trim() || 'This branch';
     (async () => {
       try {
-        const [workingRes, oppRes, watchRes] = await Promise.race([
-          Promise.all([
-            supabase
-              .from('whats_working_today')
-              .select('highlight_text')
-              .eq('branch_id', branch.id)
-              .order('sort_score', { ascending: false })
-              .limit(3),
-            supabase
-              .from('opportunities_today')
-              .select('opportunity_text')
-              .eq('branch_id', branch.id)
-              .order('sort_score', { ascending: false })
-              .limit(3),
-            supabase
-              .from('watchlist_today')
-              .select('warning_text')
-              .eq('branch_id', branch.id)
-              .order('sort_score', { ascending: false })
-              .limit(3),
-          ]),
-          new Promise<
-            [
-              { data: null; error: Error | null },
-              { data: null; error: Error | null },
-              { data: null; error: Error | null }
-            ]
-          >((resolve) =>
+        const panels = await Promise.race([
+          fetchBranchTodayPanels(branch.id, branchLabel),
+          new Promise<Awaited<ReturnType<typeof fetchBranchTodayPanels>>>((resolve) =>
             setTimeout(
               () =>
-                resolve([
-                  { data: null, error: new Error('timeout') },
-                  { data: null, error: new Error('timeout') },
-                  { data: null, error: new Error('timeout') },
-                ]),
+                resolve({
+                  workingLines: [],
+                  opportunityLines: ['No clear opportunities today'],
+                  watchlistLines: ['No early warning signals detected'],
+                }),
               12000
             )
           ),
         ]);
         if (cancelled) return;
-        const branchLabel = (branch?.branchName || '').trim() || 'This branch';
-        const working = dedupeWhatsWorkingHighlightLines(
-          Array.isArray(workingRes.data)
-            ? workingRes.data
-                .map((r: any) => String(r.highlight_text ?? '').trim())
-                .map((txt: string) => {
-                  if (/performance stable across branches/i.test(txt)) {
-                    return `${branchLabel} operating normally — no major issues detected`;
-                  }
-                  if (/no major operational risks detected/i.test(txt)) {
-                    return `${branchLabel} operating normally — no major issues detected`;
-                  }
-                  return txt;
-                })
-                .filter(Boolean)
-            : []
-        ).slice(0, 3);
-        const opps = Array.isArray(oppRes.data)
-          ? oppRes.data
-              .map((r: any) => String(r.opportunity_text ?? '').trim())
-              .filter(Boolean)
-              .slice(0, 3)
-          : [];
-        const watch = Array.isArray(watchRes.data)
-          ? watchRes.data
-              .map((r: any) => String(r.warning_text ?? '').trim())
-              .filter(Boolean)
-              .slice(0, 3)
-          : [];
-        setBranchWhatsWorkingRows(working);
-        setBranchOpportunitiesRows(
-          opps.length > 0 ? opps : ['No clear opportunities today']
-        );
-        setBranchWatchlistRows(
-          watch.length > 0 ? watch : ['No early warning signals detected']
-        );
+        setBranchWhatsWorkingRows(panels.workingLines);
+        setBranchOpportunitiesRows(panels.opportunityLines);
+        setBranchWatchlistRows(panels.watchlistLines);
       } finally {
         if (!cancelled) setBranchSectionLoading(false);
       }

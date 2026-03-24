@@ -2,6 +2,12 @@
  * GET /rest/v1/today_priorities_view?select=*&organization_id=eq.{uuid}&order=rank.asc&limit=3
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../../lib/supabase/postgrest-missing-resource';
 
 export interface TodayPrioritiesRow {
   branch_id: string;
@@ -46,6 +52,7 @@ export async function fetchTodayPriorities(
   limit: number = 3
 ): Promise<TodayPrioritiesRow[]> {
   if (!organizationId?.trim() || !isSupabaseAvailable()) return [];
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.today_priorities_view)) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
@@ -60,7 +67,9 @@ export async function fetchTodayPriorities(
   const { data, error } = await query.order('rank', { ascending: true }).limit(cap);
 
   if (error) {
-    if (process.env.NODE_ENV === 'development') {
+    if (isPostgrestObjectMissingError(error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.today_priorities_view);
+    } else if (process.env.NODE_ENV === 'development') {
       console.warn('[today_priorities_view]', error.message);
     }
     return [];

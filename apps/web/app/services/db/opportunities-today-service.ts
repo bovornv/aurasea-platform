@@ -3,6 +3,12 @@
  * Optional: organization_id=eq.{uuid}
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../../lib/supabase/postgrest-missing-resource';
 
 export interface OpportunitiesTodayRow {
   organization_id: string | null;
@@ -38,6 +44,7 @@ export async function fetchOpportunitiesToday(
   limit: number = 3
 ): Promise<OpportunitiesTodayRow[]> {
   if (!organizationId?.trim() || !isSupabaseAvailable()) return [];
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.opportunities_today)) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
@@ -50,7 +57,9 @@ export async function fetchOpportunitiesToday(
     .limit(cap);
 
   if (error) {
-    if (process.env.NODE_ENV === 'development') {
+    if (isPostgrestObjectMissingError(error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.opportunities_today);
+    } else if (process.env.NODE_ENV === 'development') {
       console.warn('[opportunities_today]', error.message);
     }
     return [];

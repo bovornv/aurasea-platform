@@ -1,7 +1,14 @@
 /**
  * Company Today — branch_business_status + alerts_* (no today_summary_clean_safe).
+ * When views/RPC are missing in PostgREST, we remember per-session and fall back to branches + daily_metrics.
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../../lib/supabase/postgrest-missing-resource';
 import { normalizeProfitabilityTrend, type ProfitabilityTrend } from './latest-metrics-service';
 
 const companyTodayBundleInFlight = new Map<string, Promise<CompanyTodayBundle>>();
@@ -311,6 +318,7 @@ function logSupabaseStructured(
   error: { message?: string; code?: string; details?: string; hint?: string } | null | undefined
 ): void {
   if (process.env.NODE_ENV !== 'development' || !error) return;
+  if (isPostgrestObjectMissingError(error)) return;
   console.warn('[CompanyToday][SupabaseError]', {
     scope,
     branch_ids: branchIds,
@@ -319,6 +327,89 @@ function logSupabaseStructured(
     details: error.details ?? null,
     hint: error.hint ?? null,
   });
+}
+
+/** Latest daily_metrics row per branch → shape compatible with normalizeBusinessRow. */
+async function fetchBusinessStatusFallbackRows(
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  organizationId: string | null,
+  branchIds: string[]
+): Promise<Record<string, unknown>[]> {
+  if (branchIds.length === 0) return [];
+  const { data: branchRows, error: bErr } = await supabase
+    .from('branches')
+    .select('id, name, branch_name, module_type, organization_id')
+    .in('id', branchIds);
+  if (bErr || !Array.isArray(branchRows)) return [];
+
+  const metaById = new Map<string, { name: string; module: string; org: string | null }>();
+  for (const b of branchRows as Record<string, unknown>[]) {
+    const id = pickStr(b, 'id');
+    if (!id || !branchIds.includes(id)) continue;
+    if (organizationId) {
+      const oid = pickStr(b, 'organization_id', 'organizationId');
+      if (oid && oid !== organizationId.trim()) continue;
+    }
+    const name =
+      pickStr(b, 'branch_name', 'branchName', 'name') || id;
+    metaById.set(id, {
+      name,
+      module: pickStr(b, 'module_type', 'moduleType', 'business_type'),
+      org: pickStr(b, 'organization_id', 'organizationId') || null,
+    });
+  }
+
+  const { data: dmRows, error: dErr } = await supabase
+    .from('daily_metrics')
+    .select('*')
+    .in('branch_id', branchIds);
+  if (dErr || !Array.isArray(dmRows)) return [];
+
+  const latestByBranch = new Map<string, Record<string, unknown>>();
+  for (const row of dmRows as Record<string, unknown>[]) {
+    const bid = pickStr(row, 'branch_id', 'branchId');
+    if (!bid) continue;
+    const d = pickStr(row, 'metric_date', 'date') || '';
+    const prev = latestByBranch.get(bid);
+    const prevD = prev ? pickStr(prev, 'metric_date', 'date') || '' : '';
+    if (!prev || d > prevD) latestByBranch.set(bid, row);
+  }
+
+  const out: Record<string, unknown>[] = [];
+  for (const bid of branchIds) {
+    const meta = metaById.get(bid);
+    const dm = latestByBranch.get(bid);
+    if (!meta || !dm) continue;
+    const bt = normalizeBranchType(meta.module);
+    if (!bt) continue;
+    const revenue = pickNum(dm, 'revenue', 'total_revenue_thb');
+    const roomsSold = Math.round(pickNum(dm, 'rooms_sold', 'roomsSold'));
+    const roomsAvail = Math.round(pickNum(dm, 'rooms_available', 'roomsAvailable', 'rooms_available_count'));
+    const occ =
+      roomsAvail > 0 && roomsSold >= 0 ? Math.min(100, (roomsSold / roomsAvail) * 100) : 0;
+    const customers = Math.round(pickNum(dm, 'total_customers', 'customers'));
+    const avgTicket =
+      customers > 0 && revenue > 0 ? revenue / customers : pickNum(dm, 'avg_ticket', 'average_ticket');
+
+    out.push({
+      branch_id: bid,
+      branch_type: bt,
+      branch_name: meta.name,
+      metric_date: dm.metric_date ?? dm.date ?? null,
+      revenue_thb: revenue,
+      rooms_sold: roomsSold,
+      rooms_total: roomsAvail,
+      occupancy_pct: bt === 'accommodation' ? occ : 0,
+      adr: pickNum(dm, 'adr', 'average_daily_rate'),
+      customers: customers,
+      avg_ticket: avgTicket,
+      health_score: null,
+      profitability_trend: null,
+      margin_trend: null,
+      avg_daily_cost: null,
+    });
+  }
+  return out;
 }
 
 async function fetchCompanyTodayBundleCore(
@@ -342,14 +433,22 @@ async function fetchCompanyTodayBundleCore(
   if (!supabase) return { ...empty, errors: ['no_client'] };
 
   const idFilter = branchIds;
-
-  // get_alerts_critical is defined in SQL; @supabase/supabase-js types omit it → assert args
   const getAlertsCriticalArgs = { branch_ids: idFilter } as never;
 
+  const skipBs = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
+  const skipCrit = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.get_alerts_critical);
+  const skipToday = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.alerts_today);
+
   const [bsRes, critRes, todayRes] = await Promise.all([
-    supabase.from('branch_business_status').select('*').in('branch_id', idFilter),
-    supabase.rpc('get_alerts_critical', getAlertsCriticalArgs),
-    supabase.from('alerts_today').select('*').in('branch_id', idFilter),
+    skipBs
+      ? Promise.resolve({ data: null, error: null } as const)
+      : supabase.from('branch_business_status').select('*').in('branch_id', idFilter),
+    skipCrit
+      ? Promise.resolve({ data: null, error: null } as const)
+      : supabase.rpc('get_alerts_critical', getAlertsCriticalArgs),
+    skipToday
+      ? Promise.resolve({ data: null, error: null } as const)
+      : supabase.from('alerts_today').select('*').in('branch_id', idFilter),
   ]);
 
   const logDev = (label: string, res: { data?: unknown; error?: { message?: string } | null }) => {
@@ -362,32 +461,70 @@ async function fetchCompanyTodayBundleCore(
     }
   };
 
-  logDev('branch_business_status', bsRes);
-  logDev('alerts_today', todayRes);
-  logDev('get_alerts_critical(rpc)', critRes);
+  if (!skipBs) logDev('branch_business_status', bsRes);
+  if (!skipToday) logDev('alerts_today', todayRes);
+  if (!skipCrit) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[CompanyToday] get_alerts_critical RPC payload:', { branch_ids: idFilter });
+      console.log('[CompanyToday] get_alerts_critical RPC response:', {
+        data: critRes.data,
+        error: critRes.error
+          ? {
+              message: critRes.error.message,
+              code: (critRes.error as { code?: string }).code,
+              details: (critRes.error as { details?: string }).details,
+              hint: (critRes.error as { hint?: string }).hint,
+            }
+          : null,
+      });
+    } else {
+      logDev('get_alerts_critical(rpc)', critRes);
+    }
+  }
 
   if (bsRes.error) {
-    errors.push(`branch_business_status:${bsRes.error.message}`);
-    logSupabaseStructured('branch_business_status', idFilter, bsRes.error);
+    if (isPostgrestObjectMissingError(bsRes.error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
+    } else {
+      errors.push(`branch_business_status:${bsRes.error.message}`);
+      logSupabaseStructured('branch_business_status', idFilter, bsRes.error);
+    }
   }
   if (critRes.error) {
-    errors.push(`get_alerts_critical:${critRes.error.message}`);
-    logSupabaseStructured('get_alerts_critical', idFilter, critRes.error);
+    if (isPostgrestObjectMissingError(critRes.error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.get_alerts_critical);
+    } else {
+      errors.push(`get_alerts_critical:${critRes.error.message}`);
+      logSupabaseStructured('get_alerts_critical', idFilter, critRes.error);
+    }
   }
   if (todayRes.error) {
-    errors.push(`alerts_today:${todayRes.error.message}`);
-    logSupabaseStructured('alerts_today', idFilter, todayRes.error);
+    if (isPostgrestObjectMissingError(todayRes.error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.alerts_today);
+    } else {
+      errors.push(`alerts_today:${todayRes.error.message}`);
+      logSupabaseStructured('alerts_today', idFilter, todayRes.error);
+    }
   }
 
   let bsRows = asRecordArray(bsRes.data);
-  if (bsRows.length === 0 && organizationId) {
+  if (!skipBs && bsRows.length === 0 && organizationId) {
     const orgRes = await supabase.from('branch_business_status').select('*').eq('organization_id', organizationId);
     logDev('branch_business_status (org fallback)', orgRes);
-    if (!orgRes.error) {
-      bsRows = asRecordArray(orgRes.data).filter((r) => idFilter.includes(pickStr(r, 'branch_id', 'branchId')));
+    if (orgRes.error) {
+      if (isPostgrestObjectMissingError(orgRes.error)) {
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
+      } else {
+        logSupabaseStructured('branch_business_status(org_fallback)', idFilter, orgRes.error);
+      }
     } else {
-      logSupabaseStructured('branch_business_status(org_fallback)', idFilter, orgRes.error);
+      bsRows = asRecordArray(orgRes.data).filter((r) => idFilter.includes(pickStr(r, 'branch_id', 'branchId')));
     }
+  }
+
+  if (bsRows.length === 0) {
+    const fb = await fetchBusinessStatusFallbackRows(supabase, organizationId, idFilter);
+    if (fb.length > 0) bsRows = fb;
   }
 
   const businessStatus: NormalizedBusinessRow[] = [];
@@ -397,7 +534,7 @@ async function fetchCompanyTodayBundleCore(
     if (normalized) businessStatus.push(normalized);
   }
 
-  const alertsTodayRaw = asRecordArray(todayRes.data);
+  const alertsTodayRaw = skipToday || todayRes.error ? [] : asRecordArray(todayRes.data);
   let revenueAtRiskFromAlertsTodayThb = 0;
   for (const r of alertsTodayRaw) {
     revenueAtRiskFromAlertsTodayThb += pickNum(
@@ -415,7 +552,9 @@ async function fetchCompanyTodayBundleCore(
     if (h != null && !isNaN(h) && h < 80) underperformingBelow80.add(row.branchId);
   }
 
-  const criticalAlertsRaw: NormalizedCriticalAlertRow[] = asRecordArray(critRes.error ? [] : critRes.data)
+  const criticalAlertsRaw: NormalizedCriticalAlertRow[] = asRecordArray(
+    skipCrit || critRes.error ? [] : critRes.data
+  )
     .map((r) => {
       const branchId = pickStr(r, 'branch_id', 'branchId');
       const alertType = pickStr(

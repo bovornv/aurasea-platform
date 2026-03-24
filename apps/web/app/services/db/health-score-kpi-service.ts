@@ -6,6 +6,12 @@
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../../lib/supabase/postgrest-missing-resource';
 
 function getTodayDateString(): string {
   const d = new Date();
@@ -240,6 +246,10 @@ export async function getHealthScoreFromAccommodationHealthToday(
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status)) {
+    return null;
+  }
+
   try {
     const { data, error } = await supabase
       .from('branch_business_status')
@@ -247,7 +257,13 @@ export async function getHealthScoreFromAccommodationHealthToday(
       .eq('branch_id', branchId)
       .maybeSingle();
 
-    if (error || data == null) return null;
+    if (error) {
+      if (isPostgrestObjectMissingError(error)) {
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status);
+      }
+      return null;
+    }
+    if (data == null) return null;
     const row = data as { health_score?: number | null };
     return row.health_score != null ? Number(row.health_score) : null;
   } catch {
