@@ -32,6 +32,12 @@ interface OrganizationContextType {
   isLoading: boolean;
   /** True after we have run membership fetch (whether user has orgs or not). */
   isInitialized: boolean;
+  /**
+   * Set when organization_members (or fatal init) fetch fails — distinct from “user has zero orgs”
+   * (then this is null and memberOrganizationIds is empty). Use refreshMembership() to retry.
+   */
+  membershipLoadError: Error | null;
+  refreshMembership: () => void;
   refreshData: () => Promise<void>;
 }
 
@@ -84,6 +90,13 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
   const [memberOrganizationIds, setMemberOrganizationIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [membershipLoadError, setMembershipLoadError] = useState<Error | null>(null);
+  const [membershipRetryNonce, setMembershipRetryNonce] = useState(0);
+
+  const refreshMembership = useCallback(() => {
+    setMembershipLoadError(null);
+    setMembershipRetryNonce((n) => n + 1);
+  }, []);
 
   const loadOrganizations = useCallback(async (): Promise<Organization[]> => {
     if (typeof window === 'undefined') return [];
@@ -130,17 +143,20 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
       setActiveOrganization(null);
       setOrganizations([]);
       setMemberOrganizationIds([]);
+      setMembershipLoadError(null);
       setIsInitialized(true);
       return;
     }
 
     if (!isSupabaseAvailable()) {
+      setMembershipLoadError(null);
       setIsInitialized(true);
       return;
     }
 
     const supabase = getSupabaseClient();
     if (!supabase) {
+      setMembershipLoadError(null);
       setIsInitialized(true);
       return;
     }
@@ -148,6 +164,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     setIsLoading(true);
     setIsInitialized(false);
+    setMembershipLoadError(null);
 
     (async () => {
       try {
@@ -157,6 +174,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
           setActiveOrganization(null);
           setOrganizations([]);
           setMemberOrganizationIds([]);
+          setMembershipLoadError(null);
           if (typeof window !== 'undefined') {
             localStorage.removeItem(STORAGE_KEY);
             syncBusinessGroupLocalStorage(null);
@@ -178,17 +196,23 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
           setActiveOrganization(null);
           setOrganizations([]);
           setMemberOrganizationIds([]);
+          setMembershipLoadError(
+            new Error(memError.message || 'Failed to load organization memberships')
+          );
           setIsInitialized(true);
           return;
         }
 
         const list = (memberships ?? []) as OrganizationMembership[];
 
-        const { data: branchMembers } = await supabase
+        const { data: branchMembers, error: branchMemError } = await supabase
           .from('branch_members')
           .select('branch_id, role, branches(organization_id)')
           .eq('user_id', user.id);
         if (cancelled) return;
+        if (branchMemError) {
+          console.warn('[OrganizationContext] branch_members fetch failed; continuing with org_members only:', branchMemError);
+        }
         type BMRow = { branch_id: string; role: string; branches: { organization_id: string } | null };
         const branchList = (branchMembers ?? []) as BMRow[];
 
@@ -280,6 +304,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
           setActiveOrganization(null);
           setOrganizations([]);
           setMemberOrganizationIds([]);
+          setMembershipLoadError(e instanceof Error ? e : new Error(String(e)));
           setIsInitialized(true);
         }
       } finally {
@@ -293,7 +318,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isLoggedIn, loadOrganizations, loadOrganization]);
+  }, [isLoggedIn, loadOrganizations, loadOrganization, membershipRetryNonce, updatePermissions]);
 
   const setActiveOrganizationId = useCallback(
     async (orgId: string) => {
@@ -396,6 +421,8 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
         setActiveOrganizationId,
         isLoading,
         isInitialized,
+        membershipLoadError,
+        refreshMembership,
         refreshData,
       }}
     >

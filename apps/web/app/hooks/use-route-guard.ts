@@ -49,10 +49,20 @@ export function resolveFallbackRoute(role: string, branchId: string, orgId: stri
 /** Global RBAC ready: session, org, branch context, and role must all be resolved before any redirect/error UI. */
 export function useRbacReady(): boolean {
   const { isLoggedIn } = useUserSession();
-  const { isInitialized: orgInitialized, isLoading: orgLoading } = useOrganization();
+  const {
+    isInitialized: orgInitialized,
+    isLoading: orgLoading,
+    membershipLoadError,
+  } = useOrganization();
   const { role, isLoading: roleLoading, error: roleError } = useUserRole();
   const sessionLoaded = isLoggedIn;
   const orgLoaded = Boolean(orgInitialized && !orgLoading);
+  /** Do not treat “empty org list” as ready when the membership query actually failed. */
+  const membershipFetchOk =
+    !sessionLoaded ||
+    membershipLoadError == null ||
+    orgLoading ||
+    !orgInitialized;
   const roleResolved = Boolean(!roleLoading && role != null);
   const accessResolutionFailed = Boolean(roleError && !roleLoading);
   const isCompanyRole = role?.effectiveRole === 'owner' || role?.effectiveRole === 'admin';
@@ -61,10 +71,18 @@ export function useRbacReady(): boolean {
     () =>
       sessionLoaded &&
       orgLoaded &&
+      membershipFetchOk &&
       roleResolved &&
       branchContextResolved &&
       !accessResolutionFailed,
-    [sessionLoaded, orgLoaded, roleResolved, branchContextResolved, accessResolutionFailed]
+    [
+      sessionLoaded,
+      orgLoaded,
+      membershipFetchOk,
+      roleResolved,
+      branchContextResolved,
+      accessResolutionFailed,
+    ]
   );
 }
 
@@ -251,12 +269,14 @@ export function useRouteGuard(): { isReady: boolean } {
     isInitialized: orgInitialized,
     isLoading: orgLoading,
     memberOrganizationIds,
+    membershipLoadError,
   } = useOrganization();
 
   const isReady = useRbacReady();
 
   useEffect(() => {
     if (!isLoggedIn || roleLoading || !role) return;
+    if (membershipLoadError && !orgLoading && orgInitialized) return;
     if (role.isSuperAdmin) return;
 
     const sessionLoaded = isLoggedIn;
@@ -365,6 +385,7 @@ export function useRouteGuard(): { isReady: boolean } {
     orgInitialized,
     orgLoading,
     memberOrganizationIds,
+    membershipLoadError,
     permissions,
     router,
   ]);

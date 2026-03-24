@@ -3,6 +3,18 @@
 --
 -- Postgres does not allow CREATE OR REPLACE when the return type (or certain signature
 -- changes) differs from the existing function — drop first.
+--
+-- SECURITY (SECURITY DEFINER)
+-- - These functions run as the table owner (definer), so RLS on organization_members,
+--   branch_members, and branches is NOT applied inside the function body. Access control
+--   is enforced explicitly: every branch uses auth.uid() and never trusts client input
+--   as the current user id.
+-- - search_path = public prevents search_path hijacking in the definer context.
+-- - Grant EXECUTE only to authenticated (and optionally service_role). Do not grant to anon.
+-- - If you add joins to other tables, ensure they cannot leak rows across tenants.
+--
+-- Tab / multi-org: the app aligns activeOrganizationId to the URL org; expect a short
+-- loading state while setActiveOrganizationId + branch sync run after navigation.
 
 DROP FUNCTION IF EXISTS public.get_my_organization_access(uuid) CASCADE;
 DROP FUNCTION IF EXISTS public.get_my_branch_access(text) CASCADE;

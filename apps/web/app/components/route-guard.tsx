@@ -8,7 +8,12 @@ import { useUserRole } from '../contexts/user-role-context';
 import { useRbacReady } from '../hooks/use-route-guard';
 import { useBusinessSetup } from '../contexts/business-setup-context';
 import { businessGroupService } from '../services/business-group-service';
-import { getAccessibleBranches, type UserPermissions, type UserRole } from '../services/permissions-service';
+import { useOrganization } from '../contexts/organization-context';
+import {
+  getAccessibleBranches,
+  mergeOrgRoleForBranchList,
+  type UserPermissions,
+} from '../services/permissions-service';
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
 
 let initialLandingResolved = false;
@@ -17,7 +22,8 @@ function getDefaultOrgAndBranch(permissions: UserPermissions, effectiveRole: str
   const group = typeof window !== 'undefined' ? businessGroupService.getBusinessGroup() : null;
   const orgId = permissions.organizationId || group?.id;
   if (!orgId) return { orgId: null, branchId: null };
-  const branches = getAccessibleBranches({ ...permissions, role: (effectiveRole || '') as UserRole | '' }).filter((b) => b.businessGroupId === orgId);
+  const merged = mergeOrgRoleForBranchList(permissions, effectiveRole);
+  const branches = getAccessibleBranches(merged).filter((b) => b.businessGroupId === orgId);
   const branchId = branches.length > 0 ? branches[0].id : null;
   return { orgId, branchId };
 }
@@ -27,9 +33,24 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isLoggedIn, permissions, isSuperAdmin } = useUserSession();
   const { role, isLoading: roleLoading } = useUserRole();
+  const {
+    membershipLoadError,
+    isLoading: orgLoading,
+    isInitialized: orgInitialized,
+    refreshMembership,
+  } = useOrganization();
   const isReady = useRbacReady();
   const { setup } = useBusinessSetup();
   const hasRunInitialLandingRef = useRef(false);
+
+  const showMembershipRetryBanner =
+    isLoggedIn &&
+    membershipLoadError != null &&
+    !orgLoading &&
+    orgInitialized &&
+    pathname !== '/login' &&
+    pathname != null &&
+    !pathname.startsWith('/org/');
 
   useEffect(() => {
     const isPublicRoute = pathname === '/login' || pathname === '/';
@@ -112,5 +133,47 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
     }
   }, [isLoggedIn, setup.isCompleted, pathname, router, permissions, role, roleLoading, isSuperAdmin, isReady]);
 
-  return <>{children}</>;
+  return (
+    <>
+      {showMembershipRetryBanner ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            padding: '12px 16px',
+            backgroundColor: '#fef3c7',
+            borderTop: '1px solid #f59e0b',
+            fontSize: '14px',
+            color: '#78350f',
+          }}
+        >
+          <span>Could not load organizations.</span>
+          <button
+            type="button"
+            onClick={() => refreshMembership()}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: '#78350f',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {children}
+    </>
+  );
 }

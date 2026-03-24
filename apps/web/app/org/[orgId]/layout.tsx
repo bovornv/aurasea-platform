@@ -89,6 +89,8 @@ export default function OrgLayout({
     memberOrganizationIds,
     setActiveOrganizationId,
     activeOrganizationId,
+    membershipLoadError,
+    refreshMembership,
   } = useOrganization();
   const { isSuperAdmin, loading: superAdminLoading } = usePlatformAdmin();
   const superAdminSyncDone = useRef(false);
@@ -130,6 +132,7 @@ export default function OrgLayout({
     }
     if (superAdminLoading || roleLoading || !orgId || !permissions) return;
     if (!isAppReady) return;
+    if (membershipLoadError) return;
 
     const runSuperAdminSync = async () => {
       if (!isSupabaseAvailable() || superAdminSyncDone.current) return;
@@ -252,12 +255,32 @@ export default function OrgLayout({
         router.replace('/no-access?reason=branch');
       }
     }
-  }, [isLoggedIn, orgId, permissions, role, roleLoading, router, isSuperAdmin, superAdminLoading, isAppReady]);
+  }, [
+    isLoggedIn,
+    orgId,
+    permissions,
+    role,
+    roleLoading,
+    router,
+    isSuperAdmin,
+    superAdminLoading,
+    isAppReady,
+    membershipLoadError,
+  ]);
 
 
   if (!isLoggedIn) return null;
   if (superAdminLoading) return null;
   if (!orgId) return null;
+
+  if (membershipLoadError && !orgLoading && orgInitialized) {
+    return (
+      <AccessResolutionRetry
+        message="Could not load your organizations. Check your connection and try again."
+        onRetry={() => refreshMembership()}
+      />
+    );
+  }
 
   if (roleError && !roleLoading) {
     return (
