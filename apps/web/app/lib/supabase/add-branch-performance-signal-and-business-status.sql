@@ -26,6 +26,21 @@ DROP VIEW IF EXISTS branch_performance_signal CASCADE;
 
 -- ========== 2) branch_performance_signal — latest row per branch per module ==========
 CREATE VIEW branch_performance_signal AS
+WITH fnb_cost_30d AS (
+  SELECT
+    f.branch_id::text AS branch_id,
+    (
+      SUM(
+        COALESCE(f.additional_cost_today, 0)::numeric
+        + (COALESCE(f.monthly_fixed_cost, 0)::numeric / 30::numeric)
+      )
+      /
+      NULLIF(SUM(COALESCE(f.total_customers, 0)::numeric), 0)
+    )::numeric AS avg_daily_cost
+  FROM fnb_daily_metrics f
+  WHERE f.metric_date >= (CURRENT_DATE - INTERVAL '30 days')
+  GROUP BY f.branch_id::text
+)
 SELECT *
 FROM (
   SELECT DISTINCT ON (t.branch_id)
@@ -69,6 +84,7 @@ FROM (
       ''
     ) AS profit_margin_trend,
     COALESCE(
+      f30.avg_daily_cost,
       NULLIF(TRIM(sig.j->>'avg_daily_cost'), '')::numeric,
       NULLIF(TRIM(sig.j->>'average_daily_cost'), '')::numeric,
       NULLIF(TRIM(sig.j->>'daily_cost'), '')::numeric,
@@ -77,6 +93,7 @@ FROM (
     ) AS avg_daily_cost
   FROM fnb_profitability_signal t
   CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS j) AS sig
+  LEFT JOIN fnb_cost_30d f30 ON f30.branch_id = t.branch_id::text
   ORDER BY t.branch_id, t.metric_date DESC NULLS LAST
 ) fnb;
 

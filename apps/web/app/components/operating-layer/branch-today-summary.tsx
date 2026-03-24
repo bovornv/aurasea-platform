@@ -276,11 +276,6 @@ export function BranchTodaySummary({
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelCustomers}</span>
               <span style={valueStyle}>{cust}</span>
-              {f.customersDeltaPct != null && Number.isFinite(f.customersDeltaPct) && (
-                <span style={f.customersDeltaPct >= 0 ? deltaPos : deltaNeg}>
-                  {' '}({f.customersDeltaPct >= 0 ? '+' : ''}{f.customersDeltaPct.toFixed(0)}% {vsYesterday})
-                </span>
-              )}
             </span>
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>
