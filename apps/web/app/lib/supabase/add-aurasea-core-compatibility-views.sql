@@ -22,11 +22,30 @@ BEGIN
   END IF;
 END $$;
 
--- 2) branch_recommendations (alias over alerts_final)
+-- 2) branch_recommendations (deduped over alerts_final — view, not table; no ctid deletes)
 DROP VIEW IF EXISTS branch_recommendations CASCADE;
 CREATE VIEW branch_recommendations AS
-SELECT branch_id, metric_date, alert_type AS recommendation_title
-FROM alerts_final;
+SELECT
+  trim(bf.branch_id::text) AS branch_id,
+  bf.metric_date::date AS metric_date,
+  bf.alert_type::text AS recommendation_title
+FROM (
+  SELECT
+    af.branch_id,
+    af.metric_date,
+    af.alert_type,
+    ROW_NUMBER() OVER (
+      PARTITION BY
+        lower(trim(COALESCE(af.branch_id::text, ''))),
+        (af.metric_date::date),
+        lower(trim(COALESCE(af.alert_type::text, '')))
+      ORDER BY af.metric_date DESC NULLS LAST
+    ) AS rn
+  FROM alerts_final af
+) bf
+WHERE bf.rn = 1
+  AND bf.alert_type IS NOT NULL
+  AND trim(COALESCE(bf.alert_type::text, '')) <> '';
 
 -- 3) accommodation_health_today (health from today_summary_clean)
 DROP VIEW IF EXISTS accommodation_health_today CASCADE;

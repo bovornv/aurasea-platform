@@ -13,8 +13,10 @@ import { useOrgBranchPaths } from '../../hooks/use-org-branch-paths';
 import { LoadingSpinner } from '../../components/loading-spinner';
 import { ErrorState } from '../../components/error-state';
 import { SectionCard } from '../../components/section-card';
-import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
-import type { BranchRecommendationRow } from '../../services/db/kpi-analytics-service';
+import {
+  getBranchRecommendationsFromKpi,
+  type BranchRecommendationRow,
+} from '../../services/db/kpi-analytics-service';
 
 export default function BranchRecommendationsPage() {
   const { locale } = useI18n();
@@ -82,9 +84,12 @@ export default function BranchRecommendationsPage() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {items.map((r, idx) => (
+            {items.map((r) => {
+              const rec = (r.recommendation ?? '').trim();
+              const dk = `${r.branch_id}|${r.metric_date ?? ''}|${rec.toLowerCase()}`;
+              return (
               <div
-                key={`${r.branch_id}-${r.metric_date ?? idx}`}
+                key={dk}
                 style={{
                   padding: '1rem',
                   backgroundColor: '#ffffff',
@@ -123,7 +128,8 @@ export default function BranchRecommendationsPage() {
                   </div>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </SectionCard>

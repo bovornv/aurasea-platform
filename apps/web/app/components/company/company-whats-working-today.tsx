@@ -1,6 +1,10 @@
 'use client';
 
-import type { WhatsWorkingTodayRow } from '../../services/db/whats-working-today-service';
+import {
+  dedupeWhatsWorkingRows,
+  normalizeWhatsWorkingTitle,
+  type WhatsWorkingTodayRow,
+} from '../../services/db/whats-working-today-service';
 
 interface Props {
   rows: WhatsWorkingTodayRow[];
@@ -10,7 +14,7 @@ interface Props {
 
 export function CompanyWhatsWorkingToday({ rows, locale, loading }: Props) {
   const th = locale === 'th';
-  const visible = rows.slice(0, 3);
+  const visible = dedupeWhatsWorkingRows(rows).slice(0, 3);
 
   const emptyMsg = th
     ? 'ผลงานคงที่ — ยังไม่มีสัญญาณเชิงบวกที่โดดเด่น'
@@ -35,9 +39,10 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading }: Props) {
         gap: '12px',
       }}
     >
-      {visible.map((row, idx) => {
+      {visible.map((row) => {
         const text = row.highlight_text?.trim() || row.branch_name || '—';
-        const key = `w-${row.branch_id}-${idx}`;
+        const norm = normalizeWhatsWorkingTitle(row.highlight_text || row.branch_name);
+        const key = `w-${row.branch_id}-${row.metric_date ?? 'd'}-${norm.slice(0, 80)}`;
         return (
           <li
             key={key}

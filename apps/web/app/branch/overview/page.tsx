@@ -71,6 +71,10 @@ import {
   fetchTodayBranchPriorities,
   type TodayBranchPriorityRow,
 } from '../../services/db/today-branch-priorities-service';
+import {
+  dedupeWhatsWorkingHighlightLines,
+  normalizeWhatsWorkingTitle,
+} from '../../services/db/whats-working-today-service';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import type { DailyMetric } from '../../models/daily-metrics';
@@ -829,21 +833,22 @@ export default function BranchOverviewPage() {
         ]);
         if (cancelled) return;
         const branchLabel = (branch?.branchName || '').trim() || 'This branch';
-        const working = Array.isArray(workingRes.data)
-          ? workingRes.data
-              .map((r: any) => String(r.highlight_text ?? '').trim())
-              .map((txt: string) => {
-                if (/performance stable across branches/i.test(txt)) {
-                  return `${branchLabel} operating normally — no major issues detected`;
-                }
-                if (/no major operational risks detected/i.test(txt)) {
-                  return `${branchLabel} operating normally — no major issues detected`;
-                }
-                return txt;
-              })
-              .filter(Boolean)
-              .slice(0, 3)
-          : [];
+        const working = dedupeWhatsWorkingHighlightLines(
+          Array.isArray(workingRes.data)
+            ? workingRes.data
+                .map((r: any) => String(r.highlight_text ?? '').trim())
+                .map((txt: string) => {
+                  if (/performance stable across branches/i.test(txt)) {
+                    return `${branchLabel} operating normally — no major issues detected`;
+                  }
+                  if (/no major operational risks detected/i.test(txt)) {
+                    return `${branchLabel} operating normally — no major issues detected`;
+                  }
+                  return txt;
+                })
+                .filter(Boolean)
+            : []
+        ).slice(0, 3);
         const opps = Array.isArray(oppRes.data)
           ? oppRes.data
               .map((r: any) => String(r.opportunity_text ?? '').trim())
@@ -1707,7 +1712,10 @@ export default function BranchOverviewPage() {
           ) : (
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
               {(branchWhatsWorkingRows.length > 0 ? branchWhatsWorkingRows.slice(0, 3) : branchWorkingFallbackRows).map((text, idx) => (
-                <li key={`bw-${idx}`} style={{ color: '#166534', fontSize: 14, lineHeight: 1.5 }}>
+                <li
+                  key={`bw-${branch?.id ?? 'b'}-${normalizeWhatsWorkingTitle(text)}-${idx}`}
+                  style={{ color: '#166534', fontSize: 14, lineHeight: 1.5 }}
+                >
                   • {text}
                 </li>
               ))}

@@ -583,8 +583,7 @@ export async function getBranchAlertsFromKpi(branchId: string): Promise<BranchAl
 }
 
 /**
- * Get recommendations for a branch from alerts_final (core view).
- * Maps alert_type to recommendation; returns rows with non-null recommendation.
+ * Get recommendations for a branch from branch_recommendations (deduped view over alerts_final).
  */
 export async function getBranchRecommendationsFromKpi(
   branchId: string
@@ -596,29 +595,44 @@ export async function getBranchRecommendationsFromKpi(
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
+  const bid = branchId.trim();
+
   try {
     const { data, error } = await supabase
-      .from('alerts_final')
-      .select('branch_id, metric_date, alert_type')
-      .eq('branch_id', branchId);
+      .from('branch_recommendations')
+      .select('branch_id, metric_date, recommendation_title')
+      .eq('branch_id', bid);
 
     if (error) {
       if (process.env.NODE_ENV === 'development') {
-        console.warn('[KpiAnalytics] alerts_final error:', error.message);
+        console.warn('[KpiAnalytics] branch_recommendations error:', error.message);
       }
       return [];
     }
 
-    const rows = (data ?? []) as Array<{ branch_id: string; metric_date?: string | null; alert_type?: string | null }>;
-    return rows
-      .filter((r) => r.alert_type != null && String(r.alert_type).trim() !== '')
-      .map((r) => ({
-        branch_id: r.branch_id,
+    const rows = (data ?? []) as Array<{
+      branch_id: string;
+      metric_date?: string | null;
+      recommendation_title?: string | null;
+    }>;
+    const seen = new Set<string>();
+    const out: BranchRecommendationRow[] = [];
+    for (const r of rows) {
+      const title = r.recommendation_title != null ? String(r.recommendation_title).trim() : '';
+      if (!title) continue;
+      const dateKey = r.metric_date != null ? String(r.metric_date).slice(0, 10) : '';
+      const dedupeKey = `${(r.branch_id ?? bid).trim().toLowerCase()}|${dateKey}|${title.toLowerCase()}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      out.push({
+        branch_id: r.branch_id ?? bid,
         metric_date: r.metric_date ?? null,
-        recommendation: r.alert_type ?? null,
+        recommendation: title,
         category: null,
         priority: null,
-      } as BranchRecommendationRow));
+      });
+    }
+    return out;
   } catch (e) {
     if (process.env.NODE_ENV === 'development') {
       console.error('[KpiAnalytics] getBranchRecommendationsFromKpi error:', e);

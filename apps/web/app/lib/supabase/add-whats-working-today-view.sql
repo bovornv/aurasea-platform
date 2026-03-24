@@ -146,20 +146,40 @@ all_rows AS (
   UNION ALL
   SELECT * FROM fallback
 ),
-ranked AS (
-  SELECT
+-- One row per (branch, day, normalized line) so upstream duplicates / joins cannot double-render.
+deduped_rows AS (
+  SELECT DISTINCT ON (
+    lower(trim(COALESCE(a.branch_id::text, ''))),
+    COALESCE(a.metric_date::date, '1970-01-01'::date),
+    lower(trim(COALESCE(a.highlight_text, '')))
+  )
     a.organization_id,
     a.branch_id,
     a.branch_name,
     a.metric_date,
     a.highlight_text,
-    a.sort_score,
-    ROW_NUMBER() OVER (
-      PARTITION BY a.organization_id
-      ORDER BY a.sort_score DESC, a.metric_date DESC NULLS LAST
-    ) AS rn
+    a.sort_score
   FROM all_rows a
   WHERE a.organization_id IS NOT NULL
+  ORDER BY
+    lower(trim(COALESCE(a.branch_id::text, ''))),
+    COALESCE(a.metric_date::date, '1970-01-01'::date),
+    lower(trim(COALESCE(a.highlight_text, ''))),
+    a.sort_score DESC NULLS LAST
+),
+ranked AS (
+  SELECT
+    d.organization_id,
+    d.branch_id,
+    d.branch_name,
+    d.metric_date,
+    d.highlight_text,
+    d.sort_score,
+    ROW_NUMBER() OVER (
+      PARTITION BY d.organization_id
+      ORDER BY d.sort_score DESC, d.metric_date DESC NULLS LAST
+    ) AS rn
+  FROM deduped_rows d
 )
 SELECT
   r.organization_id,

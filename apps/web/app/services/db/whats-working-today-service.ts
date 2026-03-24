@@ -13,6 +13,41 @@ export interface WhatsWorkingTodayRow {
   sort_score: number | null;
 }
 
+/** Trim + lowercase for dedupe keys (matches SQL lower(trim(...))). */
+export function normalizeWhatsWorkingTitle(text: string | null | undefined): string {
+  return (text ?? '').trim().toLowerCase();
+}
+
+function normalizeBranchIdKey(id: string | null | undefined): string {
+  return (id ?? '').trim().toLowerCase();
+}
+
+/** Dedupe by branch_id + metric_date + normalized highlight_text; preserves first occurrence (highest sort_score if input pre-sorted desc). */
+export function dedupeWhatsWorkingRows(rows: WhatsWorkingTodayRow[]): WhatsWorkingTodayRow[] {
+  const seen = new Set<string>();
+  const out: WhatsWorkingTodayRow[] = [];
+  for (const row of rows) {
+    const k = `${normalizeBranchIdKey(row.branch_id)}|${row.metric_date ?? ''}|${normalizeWhatsWorkingTitle(row.highlight_text)}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(row);
+  }
+  return out;
+}
+
+/** Plain string lines (branch Today) — dedupe by normalized text only. */
+export function dedupeWhatsWorkingHighlightLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const k = normalizeWhatsWorkingTitle(line);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(line);
+  }
+  return out;
+}
+
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
     const v = r[k];
@@ -57,7 +92,7 @@ export async function fetchWhatsWorkingToday(
   }
 
   const raw = Array.isArray(data) ? data : [];
-  return raw.map((row) => {
+  const mapped = raw.map((row) => {
     const r = row as Record<string, unknown>;
     return {
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
@@ -68,4 +103,5 @@ export async function fetchWhatsWorkingToday(
       sort_score: pickNum(r, 'sort_score'),
     };
   });
+  return dedupeWhatsWorkingRows(mapped);
 }
