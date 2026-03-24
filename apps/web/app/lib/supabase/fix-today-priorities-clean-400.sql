@@ -20,11 +20,20 @@ SELECT
   ranked.impact_label,
   ranked.reason_short,
   ranked.sort_score,
-  ranked.rank
+  ranked.rank,
+  ranked.business_type
 FROM (
   SELECT
     COALESCE(f.organization_id, b.organization_id) AS organization_id,
     f.branch_id,
+    (
+      CASE
+        WHEN LOWER(COALESCE(f.alert_stream, '')) = 'fnb' THEN 'fnb'::text
+        WHEN LOWER(COALESCE(f.alert_stream, '')) = 'accommodation' THEN 'accommodation'::text
+        WHEN LOWER(COALESCE(f.branch_type, '')) IN ('fnb', 'restaurant', 'cafe', 'cafe_restaurant') THEN 'fnb'::text
+        ELSE 'accommodation'::text
+      END
+    ) AS business_type,
     f.branch_name,
     f.alert_type,
     COALESCE(NULLIF(TRIM(BOTH FROM f.recommended_action), ''), ''::text) AS action_text,
@@ -62,6 +71,34 @@ COMMENT ON VIEW public.today_priorities_clean IS
   'Company Today: organization_id, rank (1=top), sort_score; GET filter organization_id, order=rank.asc, limit=3.';
 
 GRANT SELECT ON public.today_priorities_clean TO anon, authenticated;
+
+-- Stable shape: keep existing column order and append business_type last.
+CREATE VIEW public.today_priorities_view AS
+SELECT
+  c.organization_id,
+  c.branch_id,
+  c.branch_name,
+  c.alert_type,
+  c.action_text,
+  c.short_title,
+  c.impact_estimate_thb,
+  c.impact_label,
+  c.reason_short,
+  c.sort_score,
+  c.rank,
+  (
+    CASE
+      WHEN COALESCE(NULLIF(TRIM(BOTH FROM c.branch_name), ''), b.name, '') ILIKE '%cafe%' THEN 'fnb'::text
+      ELSE 'accommodation'::text
+    END
+  ) AS business_type
+FROM public.today_priorities_clean c
+LEFT JOIN public.branches b ON b.id::text = TRIM(BOTH FROM c.branch_id::text);
+
+COMMENT ON VIEW public.today_priorities_view IS
+  'Schema-stable priorities view: existing order + business_type appended last.';
+
+GRANT SELECT ON public.today_priorities_view TO anon, authenticated;
 
 -- STEP 3 verify:
 -- SELECT * FROM public.today_priorities_clean LIMIT 5;

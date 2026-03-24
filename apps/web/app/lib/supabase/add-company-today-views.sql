@@ -39,6 +39,7 @@
 --
 -- 4c) today_priorities / today_priorities_clean — add-today-priorities-view.sql or rebuild-alerts-enriched-engine.sql
 --     400 on API: run fix-today-priorities-clean-400.sql (organization_id, sort_score, rank; order rank.asc).
+--     today_priorities_view keeps legacy column order and appends business_type at the end.
 --
 -- 4d) whats_working_today — add-whats-working-today-view.sql or rebuild-alerts-enriched-engine.sql
 --     Positive signals from today_summary_clean; highlight_text for company Today page.

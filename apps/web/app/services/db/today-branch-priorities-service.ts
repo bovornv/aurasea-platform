@@ -5,6 +5,7 @@ import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/clien
 
 export interface TodayBranchPriorityRow {
   branch_id: string;
+  business_type: 'accommodation' | 'fnb' | string;
   metric_date: string | null;
   short_title: string | null;
   action_text: string | null;
@@ -36,9 +37,10 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
 
 export async function fetchTodayBranchPriorities(
   branchId: string | null,
+  businessType: 'accommodation' | 'fnb' | null | undefined,
   limit: number = 3
 ): Promise<TodayBranchPriorityRow[]> {
-  if (!branchId?.trim() || !isSupabaseAvailable()) return [];
+  if (!branchId?.trim() || !businessType || !isSupabaseAvailable()) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
@@ -47,6 +49,7 @@ export async function fetchTodayBranchPriorities(
     .from('today_branch_priorities')
     .select('*')
     .eq('branch_id', branchId.trim())
+    .eq('business_type', businessType)
     .order('rank', { ascending: true })
     .limit(cap);
 
@@ -62,6 +65,7 @@ export async function fetchTodayBranchPriorities(
     const r = row as Record<string, unknown>;
     return {
       branch_id: pickStr(r, 'branch_id', 'branchId'),
+      business_type: pickStr(r, 'business_type', 'businessType') || 'unknown',
       metric_date: r.metric_date != null ? String(r.metric_date).slice(0, 10) : null,
       short_title: pickStr(r, 'short_title', 'shortTitle') || null,
       action_text: pickStr(r, 'action_text', 'actionText') || null,

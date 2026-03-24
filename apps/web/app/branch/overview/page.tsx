@@ -413,7 +413,7 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw(dates);
       setFreshnessLoaded(true);
     });
-    fetchTodayBranchPriorities(branch.id, 3)
+    fetchTodayBranchPriorities(branch.id, branch.moduleType, 3)
       .then((rows) => {
         setBranchPriorities(rows);
         setBranchPrioritiesLoading(false);
@@ -443,7 +443,7 @@ export default function BranchOverviewPage() {
       if (detail?.branchId === branch?.id) {
         refreshOperatingStatus();
         getBranchLearningStatus(branch.id).then(setLearningStatus);
-        fetchTodayBranchPriorities(branch.id, 3).then(setBranchPriorities);
+        fetchTodayBranchPriorities(branch.id, branch.moduleType, 3).then(setBranchPriorities);
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });

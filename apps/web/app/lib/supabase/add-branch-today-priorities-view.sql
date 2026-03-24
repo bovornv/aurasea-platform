@@ -7,6 +7,14 @@ DROP VIEW IF EXISTS public.today_branch_priorities CASCADE;
 CREATE VIEW public.today_branch_priorities AS
 SELECT
   f.branch_id::text AS branch_id,
+  (
+    CASE
+      WHEN LOWER(COALESCE(f.alert_stream, '')) = 'fnb' THEN 'fnb'::text
+      WHEN LOWER(COALESCE(f.alert_stream, '')) = 'accommodation' THEN 'accommodation'::text
+      WHEN LOWER(COALESCE(f.branch_type, '')) IN ('fnb', 'restaurant', 'cafe', 'cafe_restaurant') THEN 'fnb'::text
+      ELSE 'accommodation'::text
+    END
+  ) AS business_type,
   f.metric_date::date AS metric_date,
   (
     CASE
@@ -34,7 +42,7 @@ FROM public.alerts_fix_this_first f
 WHERE f.branch_id IS NOT NULL;
 
 COMMENT ON VIEW public.today_branch_priorities IS
-  'Branch priorities from alerts_fix_this_first; filter by branch_id; order rank ASC; limit 3.';
+  'Branch priorities from alerts_fix_this_first; filter by branch_id + business_type; order rank ASC; limit 3.';
 
 GRANT SELECT ON public.today_branch_priorities TO anon, authenticated;
 

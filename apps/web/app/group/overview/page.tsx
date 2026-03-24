@@ -295,7 +295,7 @@ function OwnerSummaryContent() {
       try {
         const [prio, working, opps, watch, conf] = await Promise.race([
           Promise.all([
-            fetchTodayPriorities(orgId, 3),
+            fetchTodayPriorities(orgId, null, 3),
             fetchWhatsWorkingToday(orgId, 3),
             fetchOpportunitiesToday(orgId, 3),
             fetchWatchlistToday(orgId, 3),

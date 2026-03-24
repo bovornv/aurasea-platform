@@ -1,10 +1,11 @@
 /**
- * GET /rest/v1/today_priorities_clean?select=*&organization_id=eq.{uuid}&order=rank.asc&limit=3
+ * GET /rest/v1/today_priorities_view?select=*&organization_id=eq.{uuid}&order=rank.asc&limit=3
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 
 export interface TodayPrioritiesRow {
   branch_id: string;
+  business_type: string | null;
   organization_id: string | null;
   branch_name: string | null;
   alert_type: string | null;
@@ -41,6 +42,7 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
 /** Top priorities for the org (max 3 rows). */
 export async function fetchTodayPriorities(
   organizationId: string | null,
+  businessType?: 'accommodation' | 'fnb' | null,
   limit: number = 3
 ): Promise<TodayPrioritiesRow[]> {
   if (!organizationId?.trim() || !isSupabaseAvailable()) return [];
@@ -48,16 +50,18 @@ export async function fetchTodayPriorities(
   if (!supabase) return [];
 
   const cap = Math.min(3, Math.max(1, limit));
-  const { data, error } = await supabase
-    .from('today_priorities_clean')
+  let query = supabase
+    .from('today_priorities_view')
     .select('*')
-    .eq('organization_id', organizationId.trim())
-    .order('rank', { ascending: true })
-    .limit(cap);
+    .eq('organization_id', organizationId.trim());
+  if (businessType) {
+    query = query.eq('business_type', businessType);
+  }
+  const { data, error } = await query.order('rank', { ascending: true }).limit(cap);
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[today_priorities_clean]', error.message);
+      console.warn('[today_priorities_view]', error.message);
     }
     return [];
   }
@@ -67,6 +71,7 @@ export async function fetchTodayPriorities(
     const r = row as Record<string, unknown>;
     return {
       branch_id: pickStr(r, 'branch_id', 'branchId'),
+      business_type: pickStr(r, 'business_type', 'businessType') || null,
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_name: pickStr(r, 'branch_name', 'branchName') || null,
       alert_type: pickStr(r, 'alert_type', 'alertType') || null,
