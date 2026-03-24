@@ -343,9 +343,12 @@ async function fetchCompanyTodayBundleCore(
 
   const idFilter = branchIds;
 
+  // get_alerts_critical is defined in SQL; @supabase/supabase-js types omit it → assert args
+  const getAlertsCriticalArgs = { branch_ids: idFilter } as never;
+
   const [bsRes, critRes, todayRes] = await Promise.all([
     supabase.from('branch_business_status').select('*').in('branch_id', idFilter),
-    supabase.rpc('get_alerts_critical', { branch_ids: idFilter }),
+    supabase.rpc('get_alerts_critical', getAlertsCriticalArgs),
     supabase.from('alerts_today').select('*').in('branch_id', idFilter),
   ]);
 
