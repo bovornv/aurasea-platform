@@ -756,11 +756,11 @@ export default function BranchOverviewPage() {
 
   const branchWorkingFallbackRows = useMemo(() => {
     const rows: string[] = [];
-    if (customersNow > 0) rows.push('Customer activity detected');
-    if (roomsSoldNow > 0) rows.push('Rooms demand active');
-    if (revenueNow > 0) rows.push('Revenue flowing today');
+    if (customersNow > 0) rows.push('Customer traffic is steady');
+    if (roomsSoldNow > 0) rows.push('Room demand is stable');
+    if (revenueNow > 0) rows.push('Revenue flow is consistent');
     if (rows.length === 0) {
-      rows.push('Operations running normally — no major risks detected');
+      rows.push('Operations running smoothly');
     }
     return rows.slice(0, 3);
   }, [customersNow, roomsSoldNow, revenueNow]);
@@ -1652,29 +1652,31 @@ export default function BranchOverviewPage() {
           {performanceTrends ? (
             <div style={{ fontSize: 14, lineHeight: 1.6, color: '#334155', fontWeight: 500 }}>
               <div>
-                {locale === 'th' ? 'รายได้เทียบ 7 วันก่อนหน้า: ' : 'Revenue vs prior 7 days: '}
-                <span style={{ color: performanceTrends.revenueTrend >= 0 ? '#059669' : '#b91c1c', fontWeight: 700 }}>
-                  {performanceTrends.revenueTrend >= 0 ? '+' : ''}
-                  {performanceTrends.revenueTrend.toFixed(1)}%
-                </span>
+                {locale === 'th'
+                  ? performanceTrends.revenueTrend > 2
+                    ? 'รายได้กำลังปรับตัวดีขึ้น'
+                    : performanceTrends.revenueTrend < -2
+                      ? 'รายได้เริ่มอ่อนตัวลง'
+                      : 'รายได้ค่อนข้างทรงตัว'
+                  : performanceTrends.revenueTrend > 2
+                    ? 'Revenue is improving'
+                    : performanceTrends.revenueTrend < -2
+                      ? 'Revenue is declining'
+                      : 'Revenue is stable'}
               </div>
-              <div>
-                {locale === 'th' ? 'ต้นทุน: ' : 'Cost trend: '}
-                <span style={{ color: performanceTrends.costTrend <= 0 ? '#059669' : '#b91c1c', fontWeight: 700 }}>
-                  {performanceTrends.costTrend >= 0 ? '+' : ''}
-                  {performanceTrends.costTrend.toFixed(1)}%
-                </span>
+              <div style={{ color: '#64748b', fontSize: 13 }}>
+                {locale === 'th' ? 'ข้อมูลเริ่มก่อตัว แนวโน้มกำลังก่อตัว' : 'Early data, trend forming'}
               </div>
             </div>
           ) : hasRevenueActivity ? (
             <p style={{ margin: 0, color: '#475569', fontSize: 14, fontWeight: 600 }}>
-              {locale === 'th' ? 'ตรวจพบกิจกรรมรายได้' : 'Revenue activity detected'}
+              {locale === 'th' ? 'ข้อมูลเริ่มก่อตัว แนวโน้มกำลังก่อตัว' : 'Early data, trend forming'}
             </p>
           ) : (
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>
               {locale === 'th'
-                ? 'กำลังติดตามผลการดำเนินงาน — แนวโน้มจะแสดงในอีกไม่นาน'
-                : 'Tracking performance — trends will appear shortly'}
+                ? 'ผลการดำเนินงานค่อนข้างทรงตัว — ต้องการข้อมูลเพิ่ม'
+                : 'Performance is stable — more data needed'}
             </p>
           )}
         </OperatingSection>
