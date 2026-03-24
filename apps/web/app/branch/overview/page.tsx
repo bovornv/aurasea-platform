@@ -722,6 +722,49 @@ export default function BranchOverviewPage() {
 
   const branchPrioritiesTop = useMemo(() => branchPriorities.slice(0, 3), [branchPriorities]);
 
+  const revenueNow = useMemo(() => {
+    const ts = todaySummaryRow as any;
+    const fnb = fnbOperatingStatus as any;
+    const acc = operatingStatusData as any;
+    return Number(
+      ts?.total_revenue ??
+        ts?.revenue ??
+        fnb?.revenue_thb ??
+        fnb?.revenue ??
+        acc?.revenue_thb ??
+        acc?.revenue ??
+        0
+    );
+  }, [todaySummaryRow, fnbOperatingStatus, operatingStatusData]);
+
+  const customersNow = useMemo(() => {
+    const ts = todaySummaryRow as any;
+    const fnb = fnbOperatingStatus as any;
+    return Number(ts?.customers ?? fnb?.customers ?? fnb?.total_customers ?? 0);
+  }, [todaySummaryRow, fnbOperatingStatus]);
+
+  const roomsSoldNow = useMemo(() => {
+    const ts = todaySummaryRow as any;
+    const acc = operatingStatusData as any;
+    return Number(ts?.utilized ?? ts?.rooms_sold ?? acc?.rooms_sold ?? 0);
+  }, [todaySummaryRow, operatingStatusData]);
+
+  const hasRevenueActivity = useMemo(
+    () => revenueNow > 0 || (driverChartData?.revenue?.some((v) => safeNumber(v, 0) > 0) ?? false),
+    [revenueNow, driverChartData]
+  );
+
+  const branchWorkingFallbackRows = useMemo(() => {
+    const rows: string[] = [];
+    if (customersNow > 0) rows.push('Customer activity detected');
+    if (roomsSoldNow > 0) rows.push('Rooms demand active');
+    if (revenueNow > 0) rows.push('Revenue flowing today');
+    if (rows.length === 0) {
+      rows.push('Operations running normally — no major risks detected');
+    }
+    return rows.slice(0, 3);
+  }, [customersNow, roomsSoldNow, revenueNow]);
+
   useEffect(() => {
     if (!branch?.id) {
       setBranchWhatsWorkingRows([]);
@@ -731,7 +774,7 @@ export default function BranchOverviewPage() {
       return;
     }
     if (!isSupabaseAvailable()) {
-      setBranchWhatsWorkingRows(['Stable performance across this branch']);
+      setBranchWhatsWorkingRows([]);
       setBranchOpportunitiesRows(['No clear opportunities today']);
       setBranchWatchlistRows(['No early warning signals detected']);
       setBranchSectionLoading(false);
@@ -739,7 +782,7 @@ export default function BranchOverviewPage() {
     }
     const supabase = getSupabaseClient();
     if (!supabase) {
-      setBranchWhatsWorkingRows(['Stable performance across this branch']);
+      setBranchWhatsWorkingRows([]);
       setBranchOpportunitiesRows(['No clear opportunities today']);
       setBranchWatchlistRows(['No early warning signals detected']);
       setBranchSectionLoading(false);
@@ -808,9 +851,7 @@ export default function BranchOverviewPage() {
               .filter(Boolean)
               .slice(0, 3)
           : [];
-        setBranchWhatsWorkingRows(
-          working.length > 0 ? working : ['Stable performance across this branch']
-        );
+        setBranchWhatsWorkingRows(working);
         setBranchOpportunitiesRows(
           opps.length > 0 ? opps : ['No clear opportunities today']
         );
@@ -1625,9 +1666,15 @@ export default function BranchOverviewPage() {
                 </span>
               </div>
             </div>
+          ) : hasRevenueActivity ? (
+            <p style={{ margin: 0, color: '#475569', fontSize: 14, fontWeight: 600 }}>
+              {locale === 'th' ? 'ตรวจพบกิจกรรมรายได้' : 'Revenue activity detected'}
+            </p>
           ) : (
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>
-              {locale === 'th' ? 'ข้อมูลแนวโน้มยังไม่เพียงพอ' : 'Not enough data to show trends yet'}
+              {locale === 'th'
+                ? 'กำลังติดตามผลการดำเนินงาน — แนวโน้มจะแสดงในอีกไม่นาน'
+                : 'Tracking performance — trends will appear shortly'}
             </p>
           )}
         </OperatingSection>
@@ -1638,7 +1685,7 @@ export default function BranchOverviewPage() {
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
           ) : (
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {branchWhatsWorkingRows.slice(0, 3).map((text, idx) => (
+              {(branchWhatsWorkingRows.length > 0 ? branchWhatsWorkingRows.slice(0, 3) : branchWorkingFallbackRows).map((text, idx) => (
                 <li key={`bw-${idx}`} style={{ color: '#166534', fontSize: 14, lineHeight: 1.5 }}>
                   • {text}
                 </li>
