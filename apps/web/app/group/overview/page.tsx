@@ -28,6 +28,7 @@ import { businessGroupService } from '../../services/business-group-service';
 import { getBranchHealthScores } from '../../services/health-score-service';
 import { CompanyWhatsWorkingToday } from '../../components/company/company-whats-working-today';
 import { CompanyOpportunitiesToday } from '../../components/company/company-opportunities-today';
+import { CompanyWatchlistToday } from '../../components/company/company-watchlist-today';
 import { MonitoringErrorBoundary } from '../../components/monitoring-error-boundary';
 import { useOrganization } from '../../contexts/organization-context';
 import { useRbacReady } from '../../hooks/use-route-guard';
@@ -60,6 +61,10 @@ import {
   fetchOpportunitiesToday,
   type OpportunitiesTodayRow,
 } from '../../services/db/opportunities-today-service';
+import {
+  fetchWatchlistToday,
+  type WatchlistTodayRow,
+} from '../../services/db/watchlist-today-service';
 import {
   fetchCompanyDataConfidence,
   type CompanyDataConfidenceRow,
@@ -101,6 +106,8 @@ function OwnerSummaryContent() {
   const [whatsWorkingLoading, setWhatsWorkingLoading] = useState(false);
   const [opportunitiesRows, setOpportunitiesRows] = useState<OpportunitiesTodayRow[]>([]);
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(false);
+  const [watchlistRows, setWatchlistRows] = useState<WatchlistTodayRow[]>([]);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [dataConfidenceRow, setDataConfidenceRow] = useState<CompanyDataConfidenceRow | null>(null);
   const [dataConfidenceLoading, setDataConfidenceLoading] = useState(false);
 
@@ -272,6 +279,8 @@ function OwnerSummaryContent() {
       setWhatsWorkingLoading(false);
       setOpportunitiesRows([]);
       setOpportunitiesLoading(false);
+      setWatchlistRows([]);
+      setWatchlistLoading(false);
       setDataConfidenceRow(null);
       setDataConfidenceLoading(false);
       return;
@@ -280,24 +289,27 @@ function OwnerSummaryContent() {
     setPrioritiesLoading(true);
     setWhatsWorkingLoading(true);
     setOpportunitiesLoading(true);
+    setWatchlistLoading(true);
     setDataConfidenceLoading(true);
     (async () => {
       try {
-        const [prio, working, opps, conf] = await Promise.race([
+        const [prio, working, opps, watch, conf] = await Promise.race([
           Promise.all([
             fetchTodayPriorities(orgId, 3),
             fetchWhatsWorkingToday(orgId, 3),
             fetchOpportunitiesToday(orgId, 3),
+            fetchWatchlistToday(orgId, 3),
             fetchCompanyDataConfidence(orgId),
           ]),
           new Promise<
-            [TodayPrioritiesRow[], WhatsWorkingTodayRow[], OpportunitiesTodayRow[], CompanyDataConfidenceRow | null]
-          >((resolve) => setTimeout(() => resolve([[], [], [], null]), 12000)),
+            [TodayPrioritiesRow[], WhatsWorkingTodayRow[], OpportunitiesTodayRow[], WatchlistTodayRow[], CompanyDataConfidenceRow | null]
+          >((resolve) => setTimeout(() => resolve([[], [], [], [], null]), 12000)),
         ]);
         if (!cancelled) {
           setPrioritiesRows(prio);
           setWhatsWorkingRows(working);
           setOpportunitiesRows(opps);
+          setWatchlistRows(watch);
           setDataConfidenceRow(conf);
         }
       } finally {
@@ -305,6 +317,7 @@ function OwnerSummaryContent() {
           setPrioritiesLoading(false);
           setWhatsWorkingLoading(false);
           setOpportunitiesLoading(false);
+          setWatchlistLoading(false);
           setDataConfidenceLoading(false);
         }
       }
@@ -739,6 +752,23 @@ function OwnerSummaryContent() {
             <CompanyOpportunitiesToday
               rows={opportunitiesRows}
               loading={opportunitiesLoading}
+              locale={locale}
+            />
+          </MonitoringErrorBoundary>
+        </OperatingSection>
+
+        <OperatingSection
+          title={locale === 'th' ? 'สัญญาณเตือนล่วงหน้า' : 'Watchlist'}
+          subtitle={
+            locale === 'th'
+              ? 'แนวโน้มอ่อนตัวที่ควรจับตา (ยังไม่ใช่เหตุเร่งด่วน)'
+              : 'Early warning signals to monitor (not urgent yet).'
+          }
+        >
+          <MonitoringErrorBoundary componentName="Watchlist">
+            <CompanyWatchlistToday
+              rows={watchlistRows}
+              loading={watchlistLoading}
               locale={locale}
             />
           </MonitoringErrorBoundary>

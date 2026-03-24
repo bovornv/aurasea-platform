@@ -45,6 +45,9 @@
 --
 -- 4e) opportunities_today — add-opportunities-today-view.sql or rebuild-alerts-enriched-engine.sql
 --     opportunity_text from alerts_enriched (alert_category = opportunity); requires alerts pipeline.
+--
+-- 4f) watchlist_today — add-watchlist-today-view.sql or rebuild-alerts-enriched-engine.sql
+--     Early warning (non-urgent) softening trends via lag(); fallback row when no signals.
 --    clean: branch_id, organization_id, branch_name, alert_type, action_text, short_title,
 --           impact_estimate_thb, impact_label (at risk|opportunity), reason_short, sort_score
 --
