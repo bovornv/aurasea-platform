@@ -25,7 +25,7 @@ import { CriticalAlertsSnapshot } from '../../components/alerts/critical-alerts-
 import { MonitoringErrorBoundary } from '../../components/monitoring-error-boundary';
 import { AlertsFallback } from '../../components/alerts-fallback';
 import { formatCurrency } from '../../utils/formatting';
-import { getSeverityColor, getSeverityLabel, getAlertTopDisplay } from '../../utils/alert-utils';
+import { getSeverityColor, getSeverityLabel } from '../../utils/alert-utils';
 import { safeNumber } from '../../utils/safe-number';
 import { calculateRevenueExposure } from '../../utils/revenue-exposure-calculator';
 import { runPlatformAudit } from '../../services/platform-audit-service';
@@ -44,14 +44,12 @@ import {
   getOperatingStatusData,
   getFnbOperatingStatus,
   getTodaySummary,
-  getBranchAlertsTodayForBranchOverview,
   getBranchTrendSeriesWithFallback,
   getAccommodationProfitabilitySignal,
   getFnbProfitabilitySignal,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
   type TodaySummaryRow,
-  type BranchTodayOverviewAlertRow,
   type BranchTrendSeries,
   type AccommodationProfitabilitySignal,
   type FnbProfitabilitySignal,
@@ -70,6 +68,10 @@ import {
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { getHealthScoreFromAccommodationHealthToday, getHealthScoreFromFnbHealthToday } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
+import {
+  fetchTodayBranchPriorities,
+  type TodayBranchPriorityRow,
+} from '../../services/db/today-branch-priorities-service';
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import type { DailyMetric } from '../../models/daily-metrics';
@@ -109,9 +111,9 @@ export default function BranchOverviewPage() {
   // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
   const [freshnessDatesFromRaw, setFreshnessDatesFromRaw] = useState<string[]>([]);
   const [freshnessLoaded, setFreshnessLoaded] = useState(false);
-  // “What needs attention today”: branch_alerts_today (current branch)
-  const [branchTodayAlerts, setBranchTodayAlerts] = useState<BranchTodayOverviewAlertRow[]>([]);
-  const [branchTodayAlertsLoading, setBranchTodayAlertsLoading] = useState(true);
+  // Today's Priorities: today_branch_priorities (current branch)
+  const [branchPriorities, setBranchPriorities] = useState<TodayBranchPriorityRow[]>([]);
+  const [branchPrioritiesLoading, setBranchPrioritiesLoading] = useState(true);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
   const [accProfitSignal, setAccProfitSignal] = useState<AccommodationProfitabilitySignal | null>(null);
   const [fnbProfitSignal, setFnbProfitSignal] = useState<FnbProfitabilitySignal | null>(null);
@@ -381,7 +383,7 @@ export default function BranchOverviewPage() {
   // Operating Status: F&B = fnb_operating_status + fnb_health_today; accommodation = accommodation_latest_metrics + confidence + early signal + accommodation_health_today
   const refreshOperatingStatus = useCallback(() => {
     if (!branch?.id) return;
-    setBranchTodayAlertsLoading(true);
+    setBranchPrioritiesLoading(true);
     setFreshnessLoaded(false);
     if (branch.moduleType !== 'accommodation') setAccProfitSignal(null);
     if (branch.moduleType !== 'fnb') setFnbProfitSignal(null);
@@ -406,27 +408,21 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw(dates);
       setFreshnessLoaded(true);
     });
-    const alertStream =
-      branch.moduleType === 'accommodation'
-        ? ('accommodation' as const)
-        : branch.moduleType === 'fnb'
-          ? ('fnb' as const)
-          : null;
-    getBranchAlertsTodayForBranchOverview(branch.id, alertStream)
+    fetchTodayBranchPriorities(branch.id, 3)
       .then((rows) => {
-        setBranchTodayAlerts(rows);
-        setBranchTodayAlertsLoading(false);
+        setBranchPriorities(rows);
+        setBranchPrioritiesLoading(false);
       })
       .catch(() => {
-        setBranchTodayAlerts([]);
-        setBranchTodayAlertsLoading(false);
+        setBranchPriorities([]);
+        setBranchPrioritiesLoading(false);
       });
   }, [branch?.id, branch?.moduleType]);
 
   useEffect(() => {
     if (!branch?.id) {
-      setBranchTodayAlerts([]);
-      setBranchTodayAlertsLoading(false);
+      setBranchPriorities([]);
+      setBranchPrioritiesLoading(false);
       setFreshnessDatesFromRaw([]);
       setFreshnessLoaded(false);
       setAccProfitSignal(null);
@@ -442,14 +438,7 @@ export default function BranchOverviewPage() {
       if (detail?.branchId === branch?.id) {
         refreshOperatingStatus();
         getBranchLearningStatus(branch.id).then(setLearningStatus);
-        getBranchAlertsTodayForBranchOverview(
-          branch.id,
-          branch.moduleType === 'accommodation'
-            ? 'accommodation'
-            : branch.moduleType === 'fnb'
-              ? 'fnb'
-              : null
-        ).then(setBranchTodayAlerts);
+        fetchTodayBranchPriorities(branch.id, 3).then(setBranchPriorities);
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
@@ -726,25 +715,7 @@ export default function BranchOverviewPage() {
     return null;
   }, [driverChartData, isAccommodation, isFnb, locale]);
 
-  const branchTodayAlertsOrdered = useMemo(() => {
-    const copy = [...branchTodayAlerts];
-    copy.sort((a, b) => {
-      if (a.isOpportunity !== b.isOpportunity) return a.isOpportunity ? -1 : 1;
-      if (b.impact_estimate_thb !== a.impact_estimate_thb) return b.impact_estimate_thb - a.impact_estimate_thb;
-      return (b.metric_date ?? '').localeCompare(a.metric_date ?? '');
-    });
-    return copy;
-  }, [branchTodayAlerts]);
-
-  const branchTodayOpportunities = useMemo(
-    () => branchTodayAlertsOrdered.filter((a) => a.isOpportunity).slice(0, 3),
-    [branchTodayAlertsOrdered]
-  );
-
-  const branchTodayProblems = useMemo(
-    () => branchTodayAlertsOrdered.filter((a) => !a.isOpportunity).slice(0, 3),
-    [branchTodayAlertsOrdered]
-  );
+  const branchPrioritiesTop = useMemo(() => branchPriorities.slice(0, 3), [branchPriorities]);
 
   // STEP 6 & 7: Debug logging will be added after recommendedActions is defined
 
@@ -1336,126 +1307,58 @@ export default function BranchOverviewPage() {
           </div>
         ) : null}
 
-        {/* 3. What needs attention today (branch_alerts_today) */}
+        {/* 3. Today's Priorities (today_branch_priorities) */}
         <div style={{ marginTop: learningStatus != null ? 0 : 24 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 12 }}>
-            {locale === 'th' ? 'ประเด็นที่ควรดูวันนี้' : 'What needs attention today'}
+            {locale === 'th' ? 'ลำดับความสำคัญวันนี้' : "Today's Priorities"}
           </h2>
-          {branchTodayAlertsLoading ? (
+          {branchPrioritiesLoading ? (
             <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
-          ) : branchTodayOpportunities.length === 0 && branchTodayProblems.length === 0 ? (
+          ) : branchPrioritiesTop.length === 0 ? (
             <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.55 }}>
               {locale === 'th'
-                ? 'ทุกอย่างเรียบร้อย — ไม่พบประเด็นวันนี้'
-                : 'All good — no issues detected today'}
+                ? 'ไม่พบลำดับความสำคัญสำหรับวันนี้'
+                : 'No priorities for today'}
             </div>
           ) : (
-            <>
-              {branchTodayOpportunities.length > 0 && branchTodayProblems.length > 0 ? (
-                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#059669', margin: '0 0 8px 0' }}>
-                  {locale === 'th' ? 'โอกาส' : 'Opportunities'}
-                </h3>
-              ) : null}
-              {branchTodayOpportunities.length > 0 ? (
-                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {branchTodayOpportunities.map((alert, idx) => {
-                    const accentColor = '#059669';
-                    const d = getAlertTopDisplay(
-                      {
-                        alert_type: alert.alert_type,
-                        alert_message: alert.alert_message,
-                        cause: null,
-                        recommendation: alert.recommended_action,
-                        expected_recovery: null,
-                      },
-                      locale === 'th' ? 'th' : 'en',
-                      { moduleType: branch?.moduleType }
-                    );
-                    const actionFallback = locale === 'th' ? 'ทบทวนประสิทธิภาพ' : 'Review performance';
-                    const actionText = (d.recommendation || alert.recommended_action || '').trim() || actionFallback;
-                    const numLoc = locale === 'th' ? 'th-TH' : 'en-US';
-                    return (
-                      <li
-                        key={`opp-${alert.branch_id}-${alert.metric_date}-${alert.alert_type}-${idx}`}
-                        style={{
-                          padding: '12px 16px',
-                          borderLeft: `4px solid ${accentColor}`,
-                          lineHeight: 1.5,
-                          color: '#1f2937',
-                        }}
-                      >
-                        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{d.type}</div>
-                        {d.message ? (
-                          <div style={{ fontSize: 14, color: '#374151', marginBottom: 6 }}>{d.message}</div>
-                        ) : null}
-                        <div style={{ fontSize: 13, color: '#059669', fontWeight: 600, marginBottom: 4 }}>
-                          {locale === 'th' ? 'โอกาสรายได้ (ประมาณ): ' : 'Opportunity (est.): '}
-                          ฿{formatCurrency(alert.impact_estimate_thb, numLoc)}
-                        </div>
-                        <div style={{ fontSize: 14, color: '#374151' }}>
-                          <span style={{ fontWeight: 600 }}>{locale === 'th' ? 'แนวทาง: ' : 'Action: '}</span>
-                          {actionText}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-              {branchTodayOpportunities.length > 0 && branchTodayProblems.length > 0 ? (
-                <h3 style={{ fontSize: 13, fontWeight: 600, color: '#b91c1c', margin: '16px 0 8px 0' }}>
-                  {locale === 'th' ? 'ประเด็นที่ควรดู' : 'Needs attention'}
-                </h3>
-              ) : null}
-              {branchTodayProblems.length > 0 ? (
-                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {branchTodayProblems.map((alert, idx) => {
-                    const accentColor = '#dc2626';
-                    const d = getAlertTopDisplay(
-                      {
-                        alert_type: alert.alert_type,
-                        alert_message: alert.alert_message,
-                        cause: null,
-                        recommendation: alert.recommended_action,
-                        expected_recovery: null,
-                      },
-                      locale === 'th' ? 'th' : 'en',
-                      { moduleType: branch?.moduleType }
-                    );
-                    const actionFallback = locale === 'th' ? 'ทบทวนประสิทธิภาพ' : 'Review performance';
-                    const actionText = (d.recommendation || alert.recommended_action || '').trim() || actionFallback;
-                    const numLoc = locale === 'th' ? 'th-TH' : 'en-US';
-                    return (
-                      <li
-                        key={`prob-${alert.branch_id}-${alert.metric_date}-${alert.alert_type}-${idx}`}
-                        style={{
-                          padding: '12px 16px',
-                          borderLeft: `4px solid ${accentColor}`,
-                          lineHeight: 1.5,
-                          color: '#1f2937',
-                        }}
-                      >
-                        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{d.type}</div>
-                        {d.message ? (
-                          <div style={{ fontSize: 14, color: '#374151', marginBottom: 6 }}>{d.message}</div>
-                        ) : null}
-                        <div style={{ fontSize: 13, color: '#b91c1c', fontWeight: 600, marginBottom: 4 }}>
-                          {locale === 'th' ? 'ผลกระทบ: ' : 'Impact: '}
-                          ฿{formatCurrency(alert.impact_estimate_thb, numLoc)}
-                        </div>
-                        <div style={{ fontSize: 14, color: '#374151' }}>
-                          <span style={{ fontWeight: 600 }}>{locale === 'th' ? 'แนวทาง: ' : 'Action: '}</span>
-                          {actionText}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-            </>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {branchPrioritiesTop.map((row, idx) => {
+                const rank = row.rank ?? idx + 1;
+                const title = (row.short_title || '').trim() || (locale === 'th' ? 'ประเด็นสำคัญ' : 'Priority');
+                const action = (row.action_text || '').trim() || (locale === 'th' ? 'ทบทวนแผนปฏิบัติการ' : 'Review action plan');
+                const impact = row.impact_estimate_thb ?? 0;
+                const impactLabel = (row.impact_label || 'at risk').toLowerCase();
+                const isOpportunity = impactLabel.includes('opportunity');
+                const impactColor = isOpportunity ? '#059669' : '#b91c1c';
+                const impactText = isOpportunity
+                  ? locale === 'th'
+                    ? 'โอกาส'
+                    : 'opportunity'
+                  : locale === 'th'
+                    ? 'เสี่ยง'
+                    : 'at risk';
+                const numLoc = locale === 'th' ? 'th-TH' : 'en-US';
+                return (
+                  <li key={`priority-${row.branch_id}-${row.metric_date}-${row.rank ?? idx}`} style={{ lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+                      {rank}. {title}
+                    </div>
+                    <div style={{ fontSize: 14, color: '#475569', marginTop: 4 }}>
+                      <span aria-hidden>{'→ '}</span>
+                      {action}
+                      <span style={{ color: impactColor, fontWeight: 600 }}>
+                        {' '}
+                        (฿{formatCurrency(impact, numLoc)} {impactText})
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </div>
 
-        {/* 4. Performance Drivers — top 2 driver charts from Trends, same components and styling */}
+        {/* 4. Performance Drivers — placed below Today's Priorities */}
         {(isAccommodation || isFnb) && driverChartData && driverChartData.revenue.length >= 2 ? (
           <div style={{ marginTop: 32 }}>
             <h2 style={{ fontSize: 17, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 16 }}>

@@ -18,6 +18,7 @@
 DROP VIEW IF EXISTS opportunities_today CASCADE;
 DROP VIEW IF EXISTS watchlist_today CASCADE;
 DROP VIEW IF EXISTS whats_working_today CASCADE;
+DROP VIEW IF EXISTS today_branch_priorities CASCADE;
 DROP VIEW IF EXISTS today_priorities_clean CASCADE;
 DROP VIEW IF EXISTS today_priorities CASCADE;
 DROP VIEW IF EXISTS today_action_plan CASCADE;
@@ -503,6 +504,40 @@ WHERE ranked.organization_id IS NOT NULL;
 COMMENT ON VIEW today_priorities_clean IS
     'organization_id, rank (1=top); filter org, order rank.asc, limit 3; branch in short_title.';
 
+-- STEP 6c.1 — Branch Today: Today's Priorities (single list, top 3 by rank)
+DROP VIEW IF EXISTS today_branch_priorities CASCADE;
+CREATE VIEW today_branch_priorities AS
+SELECT
+    f.branch_id::text AS branch_id,
+    f.metric_date::date AS metric_date,
+    (
+        CASE
+            WHEN NULLIF(TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text)), '') IS NULL
+                THEN 'Priority'::text
+            ELSE TRIM(BOTH FROM REPLACE(COALESCE(f.alert_type, ''::text), '_'::text, ' '::text))
+        END
+    ) AS short_title,
+    COALESCE(NULLIF(TRIM(BOTH FROM f.recommended_action), ''), 'Review action plan'::text) AS action_text,
+    COALESCE(f.impact_estimate_thb, 0::numeric) AS impact_estimate_thb,
+    (
+        CASE
+            WHEN LOWER(COALESCE(f.alert_type, ''::text)) LIKE '%opportunity%'
+                OR LOWER(COALESCE(f.alert_stream, ''::text)) LIKE '%opportunity%'
+            THEN 'opportunity'::text
+            ELSE 'at risk'::text
+        END
+    ) AS impact_label,
+    f.priority_score AS sort_score,
+    ROW_NUMBER() OVER (
+        PARTITION BY f.branch_id
+        ORDER BY f.priority_score DESC NULLS LAST, f.metric_date DESC NULLS LAST, COALESCE(f.alert_type, ''::text)
+    )::integer AS rank
+FROM alerts_fix_this_first f
+WHERE f.branch_id IS NOT NULL;
+
+COMMENT ON VIEW today_branch_priorities IS
+    'Branch Today core priorities from alerts_fix_this_first; GET by branch_id order=rank.asc&limit=3.';
+
 -- Grants (adjust roles if you do not use anon)
 GRANT SELECT ON alerts_enriched TO anon, authenticated;
 GRANT SELECT ON alerts_today TO anon, authenticated;
@@ -512,6 +547,7 @@ GRANT SELECT ON alerts_top3_revenue_leaks TO anon, authenticated;
 GRANT SELECT ON alerts_fix_this_first TO anon, authenticated;
 GRANT SELECT ON today_priorities TO anon, authenticated;
 GRANT SELECT ON today_priorities_clean TO anon, authenticated;
+GRANT SELECT ON today_branch_priorities TO anon, authenticated;
 
 -- STEP 6d — What’s Working (positive + fallback): always 1-3 rows per org
 CREATE OR REPLACE VIEW whats_working_today AS
@@ -924,6 +960,7 @@ GRANT SELECT ON watchlist_today TO anon, authenticated;
 -- SELECT * FROM alerts_fix_this_first ORDER BY priority_score DESC LIMIT 5;
 -- SELECT * FROM today_priorities ORDER BY sort_score DESC LIMIT 5;
 -- SELECT * FROM today_priorities_clean WHERE organization_id = '...' ORDER BY rank ASC LIMIT 3;
+-- SELECT * FROM today_branch_priorities WHERE branch_id = '...' ORDER BY rank ASC LIMIT 3;
 -- SELECT * FROM whats_working_today ORDER BY sort_score DESC LIMIT 3;
 -- SELECT * FROM opportunities_today ORDER BY sort_score DESC LIMIT 3;
 -- SELECT * FROM watchlist_today WHERE organization_id = '...' ORDER BY sort_score DESC LIMIT 3;
