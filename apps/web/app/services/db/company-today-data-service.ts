@@ -4,6 +4,8 @@
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import { normalizeProfitabilityTrend, type ProfitabilityTrend } from './latest-metrics-service';
 
+const companyTodayBundleInFlight = new Map<string, Promise<CompanyTodayBundle>>();
+
 export interface NormalizedBusinessRow {
   branchId: string;
   branchName: string;
@@ -299,10 +301,27 @@ export function createEmptyCompanyTodayBundle(errorTags: string[]): CompanyToday
   };
 }
 
-/**
- * Fetch all Company Today datasets for accessible branches.
- */
-export async function fetchCompanyTodayBundle(
+function makeBundleRequestKey(organizationId: string | null, branchIds: string[]): string {
+  return `${organizationId ?? 'none'}::${[...branchIds].sort().join(',')}`;
+}
+
+function logSupabaseStructured(
+  scope: string,
+  branchIds: string[],
+  error: { message?: string; code?: string; details?: string; hint?: string } | null | undefined
+): void {
+  if (process.env.NODE_ENV !== 'development' || !error) return;
+  console.warn('[CompanyToday][SupabaseError]', {
+    scope,
+    branch_ids: branchIds,
+    message: error.message ?? null,
+    code: error.code ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+  });
+}
+
+async function fetchCompanyTodayBundleCore(
   organizationId: string | null,
   branchIds: string[]
 ): Promise<CompanyTodayBundle> {
@@ -326,7 +345,7 @@ export async function fetchCompanyTodayBundle(
 
   const [bsRes, critRes, todayRes] = await Promise.all([
     supabase.from('branch_business_status').select('*').in('branch_id', idFilter),
-    supabase.from('alerts_critical').select('*').in('branch_id', idFilter),
+    supabase.rpc('get_alerts_critical', { branch_ids: idFilter }),
     supabase.from('alerts_today').select('*').in('branch_id', idFilter),
   ]);
 
@@ -334,19 +353,28 @@ export async function fetchCompanyTodayBundle(
     if (process.env.NODE_ENV !== 'development') return;
     const rows = asRecordArray(res.data);
     if (res.error) {
-      console.warn(`[CompanyToday] ${label} error:`, res.error.message);
+      console.warn(`[CompanyToday] ${label} error:`, { branch_ids: idFilter, message: res.error.message ?? null });
     } else {
-      console.log(`[CompanyToday] ${label} → ${rows.length} row(s)`, rows);
+      console.log(`[CompanyToday] ${label} → ${rows.length} row(s)`, { branch_ids: idFilter, rows });
     }
   };
 
   logDev('branch_business_status', bsRes);
   logDev('alerts_today', todayRes);
-  logDev('alerts_critical', critRes);
+  logDev('get_alerts_critical(rpc)', critRes);
 
-  if (bsRes.error) errors.push(`branch_business_status:${bsRes.error.message}`);
-  if (critRes.error) errors.push(`alerts_critical:${critRes.error.message}`);
-  if (todayRes.error) errors.push(`alerts_today:${todayRes.error.message}`);
+  if (bsRes.error) {
+    errors.push(`branch_business_status:${bsRes.error.message}`);
+    logSupabaseStructured('branch_business_status', idFilter, bsRes.error);
+  }
+  if (critRes.error) {
+    errors.push(`get_alerts_critical:${critRes.error.message}`);
+    logSupabaseStructured('get_alerts_critical', idFilter, critRes.error);
+  }
+  if (todayRes.error) {
+    errors.push(`alerts_today:${todayRes.error.message}`);
+    logSupabaseStructured('alerts_today', idFilter, todayRes.error);
+  }
 
   let bsRows = asRecordArray(bsRes.data);
   if (bsRows.length === 0 && organizationId) {
@@ -354,6 +382,8 @@ export async function fetchCompanyTodayBundle(
     logDev('branch_business_status (org fallback)', orgRes);
     if (!orgRes.error) {
       bsRows = asRecordArray(orgRes.data).filter((r) => idFilter.includes(pickStr(r, 'branch_id', 'branchId')));
+    } else {
+      logSupabaseStructured('branch_business_status(org_fallback)', idFilter, orgRes.error);
     }
   }
 
@@ -382,7 +412,7 @@ export async function fetchCompanyTodayBundle(
     if (h != null && !isNaN(h) && h < 80) underperformingBelow80.add(row.branchId);
   }
 
-  const criticalAlertsRaw: NormalizedCriticalAlertRow[] = asRecordArray(critRes.data)
+  const criticalAlertsRaw: NormalizedCriticalAlertRow[] = asRecordArray(critRes.error ? [] : critRes.data)
     .map((r) => {
       const branchId = pickStr(r, 'branch_id', 'branchId');
       const alertType = pickStr(
@@ -440,4 +470,21 @@ export async function fetchCompanyTodayBundle(
     },
     errors,
   };
+}
+
+/**
+ * Fetch all Company Today datasets for accessible branches.
+ */
+export async function fetchCompanyTodayBundle(
+  organizationId: string | null,
+  branchIds: string[]
+): Promise<CompanyTodayBundle> {
+  const key = makeBundleRequestKey(organizationId, branchIds);
+  const inFlight = companyTodayBundleInFlight.get(key);
+  if (inFlight) return inFlight;
+  const promise = fetchCompanyTodayBundleCore(organizationId, branchIds).finally(() => {
+    companyTodayBundleInFlight.delete(key);
+  });
+  companyTodayBundleInFlight.set(key, promise);
+  return promise;
 }

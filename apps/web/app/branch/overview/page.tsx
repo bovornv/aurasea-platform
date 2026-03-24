@@ -46,13 +46,11 @@ import {
   getTodaySummary,
   getBranchTrendSeriesWithFallback,
   getAccommodationProfitabilitySignal,
-  getFnbProfitabilitySignal,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
   type TodaySummaryRow,
   type BranchTrendSeries,
   type AccommodationProfitabilitySignal,
-  type FnbProfitabilitySignal,
 } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
@@ -76,6 +74,10 @@ import {
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import type { DailyMetric } from '../../models/daily-metrics';
+import {
+  computeFnbMarginTrendFromDailyPair,
+  getFnbCurrentAndPrevDailyMetric,
+} from '../../utils/fnb-daily-margin';
 
 export default function BranchOverviewPage() {
   // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONALS, NO EARLY RETURNS
@@ -121,7 +123,6 @@ export default function BranchOverviewPage() {
   const [branchSectionLoading, setBranchSectionLoading] = useState(false);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
   const [accProfitSignal, setAccProfitSignal] = useState<AccommodationProfitabilitySignal | null>(null);
-  const [fnbProfitSignal, setFnbProfitSignal] = useState<FnbProfitabilitySignal | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -391,11 +392,9 @@ export default function BranchOverviewPage() {
     setBranchPrioritiesLoading(true);
     setFreshnessLoaded(false);
     if (branch.moduleType !== 'accommodation') setAccProfitSignal(null);
-    if (branch.moduleType !== 'fnb') setFnbProfitSignal(null);
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
-      getFnbProfitabilitySignal(branch.id).then(setFnbProfitSignal);
     } else {
       setFnbOperatingStatus(null);
       getOperatingStatusData(branch.id, 'accommodation').then(setOperatingStatusData);
@@ -430,7 +429,6 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw([]);
       setFreshnessLoaded(false);
       setAccProfitSignal(null);
-      setFnbProfitSignal(null);
       return;
     }
     refreshOperatingStatus();
@@ -454,7 +452,6 @@ export default function BranchOverviewPage() {
         }
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
-          getFnbProfitabilitySignal(branch.id).then(setFnbProfitSignal);
         }
       }
     };
@@ -1098,6 +1095,20 @@ export default function BranchOverviewPage() {
     return sorted[0] ?? null;
   }, [dailyMetricsForTrends]);
 
+  /** Margin ↑/↓/→ from fnb_daily_metrics only (revenue + additional_cost_today); not fnb_profitability_signal */
+  const fnbMarginFromDaily = useMemo(() => {
+    if (branch?.moduleType !== 'fnb') {
+      return { marginTrend: null, marginExplanation: '' };
+    }
+    const referenceRaw = fnbOperatingStatus?.metric_date ?? latestDailyMetric?.date ?? null;
+    const { current, previous } = getFnbCurrentAndPrevDailyMetric(dailyMetricsForTrends ?? [], referenceRaw);
+    return computeFnbMarginTrendFromDailyPair({
+      current,
+      previous,
+      locale: locale === 'th' ? 'th' : 'en',
+    });
+  }, [branch?.moduleType, dailyMetricsForTrends, fnbOperatingStatus?.metric_date, latestDailyMetric?.date, locale]);
+
   // Today summary for compact one-line (accommodation: vs last week same weekday; F&B: vs yesterday)
   const todaySummary = useMemo(() => {
     const isFnb = branch?.moduleType === 'fnb';
@@ -1409,8 +1420,8 @@ export default function BranchOverviewPage() {
               branch.moduleType === 'fnb'
                 ? {
                     avgDailyCost: fnbOperatingStatus?.avg_cost ?? null,
-                    marginTrend: fnbProfitSignal?.margin_trend ?? null,
-                    marginExplanation: fnbProfitSignal?.margin_explanation ?? '',
+                    marginTrend: fnbMarginFromDaily.marginTrend,
+                    marginExplanation: fnbMarginFromDaily.marginExplanation,
                   }
                 : null
             }

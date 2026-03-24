@@ -30,6 +30,7 @@
 -- 3) alerts_critical
 --    branch_id, branch_name?, alert_title | alert_name, cause | alert_message,
 --    impact_estimate_thb, action | recommendation
+--    RPC wrapper: get_alerts_critical(branch_ids text[]) for filtered retrieval
 --
 -- 4) alerts_top3_revenue_leaks
 --    branch_id, branch_name?, alert_type, impact_estimate_thb, cause, recommended_action (optional rank)

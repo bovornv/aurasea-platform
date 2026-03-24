@@ -28,6 +28,7 @@ DROP VIEW IF EXISTS alerts_critical CASCADE;
 DROP VIEW IF EXISTS alerts_top3_revenue_leaks CASCADE;
 DROP VIEW IF EXISTS alerts_today CASCADE;
 DROP VIEW IF EXISTS alerts_enriched CASCADE;
+DROP FUNCTION IF EXISTS public.get_alerts_critical(text[]);
 
 -- Optional: remove old pipeline if still present (safe if already gone)
 DROP VIEW IF EXISTS alerts_top CASCADE;
@@ -324,6 +325,44 @@ FROM (
 WHERE dedupe_rn = 1
   AND branch_rank <= 5;
 
+-- STEP 4b — RPC wrapper for critical alerts retrieval by branch_ids
+CREATE OR REPLACE FUNCTION public.get_alerts_critical(branch_ids text[] DEFAULT NULL)
+RETURNS TABLE (
+    branch_id text,
+    organization_id uuid,
+    branch_name text,
+    metric_date date,
+    alert_type text,
+    severity integer,
+    alert_message text,
+    cause text,
+    impact_estimate_thb numeric,
+    action text,
+    recommended_action text,
+    alert_category text
+)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT
+        a.branch_id,
+        a.organization_id,
+        a.branch_name,
+        a.metric_date,
+        a.alert_type,
+        a.severity,
+        a.alert_message,
+        a.cause,
+        a.impact_estimate_thb,
+        a.action,
+        a.recommended_action,
+        a.alert_category
+    FROM public.alerts_critical a
+    WHERE COALESCE(array_length(branch_ids, 1), 0) = 0
+       OR a.branch_id = ANY(branch_ids)
+    ORDER BY a.impact_estimate_thb DESC, a.severity DESC, a.metric_date DESC;
+$$;
+
 -- STEP 5 — Top revenue leaks: non-opportunity, dedupe (branch_id, alert_type), top 3 per branch by impact
 CREATE OR REPLACE VIEW alerts_top3_revenue_leaks AS
 SELECT
@@ -591,6 +630,7 @@ GRANT SELECT ON today_priorities TO anon, authenticated;
 GRANT SELECT ON today_priorities_clean TO anon, authenticated;
 GRANT SELECT ON today_priorities_view TO anon, authenticated;
 GRANT SELECT ON today_branch_priorities TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authenticated;
 
 -- STEP 6d — What’s Working (positive + fallback): always 1-3 rows per org
 CREATE OR REPLACE VIEW whats_working_today AS
