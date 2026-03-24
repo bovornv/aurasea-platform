@@ -59,6 +59,7 @@ import { DecisionTrendChart } from '../../components/charts/decision-trend-chart
 import { trendInsightDual } from '../../utils/trend-chart-insights';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
+import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
   getAccommodationConfidenceLevel,
   getEarlySignalFromAccommodationEarlySignal,
@@ -114,6 +115,10 @@ export default function BranchOverviewPage() {
   // Today's Priorities: today_branch_priorities (current branch)
   const [branchPriorities, setBranchPriorities] = useState<TodayBranchPriorityRow[]>([]);
   const [branchPrioritiesLoading, setBranchPrioritiesLoading] = useState(true);
+  const [branchWhatsWorkingRows, setBranchWhatsWorkingRows] = useState<string[]>([]);
+  const [branchOpportunitiesRows, setBranchOpportunitiesRows] = useState<string[]>([]);
+  const [branchWatchlistRows, setBranchWatchlistRows] = useState<string[]>([]);
+  const [branchSectionLoading, setBranchSectionLoading] = useState(false);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
   const [accProfitSignal, setAccProfitSignal] = useState<AccommodationProfitabilitySignal | null>(null);
   const [fnbProfitSignal, setFnbProfitSignal] = useState<FnbProfitabilitySignal | null>(null);
@@ -717,6 +722,110 @@ export default function BranchOverviewPage() {
 
   const branchPrioritiesTop = useMemo(() => branchPriorities.slice(0, 3), [branchPriorities]);
 
+  useEffect(() => {
+    if (!branch?.id) {
+      setBranchWhatsWorkingRows([]);
+      setBranchOpportunitiesRows([]);
+      setBranchWatchlistRows([]);
+      setBranchSectionLoading(false);
+      return;
+    }
+    if (!isSupabaseAvailable()) {
+      setBranchWhatsWorkingRows(['Stable performance across this branch']);
+      setBranchOpportunitiesRows(['No clear opportunities today']);
+      setBranchWatchlistRows(['No early warning signals detected']);
+      setBranchSectionLoading(false);
+      return;
+    }
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setBranchWhatsWorkingRows(['Stable performance across this branch']);
+      setBranchOpportunitiesRows(['No clear opportunities today']);
+      setBranchWatchlistRows(['No early warning signals detected']);
+      setBranchSectionLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setBranchSectionLoading(true);
+    (async () => {
+      try {
+        const [workingRes, oppRes, watchRes] = await Promise.race([
+          Promise.all([
+            supabase
+              .from('whats_working_today')
+              .select('highlight_text')
+              .eq('branch_id', branch.id)
+              .order('sort_score', { ascending: false })
+              .limit(3),
+            supabase
+              .from('opportunities_today')
+              .select('opportunity_text')
+              .eq('branch_id', branch.id)
+              .order('sort_score', { ascending: false })
+              .limit(3),
+            supabase
+              .from('watchlist_today')
+              .select('warning_text')
+              .eq('branch_id', branch.id)
+              .order('sort_score', { ascending: false })
+              .limit(3),
+          ]),
+          new Promise<
+            [
+              { data: null; error: Error | null },
+              { data: null; error: Error | null },
+              { data: null; error: Error | null }
+            ]
+          >((resolve) =>
+            setTimeout(
+              () =>
+                resolve([
+                  { data: null, error: new Error('timeout') },
+                  { data: null, error: new Error('timeout') },
+                  { data: null, error: new Error('timeout') },
+                ]),
+              12000
+            )
+          ),
+        ]);
+        if (cancelled) return;
+        const working = Array.isArray(workingRes.data)
+          ? workingRes.data
+              .map((r: any) => String(r.highlight_text ?? '').trim())
+              .filter(Boolean)
+              .slice(0, 3)
+          : [];
+        const opps = Array.isArray(oppRes.data)
+          ? oppRes.data
+              .map((r: any) => String(r.opportunity_text ?? '').trim())
+              .filter(Boolean)
+              .slice(0, 3)
+          : [];
+        const watch = Array.isArray(watchRes.data)
+          ? watchRes.data
+              .map((r: any) => String(r.warning_text ?? '').trim())
+              .filter(Boolean)
+              .slice(0, 3)
+          : [];
+        setBranchWhatsWorkingRows(
+          working.length > 0 ? working : ['Stable performance across this branch']
+        );
+        setBranchOpportunitiesRows(
+          opps.length > 0 ? opps : ['No clear opportunities today']
+        );
+        setBranchWatchlistRows(
+          watch.length > 0 ? watch : ['No early warning signals detected']
+        );
+      } finally {
+        if (!cancelled) setBranchSectionLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [branch?.id]);
+
   // STEP 6 & 7: Debug logging will be added after recommendedActions is defined
 
   const activeAlerts = useMemo(() => {
@@ -1308,7 +1417,15 @@ export default function BranchOverviewPage() {
         ) : null}
 
         {/* 3. Today's Priorities (today_branch_priorities) */}
-        <div style={{ marginTop: learningStatus != null ? 0 : 24 }}>
+        <div
+          style={{
+            marginTop: learningStatus != null ? 0 : 24,
+            background: '#ffffff',
+            border: '1px solid #e5e7eb',
+            borderRadius: 12,
+            padding: '16px 20px',
+          }}
+        >
           <h2 style={{ fontSize: 16, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 12 }}>
             {locale === 'th' ? 'ลำดับความสำคัญวันนี้' : "Today's Priorities"}
           </h2>
@@ -1488,6 +1605,77 @@ export default function BranchOverviewPage() {
             </div>
           </div>
         ) : null}
+
+        {/* 5. Business Trends */}
+        <OperatingSection title={locale === 'th' ? 'แนวโน้มธุรกิจ' : 'Business Trends'}>
+          {performanceTrends ? (
+            <div style={{ fontSize: 14, lineHeight: 1.6, color: '#334155', fontWeight: 500 }}>
+              <div>
+                {locale === 'th' ? 'รายได้เทียบ 7 วันก่อนหน้า: ' : 'Revenue vs prior 7 days: '}
+                <span style={{ color: performanceTrends.revenueTrend >= 0 ? '#059669' : '#b91c1c', fontWeight: 700 }}>
+                  {performanceTrends.revenueTrend >= 0 ? '+' : ''}
+                  {performanceTrends.revenueTrend.toFixed(1)}%
+                </span>
+              </div>
+              <div>
+                {locale === 'th' ? 'ต้นทุน: ' : 'Cost trend: '}
+                <span style={{ color: performanceTrends.costTrend <= 0 ? '#059669' : '#b91c1c', fontWeight: 700 }}>
+                  {performanceTrends.costTrend >= 0 ? '+' : ''}
+                  {performanceTrends.costTrend.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>
+              {locale === 'th' ? 'ข้อมูลแนวโน้มยังไม่เพียงพอ' : 'Not enough data to show trends yet'}
+            </p>
+          )}
+        </OperatingSection>
+
+        {/* 6. What's Working */}
+        <OperatingSection title={locale === 'th' ? 'สิ่งที่ทำได้ดี' : "What's Working"}>
+          {branchSectionLoading ? (
+            <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
+          ) : (
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {branchWhatsWorkingRows.slice(0, 3).map((text, idx) => (
+                <li key={`bw-${idx}`} style={{ color: '#166534', fontSize: 14, lineHeight: 1.5 }}>
+                  • {text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </OperatingSection>
+
+        {/* 7. Opportunities */}
+        <OperatingSection title={locale === 'th' ? 'โอกาส' : 'Opportunities'}>
+          {branchSectionLoading ? (
+            <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
+          ) : (
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {branchOpportunitiesRows.slice(0, 3).map((text, idx) => (
+                <li key={`bo-${idx}`} style={{ color: '#065f46', fontSize: 14, lineHeight: 1.5 }}>
+                  • {text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </OperatingSection>
+
+        {/* 8. Watchlist */}
+        <OperatingSection title={locale === 'th' ? 'สัญญาณเตือนล่วงหน้า' : 'Watchlist'}>
+          {branchSectionLoading ? (
+            <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
+          ) : (
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {branchWatchlistRows.slice(0, 3).map((text, idx) => (
+                <li key={`bwk-${idx}`} style={{ color: '#92400e', fontSize: 14, lineHeight: 1.5 }}>
+                  • {text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </OperatingSection>
 
         {fullyActive && (
           <>
