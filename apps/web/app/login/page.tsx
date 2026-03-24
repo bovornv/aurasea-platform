@@ -61,131 +61,202 @@ export default function LoginPage() {
     const emailTrimmed = email.trim();
     setLoading(true);
 
+    const timeoutMs = 28_000;
+    const timeoutMessage =
+      locale === 'th'
+        ? 'หมดเวลาเชื่อมต่อ ตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง'
+        : 'Connection timed out. Check your internet and try again.';
+    const failedFetchMessage =
+      locale === 'th'
+        ? 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง'
+        : 'Could not reach the server. Check your connection and try again.';
+
+    const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+      new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error(timeoutMessage)), ms);
+        p.then(
+          (v) => {
+            clearTimeout(t);
+            resolve(v);
+          },
+          (err) => {
+            clearTimeout(t);
+            reject(err);
+          }
+        );
+      });
+
     try {
       if (useSupabaseAuth) {
         const supabase = getSupabaseClient();
         if (!supabase) {
           setError(locale === 'th' ? 'ระบบยังไม่พร้อม กรุณาลองใหม่ภายหลัง' : 'Auth not available. Try again later.');
-          setLoading(false);
           return;
         }
-        const { data, error: authError } = await supabase.auth.signInWithPassword({
-          email: emailTrimmed,
-          password,
-        });
-        if (authError) {
-          const message =
-            authError.message?.includes('Invalid login')
-              ? (locale === 'th' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : 'Invalid email or password.')
-              : authError.message || (locale === 'th' ? 'เข้าสู่ระบบไม่สำเร็จ' : 'Sign in failed.');
-          setError(message);
-          setLoading(false);
-          return;
-        }
-        if (!data.user) {
-          setError(locale === 'th' ? 'เข้าสู่ระบบไม่สำเร็จ' : 'Sign in failed.');
-          setLoading(false);
-          return;
-        }
-        await login(emailTrimmed);
-        const { data: memberships } = await supabase
-          .from('organization_members')
-          .select('organization_id, role')
-          .eq('user_id', data.user.id)
-          .order('created_at', { ascending: true });
-        const orgList = (memberships ?? []) as { organization_id: string; role: string }[];
-        const ownerOrAdmin = orgList.find((r) => r.role === 'owner' || r.role === 'admin');
-        const { data: branchRows } = await supabase
-          .from('branch_members')
-          .select('branch_id, role')
-          .eq('user_id', data.user.id);
-        const branchList = (branchRows ?? []) as { branch_id: string; role: string }[];
-        const firstBranchId = branchList.length ? (branchList[0] as { branch_id: string }).branch_id : null;
-        const branchRole = branchList.length ? ((branchList[0] as { role: string }).role as UserRole) || 'staff' : null;
-        let orgId: string | null = null;
-        let organization: { id: string; name: string } | null = null;
-        if (ownerOrAdmin) {
-          orgId = ownerOrAdmin.organization_id;
-        } else if (firstBranchId) {
-          const { data: branch } = await supabase
-            .from('branches')
-            .select(BRANCH_SELECT)
-            .eq('id', firstBranchId)
-            .maybeSingle();
-          orgId = (branch as { organization_id?: string } | null)?.organization_id ?? null;
-          if (orgId) {
-            const { data: orgRow } = await supabase
-              .from('organizations')
-              .select('id, name')
-              .eq('id', orgId)
-              .maybeSingle();
-            organization = orgRow as { id: string; name: string } | null;
-          }
-        }
-        const role = ownerOrAdmin ? (ownerOrAdmin.role as UserRole) : branchRole;
-        if (!organization && orgId) {
-          const { data: orgRow } = await supabase
-            .from('organizations')
-            .select('id, name')
-            .eq('id', orgId)
-            .maybeSingle();
-          organization = orgRow as { id: string; name: string } | null;
-        }
-        if (orgId && role) {
-          if (['owner', 'admin'].includes(role)) {
-            router.replace(`/org/${orgId}/overview`);
-            return;
-          }
-          if (firstBranchId && organization) {
-            updatePermissions(branchRole!, orgId, branchList.map((r) => (r as { branch_id: string }).branch_id));
-            if (typeof window !== 'undefined') {
-              try {
-                localStorage.setItem(
-                  'hospitality_business_group',
-                  JSON.stringify({
-                    id: organization.id,
-                    name: organization.name,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                  })
-                );
-              } catch (_) {}
+
+        await withTimeout(
+          (async () => {
+            const { data, error: authError } = await supabase.auth.signInWithPassword({
+              email: emailTrimmed,
+              password,
+            });
+            if (authError) {
+              const message =
+                authError.message?.includes('Invalid login')
+                  ? locale === 'th'
+                    ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง'
+                    : 'Invalid email or password.'
+                  : authError.message || (locale === 'th' ? 'เข้าสู่ระบบไม่สำเร็จ' : 'Sign in failed.');
+              setError(message);
+              return;
             }
-            await businessGroupService.syncBranchesForOrgAndUser(orgId, data.user.id);
-            businessGroupService.setCurrentBranch(firstBranchId);
-            router.replace(`/org/${orgId}/branch/${firstBranchId}/overview`);
-            return;
-          }
-          router.replace('/no-access?reason=branch');
-          return;
-        }
-        const { data: pa } = await supabase
-          .from('platform_admins')
-          .select('role')
-          .eq('user_id', data.user.id)
-          .maybeSingle();
-        if ((pa as { role?: string } | null)?.role === 'super_admin') {
-          const { data: firstOrg } = await supabase
-            .from('organizations')
-            .select('id')
-            .limit(1);
-          const orgRow = (firstOrg as { id: string }[] | null)?.[0];
-          if (orgRow?.id) {
-            router.replace(`/org/${orgRow.id}/overview`);
-            return;
-          }
-        }
-        router.replace('/no-access');
-        return;
+            if (!data.user) {
+              setError(locale === 'th' ? 'เข้าสู่ระบบไม่สำเร็จ' : 'Sign in failed.');
+              return;
+            }
+
+            await login(emailTrimmed);
+
+            const { data: memberships, error: memErr } = await supabase
+              .from('organization_members')
+              .select('organization_id, role')
+              .eq('user_id', data.user.id)
+              .order('created_at', { ascending: true });
+            if (memErr) {
+              setError(memErr.message || (locale === 'th' ? 'โหลดสิทธิ์ไม่สำเร็จ' : 'Could not load your access.'));
+              return;
+            }
+
+            const orgList = (memberships ?? []) as { organization_id: string; role: string }[];
+            const ownerOrAdmin = orgList.find((r) => r.role === 'owner' || r.role === 'admin');
+            const { data: branchRows, error: brErr } = await supabase
+              .from('branch_members')
+              .select('branch_id, role')
+              .eq('user_id', data.user.id);
+            if (brErr) {
+              setError(brErr.message || (locale === 'th' ? 'โหลดสาขาไม่สำเร็จ' : 'Could not load branches.'));
+              return;
+            }
+
+            const branchList = (branchRows ?? []) as { branch_id: string; role: string }[];
+            const firstBranchId = branchList.length ? (branchList[0] as { branch_id: string }).branch_id : null;
+            const branchRole = branchList.length
+              ? ((branchList[0] as { role: string }).role as UserRole) || 'staff'
+              : null;
+            let orgId: string | null = null;
+            let organization: { id: string; name: string } | null = null;
+            if (ownerOrAdmin) {
+              orgId = ownerOrAdmin.organization_id;
+            } else if (firstBranchId) {
+              const { data: branch, error: bErr } = await supabase
+                .from('branches')
+                .select(BRANCH_SELECT)
+                .eq('id', firstBranchId)
+                .maybeSingle();
+              if (bErr) {
+                setError(bErr.message || (locale === 'th' ? 'โหลดข้อมูลสาขาไม่สำเร็จ' : 'Could not load branch.'));
+                return;
+              }
+              orgId = (branch as { organization_id?: string } | null)?.organization_id ?? null;
+              if (orgId) {
+                const { data: orgRow, error: oErr } = await supabase
+                  .from('organizations')
+                  .select('id, name')
+                  .eq('id', orgId)
+                  .maybeSingle();
+                if (oErr) {
+                  setError(oErr.message || (locale === 'th' ? 'โหลดองค์กรไม่สำเร็จ' : 'Could not load organization.'));
+                  return;
+                }
+                organization = orgRow as { id: string; name: string } | null;
+              }
+            }
+            const role = ownerOrAdmin ? (ownerOrAdmin.role as UserRole) : branchRole;
+            if (!organization && orgId) {
+              const { data: orgRow, error: o2Err } = await supabase
+                .from('organizations')
+                .select('id, name')
+                .eq('id', orgId)
+                .maybeSingle();
+              if (o2Err) {
+                setError(o2Err.message || (locale === 'th' ? 'โหลดองค์กรไม่สำเร็จ' : 'Could not load organization.'));
+                return;
+              }
+              organization = orgRow as { id: string; name: string } | null;
+            }
+            if (orgId && role) {
+              if (['owner', 'admin'].includes(role)) {
+                router.replace(`/org/${orgId}/overview`);
+                return;
+              }
+              if (firstBranchId && organization) {
+                updatePermissions(branchRole!, orgId, branchList.map((r) => (r as { branch_id: string }).branch_id));
+                if (typeof window !== 'undefined') {
+                  try {
+                    localStorage.setItem(
+                      'hospitality_business_group',
+                      JSON.stringify({
+                        id: organization.id,
+                        name: organization.name,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                      })
+                    );
+                  } catch (_) {}
+                }
+                await businessGroupService.syncBranchesForOrgAndUser(orgId, data.user.id);
+                businessGroupService.setCurrentBranch(firstBranchId);
+                router.replace(`/org/${orgId}/branch/${firstBranchId}/overview`);
+                return;
+              }
+              router.replace('/no-access?reason=branch');
+              return;
+            }
+            const { data: pa, error: paErr } = await supabase
+              .from('platform_admins')
+              .select('role')
+              .eq('user_id', data.user.id)
+              .maybeSingle();
+            if (paErr) {
+              setError(paErr.message || (locale === 'th' ? 'โหลดสิทธิ์ไม่สำเร็จ' : 'Could not load permissions.'));
+              return;
+            }
+            if ((pa as { role?: string } | null)?.role === 'super_admin') {
+              const { data: firstOrg, error: foErr } = await supabase.from('organizations').select('id').limit(1);
+              if (foErr) {
+                setError(foErr.message || (locale === 'th' ? 'โหลดองค์กรไม่สำเร็จ' : 'Could not load organizations.'));
+                return;
+              }
+              const orgRow = (firstOrg as { id: string }[] | null)?.[0];
+              if (orgRow?.id) {
+                router.replace(`/org/${orgRow.id}/overview`);
+                return;
+              }
+            }
+            router.replace('/no-access');
+          })(),
+          timeoutMs
+        );
       } else {
         await new Promise((r) => setTimeout(r, 300));
+        await login(emailTrimmed);
+        router.replace('/');
       }
-
-      await login(emailTrimmed);
-      router.replace('/');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Sign in failed.';
-      setError(locale === 'th' ? `เกิดข้อผิดพลาด: ${msg}` : msg);
+      const raw = err instanceof Error ? err.message : String(err);
+      const isTimeout = raw === timeoutMessage;
+      const isNetwork =
+        /failed to fetch|networkerror|load failed|network request failed/i.test(raw) ||
+        (err instanceof TypeError && raw.toLowerCase().includes('fetch'));
+      const msg = isTimeout
+        ? timeoutMessage
+        : isNetwork
+          ? failedFetchMessage
+          : locale === 'th'
+            ? `เกิดข้อผิดพลาด: ${raw}`
+            : raw;
+      setError(msg);
+    } finally {
       setLoading(false);
     }
   };
