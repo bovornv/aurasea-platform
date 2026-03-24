@@ -13,7 +13,7 @@ import { useParams, usePathname } from 'next/navigation';
 import { useUserSession } from './user-session-context';
 import { useOrganization } from './organization-context';
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
-import { resolveAccessViaRpc } from '../services/access-resolution-service';
+import { normalizeAccessId, resolveAccessViaRpc } from '../services/access-resolution-service';
 import { devLog } from '../lib/dev-log';
 
 /** Normalize role string for consistent comparison and display. */
@@ -142,6 +142,7 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    let authUserIdForLog: string | null = null;
     try {
       setIsLoading(true);
       setError(null);
@@ -155,6 +156,7 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
         data: { user },
         error: authError,
       } = await supabase.auth.getUser();
+      authUserIdForLog = user?.id ?? null;
       if (authError || !user) {
         setRole(null);
         setError(authError ? new Error(authError.message) : new Error('Not authenticated'));
@@ -183,18 +185,21 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
       const { orgAccess, branchAccess, accessible } = await resolveAccessViaRpc(supabase, {
         organizationId: targetOrgId,
         branchId: targetBranchId,
+        authUserId: user.id,
+        authEmail: email,
       });
 
       if (!accessible.ok) {
         throw new Error(accessible.code || 'get_my_accessible_branches failed');
       }
 
-      const accessibleBranchIds = accessible.branch_ids ?? [];
+      const accessibleBranchIds = (accessible.branch_ids ?? []).map((id) => normalizeAccessId(id)).filter(Boolean);
       const branchRoles = new Map<string, BranchRole>();
       for (const row of accessible.branch_memberships ?? []) {
-        if (!row.branch_id) continue;
+        const bid = normalizeAccessId(row.branch_id);
+        if (!bid) continue;
         const r = normalizeBranchRole(row.role) ?? 'staff';
-        branchRoles.set(row.branch_id, r);
+        branchRoles.set(bid, r);
       }
 
       const organizationMemberRole: OrganizationRole | null =
@@ -205,25 +210,42 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
               : null)
           : null;
 
-      const organizationId = targetOrgId;
+      const organizationId = targetOrgId ? normalizeAccessId(targetOrgId) : null;
 
-      const branchRoleForCurrent = targetBranchId
-        ? (accessible.branch_memberships ?? []).find((m) => m.branch_id === targetBranchId)?.role ?? null
+      const branchKey = normalizeAccessId(targetBranchId);
+      const branchRoleForCurrent = branchKey
+        ? (accessible.branch_memberships ?? []).find((m) => normalizeAccessId(m.branch_id) === branchKey)?.role ??
+          null
         : null;
 
-      let effective: EffectiveRoleValue | null = resolveEffectiveRole(
-        organizationMemberRole,
-        branchRoleForCurrent
-      );
-      let accessSource: string | null =
-        organizationMemberRole != null ? 'organization_members' : branchRoleForCurrent != null ? 'branch_members' : null;
+      // Source of truth: branch RPC (covers org owner via organization source), then org RPC, then membership rows.
+      let effective: EffectiveRoleValue | null = null;
+      let accessSource: string | null = null;
 
       if (branchAccess?.allowed && branchAccess.effective_role) {
-        const fromRpc = effectiveRoleFromRpc(branchAccess.effective_role, branchAccess.source ?? null);
-        if (fromRpc) {
-          effective = fromRpc;
+        const fromBranchRpc = effectiveRoleFromRpc(branchAccess.effective_role, branchAccess.source ?? null);
+        if (fromBranchRpc) {
+          effective = fromBranchRpc;
           accessSource = branchAccess.source ?? 'rpc_branch';
         }
+      }
+
+      if (effective == null && orgAccess?.allowed && orgAccess.organization_role) {
+        const or = normalizeRole(orgAccess.organization_role);
+        if (or === 'owner' || or === 'admin') {
+          effective = or as EffectiveRoleValue;
+          accessSource = 'rpc_organization';
+        }
+      }
+
+      if (effective == null) {
+        effective = resolveEffectiveRole(organizationMemberRole, branchRoleForCurrent);
+        accessSource =
+          organizationMemberRole != null
+            ? 'organization_members'
+            : branchRoleForCurrent != null
+              ? 'branch_members'
+              : null;
       }
 
       let finalRole: FinalRole;
@@ -281,6 +303,20 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg !== 'User not authenticated') {
         console.error('[UserRole] Failed to fetch user role:', err);
+      }
+      if (process.env.NODE_ENV === 'development') {
+        const postgrest = err as { code?: string; details?: string; hint?: string };
+        devLog('[ACCESS_RESOLUTION_ERROR]', {
+          authUserId: authUserIdForLog,
+          authUserEmail: email,
+          selectedOrganizationId: orgIdFromUrl ?? activeOrganizationId,
+          selectedBranchId: branchIdFromParams ?? branchIdFromPath,
+          message: msg,
+          code: postgrest?.code,
+          details: postgrest?.details,
+          hint: postgrest?.hint,
+          raw: err,
+        });
       }
       setError(err instanceof Error ? err : new Error('Failed to fetch user role'));
       setRole(null);
