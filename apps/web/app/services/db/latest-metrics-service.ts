@@ -37,23 +37,25 @@ export interface FnbLatestMetricRow {
   [key: string]: unknown;
 }
 
-/** Row from fnb_operating_status view — single source for F&B Operating Status. */
+/** Row from fnb_today_metrics_ui view — single source for F&B Today metrics. */
 export interface FnbOperatingStatusRow {
   branch_id: string;
   metric_date?: string | null;
   health_score?: number | null;
-  todays_revenue?: number | null;
-  total_customers?: number | null;
+  revenue?: number | null;
+  customers?: number | null;
   early_signal?: string | null;
   confidence?: number | null;
   data_days?: number | null;
   required_days?: number | null;
   avg_ticket?: number | null;
+  avg_cost?: number | null;
   [key: string]: unknown;
 }
 
 /**
- * Load F&B Operating Status. Prefer fnb_operating_status view; if missing or empty, fall back to fnb_latest_metrics so cards show values from Supabase.
+ * Load F&B Today metrics from fnb_today_metrics_ui.
+ * Query: branch_id=eq.{id}&order=metric_date.desc&limit=1
  */
 export async function getFnbOperatingStatus(
   branchId: string
@@ -65,63 +67,35 @@ export async function getFnbOperatingStatus(
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
-  const { data: viewData, error: viewError } = await supabase
-    .from('fnb_operating_status')
+  const { data, error } = await supabase
+    .from('fnb_today_metrics_ui')
     .select('*')
     .eq('branch_id', branchId)
+    .order('metric_date', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
-  if (!viewError && viewData != null) {
+  if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.log('F&B Operating Status data source: fnb_operating_status', viewData);
+      console.warn('[LatestMetricsService] fnb_today_metrics_ui:', error.message);
     }
-    const row = viewData as Record<string, unknown>;
-    return {
-      branch_id: branchId,
-      metric_date: row.metric_date ?? undefined,
-      health_score: row.health_score != null ? Number(row.health_score) : null,
-      todays_revenue: (row.todays_revenue ?? row.revenue ?? row.total_revenue_thb) != null ? Number(row.todays_revenue ?? row.revenue ?? row.total_revenue_thb) : null,
-      total_customers: row.total_customers != null ? Number(row.total_customers) : null,
-      early_signal: row.early_signal != null && String(row.early_signal).trim() !== '' ? String(row.early_signal) : 'normal',
-      confidence: row.confidence != null ? Number(row.confidence) : (row.confidence_score != null ? Number(row.confidence_score) : null),
-      data_days: row.data_days != null ? Number(row.data_days) : null,
-      required_days: row.required_days != null ? Number(row.required_days) : null,
-      avg_ticket: row.avg_ticket != null ? Number(row.avg_ticket) : null,
-    } as FnbOperatingStatusRow;
+    return null;
   }
+  if (data == null) return null;
 
-  if (process.env.NODE_ENV === 'development' && viewError) {
-    console.warn('[LatestMetricsService] fnb_operating_status error (fallback to fnb_latest_metrics):', viewError.message);
-  }
-
-  const { data: latestData, error: latestError } = await supabase
-    .from('fnb_latest_metrics')
-    .select('*')
-    .eq('branch_id', branchId)
-    .maybeSingle();
-
-  if (latestError || latestData == null) return null;
-
-  const row = latestData as Record<string, unknown>;
-  const revenue = (row.revenue ?? row.total_revenue_thb) != null ? Number(row.revenue ?? row.total_revenue_thb) : null;
-  const customers = row.total_customers != null ? Number(row.total_customers) : null;
-  const confidenceScore = row.confidence_score != null ? Number(row.confidence_score) : null;
-
-  if (process.env.NODE_ENV === 'development') {
-    console.log('F&B Operating Status data source: fnb_latest_metrics (fallback)', latestData);
-  }
-
+  const row = data as Record<string, unknown>;
   return {
     branch_id: branchId,
-    metric_date: row.metric_date ?? undefined,
+    metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
     health_score: row.health_score != null ? Number(row.health_score) : null,
-    todays_revenue: revenue,
-    total_customers: customers,
+    revenue: row.revenue != null ? Number(row.revenue) : null,
+    customers: row.customers != null ? Number(row.customers) : null,
+    avg_ticket: row.avg_ticket != null ? Number(row.avg_ticket) : null,
+    avg_cost: row.avg_cost != null ? Number(row.avg_cost) : null,
     early_signal: 'normal',
-    confidence: confidenceScore,
+    confidence: null,
     data_days: null,
     required_days: null,
-    avg_ticket: revenue != null && customers != null && customers > 0 ? revenue / customers : (row.avg_ticket != null ? Number(row.avg_ticket) : null),
   } as FnbOperatingStatusRow;
 }
 

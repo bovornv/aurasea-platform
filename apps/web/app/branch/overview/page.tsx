@@ -67,7 +67,7 @@ import {
   type BranchLearningStatusRow,
 } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
-import { getHealthScoreFromAccommodationHealthToday, getHealthScoreFromFnbHealthToday } from '../../services/db/health-score-kpi-service';
+import { getHealthScoreFromAccommodationHealthToday } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import {
   fetchTodayBranchPriorities,
@@ -395,7 +395,6 @@ export default function BranchOverviewPage() {
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
-      getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
       getFnbProfitabilitySignal(branch.id).then(setFnbProfitSignal);
     } else {
       setFnbOperatingStatus(null);
@@ -455,7 +454,6 @@ export default function BranchOverviewPage() {
         }
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
-          getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
           getFnbProfitabilitySignal(branch.id).then(setFnbProfitSignal);
         }
       }
@@ -481,11 +479,11 @@ export default function BranchOverviewPage() {
     if (branch.moduleType === 'accommodation') {
       getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
     } else if (branch.moduleType === 'fnb') {
-      getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
+      setHealthScore(fnbOperatingStatus?.health_score != null ? Number(fnbOperatingStatus.health_score) : null);
     } else {
       setHealthScore(null);
     }
-  }, [branch?.id, branch?.moduleType]);
+  }, [branch?.id, branch?.moduleType, fnbOperatingStatus?.health_score]);
 
   // Confidence card: accommodation uses accommodation_data_coverage.confidence_level
   useEffect(() => {
@@ -1206,9 +1204,9 @@ export default function BranchOverviewPage() {
     }
 
     if (isFnb) {
-      const rev = fnbOperatingStatus?.todays_revenue ?? latestDailyMetric?.revenue ?? todaySummaryRow?.total_revenue ?? null;
-      const customers = fnbOperatingStatus?.total_customers ?? latestDailyMetric?.customers ?? null;
-      const avgTicket = fnbOperatingStatus?.avg_ticket ?? latestDailyMetric?.avgTicket ?? null;
+      const rev = fnbOperatingStatus?.revenue ?? null;
+      const customers = fnbOperatingStatus?.customers ?? null;
+      const avgTicket = fnbOperatingStatus?.avg_ticket ?? null;
       const prevRev = prevMetric?.revenue ?? null;
       const prevCust = prevMetric?.customers ?? null;
       const revenueDeltaPct =
@@ -1225,7 +1223,7 @@ export default function BranchOverviewPage() {
           customers,
           customersDeltaPct,
           avgTicket,
-          healthScore: healthScore ?? todaySummaryRow?.health_score ?? 70,
+          healthScore: fnbOperatingStatus?.health_score ?? healthScore ?? 70,
         },
       };
     }
@@ -1410,7 +1408,7 @@ export default function BranchOverviewPage() {
             fnbProfitability={
               branch.moduleType === 'fnb'
                 ? {
-                    avgDailyCost: fnbProfitSignal?.avg_daily_cost ?? null,
+                    avgDailyCost: fnbOperatingStatus?.avg_cost ?? null,
                     marginTrend: fnbProfitSignal?.margin_trend ?? null,
                     marginExplanation: fnbProfitSignal?.margin_explanation ?? '',
                   }
