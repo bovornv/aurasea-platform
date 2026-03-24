@@ -71,8 +71,8 @@ BEGIN
       AND NOT a.attisdropped;
 
     create_sql := format(
-      'CREATE OR REPLACE VIEW %I.%I AS SELECT %s FROM %s s',
-      tgt_schema, tgt_name, select_list, src_temp
+      'CREATE OR REPLACE VIEW %I.%I AS WITH s AS (%s) SELECT %s FROM s',
+      tgt_schema, tgt_name, p_source_sql, select_list
     );
 
     EXECUTE create_sql;
@@ -80,20 +80,48 @@ BEGIN
   END
   $f$;
 
-  -- 1) whats_working_branch: positive signals, with non-empty fallback per branch.
+  -- 1) whats_working_branch: strictly branch-level insights (no cross-branch language).
   IF has_whats_working_branch THEN
     PERFORM pg_temp.refresh_view_preserve_schema(
       'public.whats_working_branch',
       $sql$
-      WITH src AS (
+      WITH daily AS (
         SELECT
-          w.organization_id,
-          w.branch_id::text AS branch_id,
-          w.branch_name::text AS branch_name,
-          w.metric_date::date AS metric_date,
-          COALESCE(NULLIF(TRIM(BOTH FROM w.highlight_text), ''), 'Operations running smoothly')::text AS insight_text,
-          COALESCE(w.sort_score, 0)::numeric AS sort_score
-        FROM public.whats_working_today w
+          t.branch_id::text AS branch_id,
+          t.metric_date::date AS metric_date,
+          COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
+          LAG(COALESCE(t.total_revenue, 0)::numeric, 1) OVER (PARTITION BY t.branch_id ORDER BY t.metric_date) AS rev_l1
+        FROM public.today_summary_clean t
+      ),
+      latest AS (
+        SELECT DISTINCT ON (d.branch_id)
+          d.branch_id,
+          d.metric_date,
+          d.total_revenue,
+          d.rev_l1
+        FROM daily d
+        ORDER BY d.branch_id, d.metric_date DESC NULLS LAST
+      ),
+      src AS (
+        SELECT
+          b.organization_id,
+          b.id::text AS branch_id,
+          b.name::text AS branch_name,
+          l.metric_date::date AS metric_date,
+          CASE
+            WHEN l.total_revenue > COALESCE(l.rev_l1, 0) AND l.total_revenue > 0
+              THEN (COALESCE(NULLIF(TRIM(BOTH FROM b.name), ''), b.id::text) || ' revenue improving over the last few days')::text
+            WHEN l.total_revenue > 0
+              THEN (COALESCE(NULLIF(TRIM(BOTH FROM b.name), ''), b.id::text) || ' maintaining stable customer activity')::text
+            ELSE (COALESCE(NULLIF(TRIM(BOTH FROM b.name), ''), b.id::text) || ' operating normally — no major issues detected')::text
+          END AS insight_text,
+          CASE
+            WHEN l.total_revenue > COALESCE(l.rev_l1, 0) AND l.total_revenue > 0 THEN 120::numeric
+            WHEN l.total_revenue > 0 THEN 80::numeric
+            ELSE 50::numeric
+          END AS sort_score
+        FROM public.branches b
+        LEFT JOIN latest l ON l.branch_id = b.id::text
       ),
       fallback AS (
         SELECT
@@ -101,7 +129,7 @@ BEGIN
           b.id::text AS branch_id,
           b.name::text AS branch_name,
           NULL::date AS metric_date,
-          'Operations running smoothly'::text AS insight_text,
+          (COALESCE(NULLIF(TRIM(BOTH FROM b.name), ''), b.id::text) || ' operating normally — no major issues detected')::text AS insight_text,
           1::numeric AS sort_score
         FROM public.branches b
         WHERE NOT EXISTS (
