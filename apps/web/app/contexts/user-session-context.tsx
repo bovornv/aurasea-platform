@@ -37,6 +37,16 @@ async function fetchIsSuperAdmin(): Promise<boolean> {
   return data === true;
 }
 
+/** Never block login/session restore on this RPC (can hang under RLS, cold DB, or bad network). */
+const SUPER_ADMIN_RPC_MS = 8_000;
+
+function fetchIsSuperAdminBounded(): Promise<boolean> {
+  return Promise.race([
+    fetchIsSuperAdmin(),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SUPER_ADMIN_RPC_MS)),
+  ]);
+}
+
 const isDev = typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
 
 function isLoginPath(path: string | null): boolean {
@@ -163,8 +173,7 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
     setIsLoggedIn(true);
     const base = getUserPermissions(userEmail);
     setPermissions({ ...base, organizationId: '' });
-    const superAdmin = await fetchIsSuperAdmin();
-    setIsSuperAdmin(superAdmin);
+    void fetchIsSuperAdminBounded().then((v) => setIsSuperAdmin(v));
     localStorage.setItem('hospitality_user_email', userEmail);
     localStorage.setItem('hospitality_is_logged_in', 'true');
   }, []);
@@ -213,8 +222,7 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
     setIsLoggedIn(true);
     localStorage.setItem('hospitality_user_email', userEmail);
     localStorage.setItem('hospitality_is_logged_in', 'true');
-    const superAdmin = await fetchIsSuperAdmin();
-    setIsSuperAdmin(superAdmin);
+    void fetchIsSuperAdminBounded().then((v) => setIsSuperAdmin(v));
     const userPermissions: UserPermissions = {
       role,
       organizationId: '',

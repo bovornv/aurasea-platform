@@ -61,7 +61,7 @@ export default function LoginPage() {
     const emailTrimmed = email.trim();
     setLoading(true);
 
-    const timeoutMs = 28_000;
+    const timeoutMs = 50_000;
     const timeoutMessage =
       locale === 'th'
         ? 'หมดเวลาเชื่อมต่อ ตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง'
@@ -117,28 +117,30 @@ export default function LoginPage() {
 
             await login(emailTrimmed);
 
-            const { data: memberships, error: memErr } = await supabase
-              .from('organization_members')
-              .select('organization_id, role')
-              .eq('user_id', data.user.id)
-              .order('created_at', { ascending: true });
-            if (memErr) {
-              setError(memErr.message || (locale === 'th' ? 'โหลดสิทธิ์ไม่สำเร็จ' : 'Could not load your access.'));
+            const [memRes, brRes] = await Promise.all([
+              supabase
+                .from('organization_members')
+                .select('organization_id, role')
+                .eq('user_id', data.user.id)
+                .order('created_at', { ascending: true }),
+              supabase.from('branch_members').select('branch_id, role').eq('user_id', data.user.id),
+            ]);
+            if (memRes.error) {
+              setError(
+                memRes.error.message || (locale === 'th' ? 'โหลดสิทธิ์ไม่สำเร็จ' : 'Could not load your access.')
+              );
+              return;
+            }
+            if (brRes.error) {
+              setError(
+                brRes.error.message || (locale === 'th' ? 'โหลดสาขาไม่สำเร็จ' : 'Could not load branches.')
+              );
               return;
             }
 
-            const orgList = (memberships ?? []) as { organization_id: string; role: string }[];
+            const orgList = (memRes.data ?? []) as { organization_id: string; role: string }[];
             const ownerOrAdmin = orgList.find((r) => r.role === 'owner' || r.role === 'admin');
-            const { data: branchRows, error: brErr } = await supabase
-              .from('branch_members')
-              .select('branch_id, role')
-              .eq('user_id', data.user.id);
-            if (brErr) {
-              setError(brErr.message || (locale === 'th' ? 'โหลดสาขาไม่สำเร็จ' : 'Could not load branches.'));
-              return;
-            }
-
-            const branchList = (branchRows ?? []) as { branch_id: string; role: string }[];
+            const branchList = (brRes.data ?? []) as { branch_id: string; role: string }[];
             const firstBranchId = branchList.length ? (branchList[0] as { branch_id: string }).branch_id : null;
             const branchRole = branchList.length
               ? ((branchList[0] as { role: string }).role as UserRole) || 'staff'
@@ -204,7 +206,10 @@ export default function LoginPage() {
                     );
                   } catch (_) {}
                 }
-                await businessGroupService.syncBranchesForOrgAndUser(orgId, data.user.id);
+                await Promise.race([
+                  businessGroupService.syncBranchesForOrgAndUser(orgId, data.user.id),
+                  new Promise<void>((resolve) => setTimeout(resolve, 15_000)),
+                ]);
                 businessGroupService.setCurrentBranch(firstBranchId);
                 router.replace(`/org/${orgId}/branch/${firstBranchId}/overview`);
                 return;
@@ -335,6 +340,8 @@ export default function LoginPage() {
             <input
               id="email"
               type="email"
+              name="email"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -368,6 +375,8 @@ export default function LoginPage() {
               <input
                 id="password"
                 type={showPassword ? 'text' : 'password'}
+                name="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
