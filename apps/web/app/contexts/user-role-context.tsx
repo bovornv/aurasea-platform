@@ -9,11 +9,13 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { useParams } from 'next/navigation';
 import { useUserSession } from './user-session-context';
 import { useOrganization } from './organization-context';
 import { useCurrentBranch } from '../hooks/use-current-branch';
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
-import { BRANCH_SELECT } from '../lib/db-selects';
+import { resolveAccessViaRpc } from '../services/access-resolution-service';
+import { devLog } from '../lib/dev-log';
 
 /** Normalize role string for consistent comparison and display. */
 function normalizeRole(role: string | null | undefined): string {
@@ -47,6 +49,19 @@ export function resolveEffectiveRole(
   const branch = normalizeBranchRole(branchRole) ?? normalizeRole(branchRole);
   if (org === 'owner' || org === 'admin') return org as EffectiveRoleValue;
   if (branch && (branch === 'manager' || branch === 'staff' || branch === 'owner')) return branch as EffectiveRoleValue;
+  return null;
+}
+
+function effectiveRoleFromRpc(
+  raw: string | null | undefined,
+  source: string | null | undefined
+): EffectiveRoleValue | null {
+  if (raw == null) return null;
+  const r = normalizeRole(raw);
+  if (source === 'organization' && (r === 'owner' || r === 'admin')) return r as EffectiveRoleValue;
+  const b = normalizeBranchRole(raw);
+  if (b) return b as EffectiveRoleValue;
+  if (r === 'owner' || r === 'admin') return r as EffectiveRoleValue;
   return null;
 }
 
@@ -95,6 +110,9 @@ const FULL_ACCESS_SUPER_ADMIN_ROLE: UserRole = {
 export function UserRoleProvider({ children }: { children: ReactNode }) {
   const { isLoggedIn, email } = useUserSession();
   const { activeOrganizationId } = useOrganization();
+  const params = useParams();
+  const orgIdFromUrl = (params?.orgId as string) ?? null;
+  const branchIdFromUrl = (params?.branchId as string) ?? null;
   const { branch: currentBranch, branchId: currentBranchId } = useCurrentBranch();
   const [role, setRole] = useState<UserRole | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -103,18 +121,14 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
   const fetchUserRole = useCallback(async () => {
     if (!isLoggedIn || !email) {
       setRole(null);
+      setError(null);
       setIsLoading(false);
       return;
     }
 
     if (!isSupabaseAvailable()) {
-      setRole({
-        ...FULL_ACCESS_SUPER_ADMIN_ROLE,
-        isSuperAdmin: false,
-        finalRole: 'owner',
-        organizationRole: 'owner',
-        effectiveRole: 'owner',
-      });
+      setError(new Error('Supabase is not available'));
+      setRole(null);
       setIsLoading(false);
       return;
     }
@@ -128,109 +142,107 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
         throw new Error('Supabase client not available');
       }
 
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
       if (authError || !user) {
-        setRole({
-          ...FULL_ACCESS_SUPER_ADMIN_ROLE,
-          isSuperAdmin: false,
-          finalRole: 'owner',
-          organizationRole: 'owner',
-          effectiveRole: 'owner',
-        });
-        setIsLoading(false);
+        setRole(null);
+        setError(authError ? new Error(authError.message) : new Error('Not authenticated'));
         return;
       }
 
-      // Fetch platform_admins first to determine finalRole
       const { data: platformAdmin } = await supabase
         .from('platform_admins')
         .select('role')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      // PART 1: Fetch organization-level role (for active org when set, else any membership)
-      let orgMembersQuery = supabase
-        .from('organization_members')
-        .select('organization_id, role')
-        .eq('user_id', user.id);
-      if (activeOrganizationId) {
-        orgMembersQuery = orgMembersQuery.eq('organization_id', activeOrganizationId);
-      }
-      const { data: orgMembers, error: orgError } = await orgMembersQuery.maybeSingle();
-
-      if (orgError && orgError.code !== 'PGRST116') {
-        console.warn('[UserRole] Error fetching organization role:', orgError);
+      const platformAdminRow = platformAdmin as { role?: string } | null;
+      if (platformAdminRow?.role === 'super_admin') {
+        setRole({ ...FULL_ACCESS_SUPER_ADMIN_ROLE });
+        return;
       }
 
-      const orgRow = orgMembers as { role: string; organization_id: string } | null;
-      const organizationMemberRole = orgRow?.role as OrganizationRole | null;
-      const organizationId = orgRow?.organization_id || activeOrganizationId || null;
+      // URL org wins over context during refresh / tab restore until OrganizationContext syncs.
+      const targetOrgId = orgIdFromUrl ?? activeOrganizationId ?? null;
+      const targetBranchId =
+        branchIdFromUrl && branchIdFromUrl !== '__all__'
+          ? branchIdFromUrl
+          : currentBranchId && currentBranchId !== '__all__'
+            ? currentBranchId
+            : null;
 
-      // Fetch branch-level roles (branch_members where user_id = current user)
-      const { data: branchMembers, error: branchError } = await supabase
-        .from('branch_members')
-        .select('*')
-        .eq('user_id', user.id);
-
-      if (branchError) {
-        console.warn('[UserRole] Error fetching branch roles:', branchError);
-      }
-
-      const branchRoles = new Map<string, BranchRole>();
-      const accessibleBranchIds: string[] = [];
-
-      const branchMembersList = (branchMembers ?? []) as { branch_id: string; role: string }[];
-      branchMembersList.forEach(member => {
-        const r = normalizeBranchRole(member.role) ?? 'staff';
-        branchRoles.set(member.branch_id, r);
-        accessibleBranchIds.push(member.branch_id);
+      const { orgAccess, branchAccess, accessible } = await resolveAccessViaRpc(supabase, {
+        organizationId: targetOrgId,
+        branchId: targetBranchId,
       });
 
-      // If organization owner/admin, get all branches in organization
-      const orgRoleNormalized = normalizeRole(organizationMemberRole);
-      if ((orgRoleNormalized === 'owner' || orgRoleNormalized === 'admin') && organizationId) {
-        const { data: orgBranches } = await supabase
-          .from('branches')
-          .select(BRANCH_SELECT)
-          .eq('organization_id', organizationId);
-
-        const orgBranchesList = (orgBranches ?? []) as { id: string; module_type?: string | null }[];
-        orgBranchesList.forEach(branch => {
-          if (!accessibleBranchIds.includes(branch.id)) {
-            accessibleBranchIds.push(branch.id);
-          }
-        });
+      if (!accessible.ok) {
+        throw new Error(accessible.code || 'get_my_accessible_branches failed');
       }
 
-      // Resolve effective role: org owner/admin → org role; else branch role if exists; else null (no default)
-      const branchRoleForCurrent =
-        currentBranch?.id != null
-          ? branchMembersList.find((bm) => bm.branch_id === currentBranch.id)?.role ?? null
-          : null;
-      const effective = resolveEffectiveRole(organizationMemberRole, branchRoleForCurrent);
+      const accessibleBranchIds = accessible.branch_ids ?? [];
+      const branchRoles = new Map<string, BranchRole>();
+      for (const row of accessible.branch_memberships ?? []) {
+        if (!row.branch_id) continue;
+        const r = normalizeBranchRole(row.role) ?? 'staff';
+        branchRoles.set(row.branch_id, r);
+      }
 
-      const platformAdminRow = platformAdmin as { role?: string } | null;
+      const organizationMemberRole: OrganizationRole | null =
+        orgAccess?.allowed && orgAccess.organization_role
+          ? (normalizeRole(orgAccess.organization_role) === 'owner' ||
+              normalizeRole(orgAccess.organization_role) === 'admin'
+              ? (orgAccess.organization_role as OrganizationRole)
+              : null)
+          : null;
+
+      const organizationId = targetOrgId;
+
+      const branchRoleForCurrent = targetBranchId
+        ? (accessible.branch_memberships ?? []).find((m) => m.branch_id === targetBranchId)?.role ?? null
+        : currentBranch?.id != null
+          ? (accessible.branch_memberships ?? []).find((m) => m.branch_id === currentBranch.id)?.role ?? null
+          : null;
+
+      let effective: EffectiveRoleValue | null = resolveEffectiveRole(
+        organizationMemberRole,
+        branchRoleForCurrent
+      );
+      let accessSource: string | null =
+        organizationMemberRole != null ? 'organization_members' : branchRoleForCurrent != null ? 'branch_members' : null;
+
+      if (branchAccess?.allowed && branchAccess.effective_role) {
+        const fromRpc = effectiveRoleFromRpc(branchAccess.effective_role, branchAccess.source ?? null);
+        if (fromRpc) {
+          effective = fromRpc;
+          accessSource = branchAccess.source ?? 'rpc_branch';
+        }
+      }
+
       let finalRole: FinalRole;
-      if (platformAdminRow?.role === 'super_admin') {
-        finalRole = 'super_admin';
-      } else if (effective) {
+      if (effective) {
         finalRole = effective;
       } else {
         finalRole = 'member';
       }
 
-      const organizationRole = (organizationMemberRole as OrganizationRole) ?? null;
+      const organizationRole = organizationMemberRole;
       const effectiveRole = effective;
 
-      // Permissions from resolved effectiveRole only (deterministic, scope-safe)
       const canManageOrganization = effectiveRole === 'owner';
       const canManageBranches = effectiveRole === 'owner' || effectiveRole === 'admin';
-      const canEditBranch = canManageBranches || effectiveRole === 'manager' || effectiveRole === 'staff' || effectiveRole === 'owner';
+      const canEditBranch =
+        canManageBranches ||
+        effectiveRole === 'manager' ||
+        effectiveRole === 'staff' ||
+        effectiveRole === 'owner';
       const canLogData = canEditBranch;
       const canViewOnly = false;
 
       const userRole: UserRole = {
-        isSuperAdmin: finalRole === 'super_admin',
+        isSuperAdmin: false,
         finalRole,
         organizationRole,
         organizationId,
@@ -244,6 +256,21 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
         canViewOnly,
       };
 
+      if (process.env.NODE_ENV === 'development') {
+        devLog('[ACCESS_RESOLUTION]', {
+          authUserId: user.id,
+          authUserEmail: email,
+          selectedOrganizationId: targetOrgId,
+          selectedBranchId: targetBranchId,
+          orgAccess,
+          branchAccess,
+          accessibleBranchIds,
+          resolvedEffectiveRole: effectiveRole,
+          accessSource,
+          redirectBeforeReady: false,
+        });
+      }
+
       setRole(userRole);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -251,18 +278,19 @@ export function UserRoleProvider({ children }: { children: ReactNode }) {
         console.error('[UserRole] Failed to fetch user role:', err);
       }
       setError(err instanceof Error ? err : new Error('Failed to fetch user role'));
-      
-      setRole({
-        ...FULL_ACCESS_SUPER_ADMIN_ROLE,
-        isSuperAdmin: false,
-        finalRole: 'owner',
-        organizationRole: 'owner',
-        effectiveRole: 'owner',
-      });
+      setRole(null);
     } finally {
       setIsLoading(false);
     }
-  }, [isLoggedIn, email, activeOrganizationId, currentBranchId, currentBranch?.id]);
+  }, [
+    isLoggedIn,
+    email,
+    activeOrganizationId,
+    orgIdFromUrl,
+    branchIdFromUrl,
+    currentBranchId,
+    currentBranch?.id,
+  ]);
 
   useEffect(() => {
     fetchUserRole();

@@ -230,17 +230,12 @@ export async function saveDailyMetric(
       console.log('BRANCH:', metric.branchId);
     }
 
-    const { data: memberRow } = await supabase
-      .from('branch_members')
-      .select('role')
-      .eq('branch_id', metric.branchId)
-      .eq('user_id', user?.id ?? '')
-      .limit(1)
-      .maybeSingle();
-
-    const member = memberRow as { role: string } | null;
-    const allowedRoles = ['owner', 'manager', 'staff'];
-    if (!member || !allowedRoles.includes(member.role)) {
+    const { resolveBranchAccess } = await import('../../lib/access/branch-access');
+    const access = await resolveBranchAccess(supabase, {
+      userId: user?.id ?? '',
+      branchId: metric.branchId,
+    });
+    if (!access.allowed) {
       throw new Error("You don't have permission for this branch");
     }
 

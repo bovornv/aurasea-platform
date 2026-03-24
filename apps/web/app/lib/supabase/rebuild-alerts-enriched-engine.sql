@@ -6,7 +6,7 @@
 --
 -- Prerequisites:
 --   - public.today_summary_clean (total_revenue or revenue pipeline; see fix-today-summary-clean / upgrade scripts)
---   - public.branches (id, organization_id, name)
+--   - public.branches (id, organization_id, branch_name, module_type; legacy name coalesced in views)
 --
 -- App/API use branch_business_status + daily tables; alerts engine reads today_summary_clean only.
 --
@@ -53,7 +53,7 @@ WITH ts AS (
         t.occupancy_delta_week::numeric AS occupancy_delta_week,
         COALESCE(t.customers, 0)::numeric AS customers,
         b.organization_id,
-        b.name AS branch_name,
+        COALESCE(b.branch_name, b.name) AS branch_name,
         CASE
             WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
                 'accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'
@@ -567,7 +567,7 @@ SELECT
     c.rank,
     (
         CASE
-            WHEN COALESCE(NULLIF(TRIM(BOTH FROM c.branch_name), ''), b.name, '') ILIKE '%cafe%' THEN 'fnb'::text
+            WHEN COALESCE(NULLIF(TRIM(BOTH FROM c.branch_name), ''), NULLIF(TRIM(BOTH FROM b.branch_name), ''), NULLIF(TRIM(BOTH FROM b.name), ''), '') ILIKE '%cafe%' THEN 'fnb'::text
             ELSE 'accommodation'::text
         END
     ) AS business_type
@@ -642,7 +642,7 @@ WITH base AS (
         t.revenue_delta_day::numeric AS revenue_delta_day,
         t.occupancy_delta_week::numeric AS occupancy_delta_week,
         b.organization_id,
-        b.name AS branch_name,
+        COALESCE(b.branch_name, b.name) AS branch_name,
         CASE
             WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
                 'accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'
@@ -714,12 +714,16 @@ org_pool AS (
         MAX(l.metric_date) AS latest_metric_date,
         (
             ARRAY_AGG(
-                COALESCE(NULLIF(TRIM(BOTH FROM b.name), ''), TRIM(BOTH FROM b.id::text))
-                ORDER BY b.sort_order NULLS LAST, b.name
+                COALESCE(
+                    NULLIF(TRIM(BOTH FROM b.branch_name), ''),
+                    NULLIF(TRIM(BOTH FROM b.name), ''),
+                    TRIM(BOTH FROM b.id::text)
+                )
+                ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name)
             )
         )[1] AS sample_branch_name,
         (
-            ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, b.name)
+            ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name))
         )[1] AS sample_branch_id
     FROM branches b
     LEFT JOIN latest l ON l.branch_id = TRIM(BOTH FROM b.id::text)
@@ -822,7 +826,12 @@ enriched AS (
     SELECT
         COALESCE(b.organization_id, base.organization_id) AS organization_id,
         base.branch_id,
-        COALESCE(NULLIF(TRIM(BOTH FROM base.branch_name), ''), b.name, base.branch_id) AS branch_name,
+        COALESCE(
+            NULLIF(TRIM(BOTH FROM base.branch_name), ''),
+            NULLIF(TRIM(BOTH FROM b.branch_name), ''),
+            NULLIF(TRIM(BOTH FROM b.name), ''),
+            base.branch_id
+        ) AS branch_name,
         base.branch_type,
         base.metric_date,
         base.impact_estimate_thb,
@@ -887,7 +896,7 @@ WITH base AS (
         t.customers::numeric AS customers,
         t.utilized::numeric AS rooms_sold,
         b.organization_id,
-        b.name AS branch_name
+        COALESCE(b.branch_name, b.name) AS branch_name
     FROM today_summary_clean t
     LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
     WHERE b.organization_id IS NOT NULL
@@ -972,12 +981,16 @@ org_pool AS (
         b.organization_id,
         (
             ARRAY_AGG(
-                COALESCE(NULLIF(TRIM(BOTH FROM b.name), ''), TRIM(BOTH FROM b.id::text))
-                ORDER BY b.sort_order NULLS LAST, b.name
+                COALESCE(
+                    NULLIF(TRIM(BOTH FROM b.branch_name), ''),
+                    NULLIF(TRIM(BOTH FROM b.name), ''),
+                    TRIM(BOTH FROM b.id::text)
+                )
+                ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name)
             )
         )[1] AS sample_branch_name,
         (
-            ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, b.name)
+            ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name))
         )[1] AS sample_branch_id
     FROM branches b
     WHERE b.organization_id IS NOT NULL

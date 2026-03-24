@@ -26,7 +26,7 @@ interface OrganizationContextType {
   activeOrganizationId: string | null;
   activeOrganization: Organization | null;
   organizations: Organization[];
-  /** Org IDs the user belongs to (from organization_members). Used to validate route. */
+  /** Org IDs the user can access (organization_members and/or branch_members via branches.organization_id). */
   memberOrganizationIds: string[];
   setActiveOrganizationId: (orgId: string) => Promise<void>;
   isLoading: boolean;
@@ -121,7 +121,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Initialize from organization_members only. No mock org, no default business group. If no orgs in Supabase → empty state.
+  // Initialize from organization_members ∪ org ids derived from branch_members → branches.organization_id.
   // Module context is derived from the resolved branch's moduleType only; do not default to accommodation.
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -183,10 +183,6 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
         }
 
         const list = (memberships ?? []) as OrganizationMembership[];
-        let orgIds = list.map((m) => m.organization_id);
-        let firstOrgId: string | null = list.length > 0 ? list[0].organization_id : null;
-        let firstRole: UserRole = list.length > 0 ? (list[0].role as UserRole) ?? 'owner' : 'staff';
-        let branchIdsToSet: string[] | undefined;
 
         const { data: branchMembers } = await supabase
           .from('branch_members')
@@ -196,31 +192,47 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
         type BMRow = { branch_id: string; role: string; branches: { organization_id: string } | null };
         const branchList = (branchMembers ?? []) as BMRow[];
 
-        if (branchList.length > 0) {
-          const seen = new Set<string>();
-          const derivedOrgIds: string[] = [];
-          branchList.forEach((row) => {
-            const orgId = row.branches?.organization_id;
-            if (orgId && !seen.has(orgId)) {
-              seen.add(orgId);
-              derivedOrgIds.push(orgId);
-            }
-          });
-          if (derivedOrgIds.length > 0) {
-            orgIds = derivedOrgIds;
-            firstOrgId = derivedOrgIds[0];
-            firstRole = (branchList[0].role as UserRole) || 'staff';
-            branchIdsToSet = branchList.map((b) => b.branch_id);
-          }
+        const orgIdsFromMembers = new Set(list.map((m) => m.organization_id));
+        const orgIdsFromBranches = new Set<string>();
+        branchList.forEach((row) => {
+          const oid = row.branches?.organization_id;
+          if (oid) orgIdsFromBranches.add(oid);
+        });
+        const allOrgIdsSet = new Set<string>([...orgIdsFromMembers, ...orgIdsFromBranches]);
+        const allOrgIds = [...allOrgIdsSet].sort((a, b) => a.localeCompare(b));
+
+        let storedFirst: string | null = null;
+        try {
+          storedFirst = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+        } catch {
+          storedFirst = null;
         }
 
-        if (branchList.length === 0 && list.length > 0) {
-          firstOrgId = list[0].organization_id;
-          firstRole = (list[0].role as UserRole) ?? 'owner';
-          orgIds = list.map((m) => m.organization_id);
-        }
+        const ownerOrAdminOrg = list.find((m) => m.role === 'owner' || m.role === 'admin');
+        const firstBranchOrgId =
+          [...orgIdsFromBranches].sort((a, b) => a.localeCompare(b))[0] ?? null;
+        const firstOrgId =
+          (storedFirst && allOrgIdsSet.has(storedFirst) ? storedFirst : null) ??
+          ownerOrAdminOrg?.organization_id ??
+          list[0]?.organization_id ??
+          firstBranchOrgId ??
+          allOrgIds[0] ??
+          null;
 
-        if (!firstOrgId || orgIds.length === 0) {
+        const orgRowForFirst = list.find((m) => m.organization_id === firstOrgId);
+        const firstRole: UserRole =
+          (orgRowForFirst?.role as UserRole) ??
+          ((branchList.find((b) => b.branches?.organization_id === firstOrgId)?.role as UserRole) ||
+            'staff');
+
+        const isOrgLevelForFirst = list.some(
+          (m) => m.organization_id === firstOrgId && (m.role === 'owner' || m.role === 'admin')
+        );
+        const branchIdsToSet = isOrgLevelForFirst
+          ? []
+          : branchList.filter((b) => b.branches?.organization_id === firstOrgId).map((b) => b.branch_id);
+
+        if (!firstOrgId || allOrgIds.length === 0) {
           setActiveOrganizationIdState(null);
           setActiveOrganization(null);
           setOrganizations([]);
@@ -233,7 +245,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        setMemberOrganizationIds(orgIds);
+        setMemberOrganizationIds(allOrgIds);
         const orgs = await loadOrganizations();
         if (cancelled) return;
         setOrganizations(orgs);
@@ -248,18 +260,17 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
         setActiveOrganization(org);
         syncBusinessGroupLocalStorage(org);
         clearBranchIfNotInOrg(firstOrgId);
-        updatePermissions(firstRole, firstOrgId, branchIdsToSet ?? []);
+        updatePermissions(firstRole, firstOrgId, branchIdsToSet);
 
-        const isOrgLevel = list.some((m) => m.organization_id === firstOrgId && (m.role === 'owner' || m.role === 'admin'));
-        if (isOrgLevel) {
+        if (isOrgLevelForFirst) {
           await businessGroupService.syncBranchesFromSupabaseForOrg(firstOrgId);
         } else {
           await businessGroupService.syncBranchesForOrgAndUser(firstOrgId, user.id);
         }
         if (cancelled) return;
-        if (branchIdsToSet?.length === 1) {
+        if (branchIdsToSet.length === 1) {
           businessGroupService.setCurrentBranch(branchIdsToSet[0]);
-        } else if (branchIdsToSet && branchIdsToSet.length > 1) {
+        } else if (branchIdsToSet.length > 1) {
           businessGroupService.setCurrentBranch(branchIdsToSet[0]);
         }
       } catch (e) {
@@ -307,8 +318,23 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
             .eq('organization_id', orgId)
             .eq('user_id', user.id)
             .maybeSingle();
-          const role = (orgMember as { role?: string } | null)?.role;
-          const isOrgLevel = role === 'owner' || role === 'admin';
+          const orgRoleFromMember = (orgMember as { role?: string } | null)?.role;
+
+          const { data: branchMembers } = await supabase
+            .from('branch_members')
+            .select('branch_id, role, branches(organization_id)')
+            .eq('user_id', user.id);
+          type BMRow = { branch_id: string; role: string; branches: { organization_id: string } | null };
+          const branchList = (branchMembers ?? []) as BMRow[];
+          const rowsInOrg = branchList.filter((b) => b.branches?.organization_id === orgId);
+          const isOrgLevel = orgRoleFromMember === 'owner' || orgRoleFromMember === 'admin';
+          const branchIdsToSet = isOrgLevel ? [] : rowsInOrg.map((b) => b.branch_id);
+          const resolvedRole: UserRole =
+            (orgRoleFromMember as UserRole | undefined) ??
+            ((rowsInOrg[0]?.role as UserRole) || 'staff');
+
+          updatePermissions(resolvedRole, orgId, branchIdsToSet);
+
           if (isOrgLevel) {
             await businessGroupService.syncBranchesFromSupabaseForOrg(orgId);
           } else {
@@ -338,7 +364,7 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
     },
-    [memberOrganizationIds, loadOrganization]
+    [memberOrganizationIds, loadOrganization, updatePermissions]
   );
 
   const refreshData = useCallback(async () => {

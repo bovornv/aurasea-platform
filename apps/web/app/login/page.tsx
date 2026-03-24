@@ -123,7 +123,10 @@ export default function LoginPage() {
                 .select('organization_id, role')
                 .eq('user_id', data.user.id)
                 .order('created_at', { ascending: true }),
-              supabase.from('branch_members').select('branch_id, role').eq('user_id', data.user.id),
+              supabase
+                .from('branch_members')
+                .select('branch_id, role, branches(organization_id)')
+                .eq('user_id', data.user.id),
             ]);
             if (memRes.error) {
               setError(
@@ -140,26 +143,28 @@ export default function LoginPage() {
 
             const orgList = (memRes.data ?? []) as { organization_id: string; role: string }[];
             const ownerOrAdmin = orgList.find((r) => r.role === 'owner' || r.role === 'admin');
-            const branchList = (brRes.data ?? []) as { branch_id: string; role: string }[];
-            const firstBranchId = branchList.length ? (branchList[0] as { branch_id: string }).branch_id : null;
-            const branchRole = branchList.length
-              ? ((branchList[0] as { role: string }).role as UserRole) || 'staff'
-              : null;
+            type BrRow = { branch_id: string; role: string; branches: { organization_id: string } | null };
+            const branchList = (brRes.data ?? []) as BrRow[];
+            const firstBranchId = branchList.length ? branchList[0].branch_id : null;
+            const branchRole = branchList.length ? ((branchList[0].role as UserRole) || 'staff') : null;
             let orgId: string | null = null;
             let organization: { id: string; name: string } | null = null;
             if (ownerOrAdmin) {
               orgId = ownerOrAdmin.organization_id;
             } else if (firstBranchId) {
-              const { data: branch, error: bErr } = await supabase
-                .from('branches')
-                .select(BRANCH_SELECT)
-                .eq('id', firstBranchId)
-                .maybeSingle();
-              if (bErr) {
-                setError(bErr.message || (locale === 'th' ? 'โหลดข้อมูลสาขาไม่สำเร็จ' : 'Could not load branch.'));
-                return;
+              orgId = branchList[0]?.branches?.organization_id ?? null;
+              if (!orgId) {
+                const { data: branch, error: bErr } = await supabase
+                  .from('branches')
+                  .select(BRANCH_SELECT)
+                  .eq('id', firstBranchId)
+                  .maybeSingle();
+                if (bErr) {
+                  setError(bErr.message || (locale === 'th' ? 'โหลดข้อมูลสาขาไม่สำเร็จ' : 'Could not load branch.'));
+                  return;
+                }
+                orgId = (branch as { organization_id?: string } | null)?.organization_id ?? null;
               }
-              orgId = (branch as { organization_id?: string } | null)?.organization_id ?? null;
               if (orgId) {
                 const { data: orgRow, error: oErr } = await supabase
                   .from('organizations')
@@ -192,7 +197,14 @@ export default function LoginPage() {
                 return;
               }
               if (firstBranchId && organization) {
-                updatePermissions(branchRole!, orgId, branchList.map((r) => (r as { branch_id: string }).branch_id));
+                const branchIdsInOrg = branchList
+                  .filter((r) => r.branches?.organization_id === orgId)
+                  .map((r) => r.branch_id);
+                updatePermissions(
+                  branchRole!,
+                  orgId,
+                  branchIdsInOrg.length > 0 ? branchIdsInOrg : branchList.map((r) => r.branch_id)
+                );
                 if (typeof window !== 'undefined') {
                   try {
                     localStorage.setItem(

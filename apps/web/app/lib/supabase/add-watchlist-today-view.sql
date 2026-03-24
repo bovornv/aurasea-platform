@@ -19,7 +19,7 @@ WITH base AS (
     t.customers::numeric AS customers,
     t.utilized::numeric AS rooms_sold,
     b.organization_id,
-    b.name AS branch_name
+    COALESCE(b.branch_name, b.name) AS branch_name
   FROM public.today_summary_clean t
   LEFT JOIN public.branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
   WHERE b.organization_id IS NOT NULL

@@ -4,11 +4,12 @@
  */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { usePathname, useParams } from 'next/navigation';
 import { businessGroupService } from '../services/business-group-service';
 import { useUserSession } from '../contexts/user-session-context';
-import { getAccessibleBranches } from '../services/permissions-service';
+import { useUserRole } from '../contexts/user-role-context';
+import { getAccessibleBranches, mergeOrgRoleForBranchList } from '../services/permissions-service';
 import type { Branch } from '../models/business-group';
 
 const CURRENT_BRANCH_KEY = 'hospitality_current_branch_id';
@@ -26,6 +27,17 @@ export function useCurrentBranch(): {
   const params = useParams();
   const branchIdFromUrl = params?.branchId as string | undefined;
   const { permissions } = useUserSession();
+  const { role: userRole } = useUserRole();
+  const permissionsForBranches = useMemo(
+    () => mergeOrgRoleForBranchList(permissions, userRole?.effectiveRole),
+    [
+      permissions.organizationId,
+      permissions.branchIds,
+      permissions.role,
+      permissions.email,
+      userRole?.effectiveRole,
+    ]
+  );
 
   useEffect(() => {
     businessGroupService.initializeBusinessStructure();
@@ -34,7 +46,7 @@ export function useCurrentBranch(): {
       const ALL_BRANCHES_KEY = '__all__';
       const businessGroup = businessGroupService.getBusinessGroup();
       const accessibleBranches = businessGroup
-        ? getAccessibleBranches(permissions).filter((b) => b.businessGroupId === businessGroup.id)
+        ? getAccessibleBranches(permissionsForBranches).filter((b) => b.businessGroupId === businessGroup.id)
         : [];
       const defaultBranchList = accessibleBranches;
       let currentBranchId = businessGroupService.getCurrentBranchId();
@@ -100,7 +112,15 @@ export function useCurrentBranch(): {
     };
     
     updateBranch();
-  }, [pathname, branchIdFromUrl, permissions.organizationId, permissions.branchIds, permissions.role]);
+  }, [
+    pathname,
+    branchIdFromUrl,
+    permissions.organizationId,
+    permissions.branchIds,
+    permissions.role,
+    permissionsForBranches,
+    userRole?.effectiveRole,
+  ]);
 
   // Listen for storage changes to update when branch selection changes
   useEffect(() => {
@@ -111,7 +131,7 @@ export function useCurrentBranch(): {
       const ALL_BRANCHES_KEY = '__all__';
       const businessGroup = businessGroupService.getBusinessGroup();
       const accessibleBranches = businessGroup
-        ? getAccessibleBranches(permissions).filter((b) => b.businessGroupId === businessGroup.id)
+        ? getAccessibleBranches(permissionsForBranches).filter((b) => b.businessGroupId === businessGroup.id)
         : [];
       const defaultBranchList = accessibleBranches;
       let currentBranchId = businessGroupService.getCurrentBranchId();
@@ -170,7 +190,7 @@ export function useCurrentBranch(): {
       window.removeEventListener('branchUpdated', handleStorageChange);
       window.removeEventListener('organizationChanged', handleStorageChange);
     };
-  }, [pathname, permissions.organizationId, permissions.branchIds, permissions.role]);
+  }, [pathname, permissions.organizationId, permissions.branchIds, permissions.role, permissionsForBranches, userRole?.effectiveRole]);
 
   const ALL_BRANCHES_KEY = '__all__';
   return { 

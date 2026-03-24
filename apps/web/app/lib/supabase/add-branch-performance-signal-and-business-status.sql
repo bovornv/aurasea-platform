@@ -105,7 +105,7 @@ CREATE VIEW branch_business_status AS
 SELECT
   b.id AS branch_id,
   b.organization_id,
-  b.name AS branch_name,
+  COALESCE(b.branch_name, b.name) AS branch_name,
   b.module_type::text AS branch_type,
   l.metric_date,
   l.health_score,

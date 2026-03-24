@@ -24,6 +24,41 @@ import { Navigation } from '../../components/navigation';
 import SimulationBannerWrapper from '../../components/simulation-banner-wrapper';
 import { LoadingSpinner } from '../../components/loading-spinner';
 import { useOrganization } from '../../contexts/organization-context';
+
+function AccessResolutionRetry({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        width: '100%',
+        gap: '1rem',
+        backgroundColor: '#f9fafb',
+        padding: '2rem',
+      }}
+    >
+      <p style={{ fontSize: '14px', color: '#374151', textAlign: 'center', maxWidth: '28rem' }}>{message}</p>
+      <button
+        type="button"
+        onClick={() => onRetry()}
+        style={{
+          padding: '0.5rem 1rem',
+          backgroundColor: '#111827',
+          color: '#fff',
+          border: 'none',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          fontSize: '14px',
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
 import { PoweredByAuraSea } from '../../components/operating-layer/powered-by-aurasea';
 
 const BUSINESS_GROUP_KEY = 'hospitality_business_group';
@@ -47,12 +82,33 @@ export default function OrgLayout({
   const pathname = usePathname() ?? '';
   const orgId = params?.orgId as string | undefined;
   const { isLoggedIn, permissions } = useUserSession();
-  const { role, isLoading: roleLoading } = useUserRole();
-  const { isInitialized: orgInitialized, isLoading: orgLoading } = useOrganization();
+  const { role, isLoading: roleLoading, error: roleError, refreshRole } = useUserRole();
+  const {
+    isInitialized: orgInitialized,
+    isLoading: orgLoading,
+    memberOrganizationIds,
+    setActiveOrganizationId,
+    activeOrganizationId,
+  } = useOrganization();
   const { isSuperAdmin, loading: superAdminLoading } = usePlatformAdmin();
   const superAdminSyncDone = useRef(false);
   // Unified loading guard: isAppReady = sessionLoaded && organizationLoaded && branchResolved && roleResolved. Do not render AccessDenied/NoBranchAssigned/redirects until ready.
   const isAppReady = useRbacReady();
+
+  // Align active org + session permissions with URL so RBAC never compares stale orgId to the path.
+  useEffect(() => {
+    if (!isLoggedIn || !orgId || !orgInitialized) return;
+    if (!memberOrganizationIds.includes(orgId)) return;
+    if (activeOrganizationId === orgId) return;
+    void setActiveOrganizationId(orgId);
+  }, [
+    isLoggedIn,
+    orgId,
+    orgInitialized,
+    memberOrganizationIds,
+    activeOrganizationId,
+    setActiveOrganizationId,
+  ]);
 
   // Role-based redirect: do not send branch roles to org overview. Wait for organization, branch, role.
   useEffect(() => {
@@ -139,18 +195,25 @@ export default function OrgLayout({
         // 2) manager/staff/viewer → branch overview (branchId loaded from branch_members)
         const { data: branchRows } = await supabase
           .from('branch_members')
-          .select('branch_id')
+          .select('branch_id, branches(organization_id)')
           .eq('user_id', user.id);
         if (branchRows?.length) {
-          const firstBranchId = (branchRows[0] as { branch_id: string }).branch_id;
-          const { data: branch } = await supabase
-            .from('branches')
-            .select(BRANCH_SELECT)
-            .eq('id', firstBranchId)
-            .maybeSingle();
-          const orgId = (branch as { organization_id?: string } | null)?.organization_id;
-          if (orgId) {
-            router.replace(`/org/${orgId}/branch/${firstBranchId}/overview`);
+          const row0 = branchRows[0] as {
+            branch_id: string;
+            branches: { organization_id: string } | null;
+          };
+          const firstBranchId = row0.branch_id;
+          let resolvedOrgId = row0.branches?.organization_id ?? null;
+          if (!resolvedOrgId) {
+            const { data: branch } = await supabase
+              .from('branches')
+              .select(BRANCH_SELECT)
+              .eq('id', firstBranchId)
+              .maybeSingle();
+            resolvedOrgId = (branch as { organization_id?: string } | null)?.organization_id ?? null;
+          }
+          if (resolvedOrgId) {
+            router.replace(`/org/${resolvedOrgId}/branch/${firstBranchId}/overview`);
             return;
           }
         }
@@ -195,6 +258,15 @@ export default function OrgLayout({
   if (!isLoggedIn) return null;
   if (superAdminLoading) return null;
   if (!orgId) return null;
+
+  if (roleError && !roleLoading) {
+    return (
+      <AccessResolutionRetry
+        message="Could not verify your access. Check your connection and try again."
+        onRetry={() => void refreshRole()}
+      />
+    );
+  }
 
   if (!isAppReady) {
     return <FullScreenLoader />;

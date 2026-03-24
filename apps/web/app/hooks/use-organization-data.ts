@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOrganization } from '../contexts/organization-context';
 import { getSupabaseClient, isSupabaseAvailable } from '../lib/supabase/client';
 import { BRANCH_SELECT } from '../lib/db-selects';
+import { pickBranchDisplayName, pickBranchModuleTypeOrNull } from '../lib/branch-row-utils';
 import { getLatestMetrics, getMetricsHistory } from '../services/db/metrics-service';
 import type { BranchMetrics } from '../models/branch-metrics';
 
@@ -65,13 +66,12 @@ export function useOrganizationData(): OrganizationData & {
         return;
       }
 
-      type BranchRow = { id: string; name: string; organization_id: string; module_type?: string | null };
       if (data) {
-        const mapped: OrganizationBranch[] = (data as BranchRow[]).map(b => ({
-          id: b.id,
-          name: b.name,
-          organization_id: b.organization_id,
-          module_type: (b.module_type === 'accommodation' || b.module_type === 'fnb' ? b.module_type : null) as 'accommodation' | 'fnb' | null,
+        const mapped: OrganizationBranch[] = (data as Record<string, unknown>[]).map((b) => ({
+          id: String(b.id ?? ''),
+          name: pickBranchDisplayName(b),
+          organization_id: String(b.organization_id ?? ''),
+          module_type: pickBranchModuleTypeOrNull(b),
         }));
         setBranches(mapped);
         setError(null);

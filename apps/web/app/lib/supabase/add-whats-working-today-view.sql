@@ -14,7 +14,7 @@ WITH base AS (
     t.revenue_delta_day::numeric AS revenue_delta_day,
     t.occupancy_delta_week::numeric AS occupancy_delta_week,
     b.organization_id,
-    b.name AS branch_name,
+    COALESCE(b.branch_name, b.name) AS branch_name,
     CASE
       WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
         'accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'

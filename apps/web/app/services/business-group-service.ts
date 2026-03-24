@@ -9,6 +9,7 @@
 import type { BusinessGroup, Branch, BranchLocation, OperatingDays } from '../models/business-group';
 import { BranchBusinessType, ModuleType, migrateBusinessTypeToModules } from '../models/business-group';
 import { BRANCH_SELECT } from '../lib/db-selects';
+import { pickBranchDisplayName, pickBranchModuleType } from '../lib/branch-row-utils';
 
 class BusinessGroupService {
   private businessGroupKey = 'hospitality_business_group';
@@ -523,7 +524,7 @@ class BusinessGroupService {
 
       const supabase = getSupabaseClient();
       if (!supabase) return;
-      // Branch filtering uses organization_id consistently (DB column)
+      // branches.organization_id (branch_members has no organization_id column)
       const { data: rows, error } = await supabase
         .from('branches')
         .select(BRANCH_SELECT)
@@ -534,13 +535,12 @@ class BusinessGroupService {
       if (!rows?.length) return;
 
       const mapRowToBranch = (row: any): Branch => {
-        const mt = (row.module_type || '').toLowerCase();
-        const moduleType: Branch['moduleType'] = mt === 'accommodation' || mt === 'hotel' ? 'accommodation' : mt === 'fnb' ? 'fnb' : undefined;
+        const moduleType = pickBranchModuleType(row as Record<string, unknown>);
         const modules: ModuleType[] = moduleType === 'accommodation' ? [ModuleType.ACCOMMODATION] : moduleType === 'fnb' ? [ModuleType.FNB] : [];
         return {
           id: row.id,
           businessGroupId: row.organization_id ?? orgId,
-          branchName: row.name ?? row.branch_name ?? 'Branch',
+          branchName: pickBranchDisplayName(row as Record<string, unknown>),
           moduleType,
           modules,
           location: undefined,
@@ -584,12 +584,27 @@ class BusinessGroupService {
 
       const { data: rows, error } = await supabase
         .from('branch_members')
-        .select('branch_id, branches(id, name, organization_id, sort_order, created_at, module_type, total_rooms, accommodation_staff_count)')
+        .select(`branch_id, branches(${BRANCH_SELECT})`)
         .eq('user_id', userId);
 
       if (error) throw error;
 
-      type Row = { branch_id: string; branches: { id: string; name: string; organization_id: string; sort_order?: number; created_at?: string; module_type?: string | null; total_rooms?: number | null; accommodation_staff_count?: number | null; fnb_staff_count?: number | null; monthly_fixed_cost?: number | null } | null };
+      type Row = {
+        branch_id: string;
+        branches: {
+          id: string;
+          branch_name?: string | null;
+          name?: string | null;
+          organization_id: string;
+          sort_order?: number;
+          created_at?: string;
+          module_type?: string | null;
+          total_rooms?: number | null;
+          accommodation_staff_count?: number | null;
+          fnb_staff_count?: number | null;
+          monthly_fixed_cost?: number | null;
+        } | null;
+      };
       const branchRows = (rows ?? []) as Row[];
       const branchesForOrg = branchRows
         .map((r) => r.branches)
@@ -597,13 +612,13 @@ class BusinessGroupService {
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
       const mapRowToBranch = (row: (typeof branchesForOrg)[0]): Branch => {
-        const mt = (row.module_type || '').toLowerCase();
-        const moduleType: Branch['moduleType'] = mt === 'accommodation' || mt === 'hotel' ? 'accommodation' : mt === 'fnb' ? 'fnb' : undefined;
+        const r = row as unknown as Record<string, unknown>;
+        const moduleType = pickBranchModuleType(r);
         const modules: ModuleType[] = moduleType === 'accommodation' ? [ModuleType.ACCOMMODATION] : moduleType === 'fnb' ? [ModuleType.FNB] : [];
         return {
           id: row.id,
           businessGroupId: row.organization_id ?? orgId,
-          branchName: row.name ?? 'Branch',
+          branchName: pickBranchDisplayName(r),
           moduleType,
           modules,
           location: undefined,

@@ -50,15 +50,21 @@ export function resolveFallbackRoute(role: string, branchId: string, orgId: stri
 export function useRbacReady(): boolean {
   const { isLoggedIn } = useUserSession();
   const { isInitialized: orgInitialized, isLoading: orgLoading } = useOrganization();
-  const { role, isLoading: roleLoading } = useUserRole();
+  const { role, isLoading: roleLoading, error: roleError } = useUserRole();
   const sessionLoaded = isLoggedIn;
   const orgLoaded = Boolean(orgInitialized && !orgLoading);
   const roleResolved = Boolean(!roleLoading && role != null);
+  const accessResolutionFailed = Boolean(roleError && !roleLoading);
   const isCompanyRole = role?.effectiveRole === 'owner' || role?.effectiveRole === 'admin';
   const branchContextResolved = Boolean(isCompanyRole || role?.accessibleBranchIds !== undefined);
   return useMemo(
-    () => sessionLoaded && orgLoaded && roleResolved && branchContextResolved,
-    [sessionLoaded, orgLoaded, roleResolved, branchContextResolved]
+    () =>
+      sessionLoaded &&
+      orgLoaded &&
+      roleResolved &&
+      branchContextResolved &&
+      !accessResolutionFailed,
+    [sessionLoaded, orgLoaded, roleResolved, branchContextResolved, accessResolutionFailed]
   );
 }
 
@@ -240,7 +246,12 @@ export function useRouteGuard(): { isReady: boolean } {
   const pathname = usePathname();
   const { role, isLoading: roleLoading } = useUserRole();
   const { isLoggedIn, permissions } = useUserSession();
-  const { activeOrganizationId, isInitialized: orgInitialized, isLoading: orgLoading } = useOrganization();
+  const {
+    activeOrganizationId,
+    isInitialized: orgInitialized,
+    isLoading: orgLoading,
+    memberOrganizationIds,
+  } = useOrganization();
 
   const isReady = useRbacReady();
 
@@ -278,6 +289,7 @@ export function useRouteGuard(): { isReady: boolean } {
       sessionReady: sessionLoaded,
       organizationReady: orgLoaded,
       branchReady: isCompanyRole || branchLoaded,
+      memberOrganizationIds,
     });
 
     if (result.pending) return;
@@ -344,7 +356,18 @@ export function useRouteGuard(): { isReady: boolean } {
         router.push(`/unauthorized?from=${encodeURIComponent(path)}`);
       }
     }
-  }, [pathname, role, roleLoading, isLoggedIn, activeOrganizationId, orgInitialized, orgLoading, permissions, router]);
+  }, [
+    pathname,
+    role,
+    roleLoading,
+    isLoggedIn,
+    activeOrganizationId,
+    orgInitialized,
+    orgLoading,
+    memberOrganizationIds,
+    permissions,
+    router,
+  ]);
 
   return { isReady };
 }

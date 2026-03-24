@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS organization_members (
 -- ============================================================
 -- TABLE 2: branch_members
 -- ============================================================
+-- Branch-level roles. No organization_id here — join branches ON branch_id for org context.
 -- Stores branch-level roles (branch_manager, branch_user, viewer)
 CREATE TABLE IF NOT EXISTS branch_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

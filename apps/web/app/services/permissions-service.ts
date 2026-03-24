@@ -87,6 +87,22 @@ export function canAccessBranch(
  * Accessible branches = branch_members for user (or all org branches for owner/admin).
  * Never filter by module; module context is derived from the selected branch's moduleType only.
  */
+/**
+ * Session permissions often omit `role` (not persisted). Use resolved org role from UserRoleContext
+ * so owner/admin see all branches in the business group while permissions catch up.
+ */
+export function mergeOrgRoleForBranchList(
+  permissions: UserPermissions,
+  effectiveRole: string | null | undefined
+): UserPermissions {
+  if (permissions.role === 'owner' || permissions.role === 'admin') return permissions;
+  const e = effectiveRole ?? '';
+  if (e === 'owner' || e === 'admin') {
+    return { ...permissions, role: e as UserRole };
+  }
+  return permissions;
+}
+
 export function getAccessibleBranches(permissions: UserPermissions): Branch[] {
   const allBranches = businessGroupService.getAllBranches();
 
