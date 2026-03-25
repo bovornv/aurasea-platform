@@ -65,14 +65,14 @@ $empty$;
 CREATE VIEW public.today_priorities_clean AS
 WITH base AS (
   SELECT
-    t.branch_id::text AS branch_id,
+    t.branch_id::uuid AS branch_id,
     t.metric_date::date AS metric_date,
     jb.jb AS j,
-    COALESCE(b.organization_id::text, NULLIF(TRIM(BOTH FROM jb.jb->>'organization_id'), '')) AS organization_id,
+    COALESCE(b.organization_id::uuid, NULLIF(TRIM(BOTH FROM jb.jb->>'organization_id'), '')::uuid) AS organization_id,
     COALESCE(NULLIF(TRIM(BOTH FROM b.branch_name), ''), NULLIF(TRIM(BOTH FROM b.name), ''), NULLIF(TRIM(BOTH FROM jb.jb->>'branch_name'), '')) AS branch_name
   FROM public.today_summary_clean t
   CROSS JOIN LATERAL (SELECT to_jsonb(t) AS jb) jb
-  LEFT JOIN public.branches b ON b.id::text = t.branch_id::text
+  LEFT JOIN public.branches b ON b.id::uuid = t.branch_id::uuid
   WHERE t.branch_id IS NOT NULL
 ),
 signals AS (
@@ -83,6 +83,9 @@ signals AS (
     metric_date,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'revenue_delta_day'), '')::numeric, NULL::numeric) AS revenue_delta_day,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'occupancy_delta_week'), '')::numeric, NULL::numeric) AS occupancy_delta_week,
+    COALESCE(NULLIF(TRIM(BOTH FROM j->>'occupancy_rate'), '')::numeric, NULL::numeric) AS occupancy_rate,
+    COALESCE(NULLIF(TRIM(BOTH FROM j->>'adr'), '')::numeric, NULL::numeric) AS adr,
+    COALESCE(NULLIF(TRIM(BOTH FROM j->>'revpar'), '')::numeric, NULL::numeric) AS revpar,
     COALESCE(
       NULLIF(TRIM(BOTH FROM j->>'total_revenue'), '')::numeric,
       NULLIF(TRIM(BOTH FROM j->>'revenue'), '')::numeric,
@@ -91,7 +94,7 @@ signals AS (
       0::numeric
     ) AS revenue_thb
   FROM base
-  WHERE organization_id IS NOT NULL AND TRIM(BOTH FROM organization_id) <> ''
+  WHERE organization_id IS NOT NULL
 ),
 raw AS (
   SELECT
@@ -117,11 +120,47 @@ raw AS (
     'accommodation'::text AS business_type
   FROM signals s
   WHERE s.occupancy_delta_week IS NOT NULL AND s.occupancy_delta_week <= -10
+  UNION ALL
+  SELECT
+    s.organization_id,
+    s.branch_id,
+    s.branch_name,
+    s.metric_date,
+    'Occupancy low (level)'::text AS alert_type_raw,
+    NULL::numeric AS delta_pct,
+    s.revenue_thb AS revenue_thb,
+    'accommodation'::text AS business_type
+  FROM signals s
+  WHERE s.occupancy_rate IS NOT NULL AND s.occupancy_rate < 60
+  UNION ALL
+  SELECT
+    s.organization_id,
+    s.branch_id,
+    s.branch_name,
+    s.metric_date,
+    'ADR under pressure'::text AS alert_type_raw,
+    NULL::numeric AS delta_pct,
+    s.revenue_thb AS revenue_thb,
+    'accommodation'::text AS business_type
+  FROM signals s
+  WHERE s.adr IS NOT NULL AND s.revpar IS NOT NULL AND s.revpar > s.adr * 0.6
+  UNION ALL
+  -- Always include one data-quality priority per branch/day (so UI never falls back to generic)
+  SELECT
+    s.organization_id,
+    s.branch_id,
+    s.branch_name,
+    s.metric_date,
+    'Log today'::text AS alert_type_raw,
+    NULL::numeric AS delta_pct,
+    s.revenue_thb AS revenue_thb,
+    'accommodation'::text AS business_type
+  FROM signals s
 ),
 enriched AS (
   SELECT
     r.organization_id,
-    r.branch_id::text AS branch_id,
+    r.branch_id AS branch_id,
     r.branch_name,
     r.alert_type_raw AS alert_type,
     (
@@ -135,12 +174,17 @@ enriched AS (
     ) AS title,
     (
       CASE
-        WHEN lower(r.alert_type_raw) LIKE '%revenue%' THEN
-          'Revenue is under pressure vs yesterday. Review pricing, promos, and channel mix; log context in Enter Data.'::text
-        WHEN lower(r.alert_type_raw) LIKE '%occupancy%' OR lower(r.alert_type_raw) LIKE '%low%' THEN
-          'Occupancy is soft. Review rate fences, packages, and local demand; cross-check Trends for drift.'::text
-        ELSE
-          'Focus on this signal today: confirm numbers in Enter Data and review context on Trends.'::text
+        WHEN r.alert_type_raw = 'Revenue Drop' THEN
+          'Revenue is down vs yesterday. Check pricing, channel mix, and packages; log context in Enter Data.'::text
+        WHEN r.alert_type_raw = 'Low Occupancy' THEN
+          'Occupancy is down vs last week. Review rate fences, packages, and availability; validate in Trends.'::text
+        WHEN r.alert_type_raw = 'Occupancy low (level)' THEN
+          'Occupancy level is low today. Consider OTA boosts, last-minute packages, and pricing fences.'::text
+        WHEN r.alert_type_raw = 'ADR under pressure' THEN
+          'ADR looks soft vs RevPAR signal. Review discounting, room mix, and channel leakage.'::text
+        WHEN r.alert_type_raw = 'Log today' THEN
+          'Capture revenue, rooms, and costs in Enter Data so signals stay accurate.'::text
+        ELSE 'Review today signals in Trends and log context in Enter Data.'::text
       END
     ) AS description,
     NULL::numeric AS impact_estimate_thb,
@@ -402,7 +446,7 @@ SELECT
   ) AS business_type,
   c.metric_date AS metric_date
 FROM public.today_priorities_clean c
-LEFT JOIN public.branches b ON b.id::text = TRIM(BOTH FROM c.branch_id::text);
+LEFT JOIN public.branches b ON b.id::uuid = c.branch_id::uuid;
 
 COMMENT ON VIEW public.today_priorities_view IS
   'Stable priorities API: filter branch_id, order=sort_score.desc, limit=3; title/description/sort_score.';
