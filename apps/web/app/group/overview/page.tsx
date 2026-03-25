@@ -250,7 +250,7 @@ function OwnerSummaryContent() {
     (async () => {
       try {
         const dash = await Promise.race([
-          fetchCompanyTodayDashboard(orgId, groupBranchIds, { prioritiesLimit: 3, panelLimit: 3 }),
+          fetchCompanyTodayDashboard(orgId, groupBranchIds, { prioritiesLimit: 5, panelLimit: 3 }),
           new Promise<Awaited<ReturnType<typeof fetchCompanyTodayDashboard>>>((resolve) =>
             setTimeout(
               () =>

@@ -11,6 +11,7 @@ export const POSTGREST_RESOURCE_KEYS = {
   alerts_today: 'table:alerts_today',
   get_alerts_critical: 'rpc:get_alerts_critical',
   today_priorities_view: 'table:today_priorities_view',
+  today_priorities_company_view: 'table:today_priorities_company_view',
   whats_working_today: 'table:whats_working_today',
   opportunities_today: 'table:opportunities_today',
   watchlist_today: 'table:watchlist_today',

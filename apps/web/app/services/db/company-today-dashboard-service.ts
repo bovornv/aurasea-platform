@@ -4,7 +4,7 @@
  */
 import { fetchCompanyTodayBundle, type CompanyTodayBundle } from './company-today-data-service';
 import { fetchCompanyDataConfidence, type CompanyDataConfidenceRow } from './company-data-confidence-service';
-import { fetchTodayPriorities, type TodayPrioritiesRow } from './today-priorities-service';
+import { fetchCompanyTodayPriorities, type TodayPrioritiesRow } from './today-priorities-service';
 import { fetchWhatsWorkingToday, type WhatsWorkingTodayRow } from './whats-working-today-service';
 import { fetchOpportunitiesToday, type OpportunitiesTodayRow } from './opportunities-today-service';
 import { fetchWatchlistToday, type WatchlistTodayRow } from './watchlist-today-service';
@@ -58,7 +58,7 @@ export async function fetchCompanyTodayDashboard(
 
     const [bundle, priorities, whatsWorking, opportunities, watchlist, dataConfidence] = await Promise.all([
       fetchCompanyTodayBundle(orgId, branchIds),
-      orgId ? fetchTodayPriorities(orgId, null, prioLim) : Promise.resolve([]),
+      orgId ? fetchCompanyTodayPriorities(orgId, prioLim) : Promise.resolve([]),
       orgId ? fetchWhatsWorkingToday(orgId, panelLim) : Promise.resolve([]),
       orgId ? fetchOpportunitiesToday(orgId, panelLim) : Promise.resolve([]),
       orgId ? fetchWatchlistToday(orgId, panelLim) : Promise.resolve([]),
