@@ -643,17 +643,12 @@ SELECT
     '[]'::jsonb
   ) AS watchlist,
   (
-    SELECT to_jsonb(c)
+    SELECT (jsonb_agg(t)->0)
     FROM (
-      SELECT
-        cdc.organization_id,
-        cdc.data_days,
-        cdc.max_days,
-        cdc.confidence_level
+      SELECT to_jsonb(cdc) AS t
       FROM public.company_data_confidence cdc
       WHERE cdc.organization_id = o.organization_id
-      LIMIT 1
-    ) c
+    ) x
   ) AS confidence
 FROM orgs o;
 
