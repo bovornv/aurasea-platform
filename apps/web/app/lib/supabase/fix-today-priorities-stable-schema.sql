@@ -69,7 +69,11 @@ WITH base AS (
     t.metric_date::date AS metric_date,
     jb.jb AS j,
     COALESCE(b.organization_id::uuid, NULLIF(TRIM(BOTH FROM jb.jb->>'organization_id'), '')::uuid) AS organization_id,
-    COALESCE(NULLIF(TRIM(BOTH FROM b.branch_name), ''), NULLIF(TRIM(BOTH FROM b.name), ''), NULLIF(TRIM(BOTH FROM jb.jb->>'branch_name'), '')) AS branch_name
+    COALESCE(NULLIF(TRIM(BOTH FROM b.branch_name), ''), NULLIF(TRIM(BOTH FROM b.name), ''), NULLIF(TRIM(BOTH FROM jb.jb->>'branch_name'), '')) AS branch_name,
+    CASE
+      WHEN LOWER(COALESCE(b.module_type::text, '')) IN ('fnb','restaurant','cafe','cafe_restaurant') THEN 'fnb'::text
+      ELSE 'accommodation'::text
+    END AS business_type
   FROM public.today_summary_clean t
   CROSS JOIN LATERAL (SELECT to_jsonb(t) AS jb) jb
   LEFT JOIN public.branches b ON b.id::uuid = t.branch_id::uuid
@@ -81,11 +85,13 @@ signals AS (
     branch_id,
     branch_name,
     metric_date,
+    business_type,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'revenue_delta_day'), '')::numeric, NULL::numeric) AS revenue_delta_day,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'occupancy_delta_week'), '')::numeric, NULL::numeric) AS occupancy_delta_week,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'occupancy_rate'), '')::numeric, NULL::numeric) AS occupancy_rate,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'adr'), '')::numeric, NULL::numeric) AS adr,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'revpar'), '')::numeric, NULL::numeric) AS revpar,
+    COALESCE(NULLIF(TRIM(BOTH FROM j->>'customers'), '')::numeric, NULLIF(TRIM(BOTH FROM j->>'total_customers'), '')::numeric, NULL::numeric) AS customers,
     COALESCE(
       NULLIF(TRIM(BOTH FROM j->>'total_revenue'), '')::numeric,
       NULLIF(TRIM(BOTH FROM j->>'revenue'), '')::numeric,
@@ -105,7 +111,7 @@ raw AS (
     'Revenue Drop'::text AS alert_type_raw,
     s.revenue_delta_day AS delta_pct,
     s.revenue_thb AS revenue_thb,
-    'accommodation'::text AS business_type
+    s.business_type AS business_type
   FROM signals s
   WHERE s.revenue_delta_day IS NOT NULL AND s.revenue_delta_day <= -10
   UNION ALL
@@ -117,9 +123,11 @@ raw AS (
     'Low Occupancy'::text AS alert_type_raw,
     s.occupancy_delta_week AS delta_pct,
     s.revenue_thb AS revenue_thb,
-    'accommodation'::text AS business_type
+    s.business_type AS business_type
   FROM signals s
-  WHERE s.occupancy_delta_week IS NOT NULL AND s.occupancy_delta_week <= -10
+  WHERE s.business_type = 'accommodation'
+    AND s.occupancy_delta_week IS NOT NULL
+    AND s.occupancy_delta_week <= -10
   UNION ALL
   SELECT
     s.organization_id,
@@ -129,9 +137,11 @@ raw AS (
     'Occupancy low (level)'::text AS alert_type_raw,
     NULL::numeric AS delta_pct,
     s.revenue_thb AS revenue_thb,
-    'accommodation'::text AS business_type
+    s.business_type AS business_type
   FROM signals s
-  WHERE s.occupancy_rate IS NOT NULL AND s.occupancy_rate < 60
+  WHERE s.business_type = 'accommodation'
+    AND s.occupancy_rate IS NOT NULL
+    AND s.occupancy_rate < 60
   UNION ALL
   SELECT
     s.organization_id,
@@ -141,21 +151,26 @@ raw AS (
     'ADR under pressure'::text AS alert_type_raw,
     NULL::numeric AS delta_pct,
     s.revenue_thb AS revenue_thb,
-    'accommodation'::text AS business_type
+    s.business_type AS business_type
   FROM signals s
-  WHERE s.adr IS NOT NULL AND s.revpar IS NOT NULL AND s.revpar > s.adr * 0.6
+  WHERE s.business_type = 'accommodation'
+    AND s.adr IS NOT NULL
+    AND s.revpar IS NOT NULL
+    AND s.revpar > s.adr * 0.6
   UNION ALL
-  -- Always include one data-quality priority per branch/day (so UI never falls back to generic)
   SELECT
     s.organization_id,
     s.branch_id,
     s.branch_name,
     s.metric_date,
-    'Log today'::text AS alert_type_raw,
+    'Customer traffic low (level)'::text AS alert_type_raw,
     NULL::numeric AS delta_pct,
     s.revenue_thb AS revenue_thb,
-    'accommodation'::text AS business_type
+    s.business_type AS business_type
   FROM signals s
+  WHERE s.business_type = 'fnb'
+    AND s.customers IS NOT NULL
+    AND s.customers < 20
 ),
 enriched AS (
   SELECT
@@ -182,8 +197,8 @@ enriched AS (
           'Occupancy level is low today. Consider OTA boosts, last-minute packages, and pricing fences.'::text
         WHEN r.alert_type_raw = 'ADR under pressure' THEN
           'ADR looks soft vs RevPAR signal. Review discounting, room mix, and channel leakage.'::text
-        WHEN r.alert_type_raw = 'Log today' THEN
-          'Capture revenue, rooms, and costs in Enter Data so signals stay accurate.'::text
+        WHEN r.alert_type_raw = 'Customer traffic low (level)' THEN
+          'Customer count is low today. Review promos, operating hours, and top-sellers; validate in Trends.'::text
         ELSE 'Review today signals in Trends and log context in Enter Data.'::text
       END
     ) AS description,
@@ -228,8 +243,8 @@ SELECT
   LEFT(d.description, 240) AS reason_short,
   d.sort_score,
   ROW_NUMBER() OVER (
-    PARTITION BY d.organization_id
-    ORDER BY d.sort_score DESC NULLS LAST, d.branch_id, d.alert_type
+    PARTITION BY d.branch_id, d.business_type
+    ORDER BY d.sort_score DESC NULLS LAST, d.alert_type
   )::integer AS rank,
   d.business_type,
   d.metric_date
@@ -432,7 +447,10 @@ SELECT
   c.impact_label AS impact_label,
   c.reason_short AS reason_short,
   c.sort_score AS sort_score,
-  c.rank AS rank,
+  ROW_NUMBER() OVER (
+    PARTITION BY c.branch_id, c.business_type
+    ORDER BY c.sort_score DESC NULLS LAST, c.alert_type
+  )::integer AS rank,
   (
     CASE
       WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
