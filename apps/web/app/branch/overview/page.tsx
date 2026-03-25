@@ -46,6 +46,8 @@ import {
   getTodaySummary,
   getBranchTrendSeriesWithFallback,
   getAccommodationTodayMetricsUi,
+  getAccommodationProfitabilitySignal,
+  type AccommodationProfitabilitySignal,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
   type TodaySummaryRow,
@@ -126,6 +128,8 @@ export default function BranchOverviewPage() {
   const [branchSectionLoading, setBranchSectionLoading] = useState(false);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
   const [accTodayUiRow, setAccTodayUiRow] = useState<AccommodationTodayMetricsUiRow | null>(null);
+  const [accommodationProfitSignal, setAccommodationProfitSignal] =
+    useState<AccommodationProfitabilitySignal | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -395,7 +399,10 @@ export default function BranchOverviewPage() {
     if (!branch?.id) return;
     setBranchPrioritiesLoading(true);
     setFreshnessLoaded(false);
-    if (branch.moduleType !== 'accommodation') setAccTodayUiRow(null);
+    if (branch.moduleType !== 'accommodation') {
+      setAccTodayUiRow(null);
+      setAccommodationProfitSignal(null);
+    }
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
@@ -407,6 +414,7 @@ export default function BranchOverviewPage() {
         getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
         getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
         getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
+        getAccommodationProfitabilitySignal(branch.id).then(setAccommodationProfitSignal);
       }
     }
     getBranchLearningStatus(branch.id).then(setLearningStatus);
@@ -435,6 +443,7 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw([]);
       setFreshnessLoaded(false);
       setAccTodayUiRow(null);
+      setAccommodationProfitSignal(null);
       return;
     }
     refreshOperatingStatus();
@@ -455,6 +464,7 @@ export default function BranchOverviewPage() {
           getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
           getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
           getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
+          getAccommodationProfitabilitySignal(branch.id).then(setAccommodationProfitSignal);
         }
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
@@ -1374,6 +1384,14 @@ export default function BranchOverviewPage() {
                     avgDailyCost: fnbOperatingStatus?.avg_cost ?? null,
                     marginTrend: fnbMarginFromDaily.marginTrend,
                     marginExplanation: fnbMarginFromDaily.marginExplanation,
+                  }
+                : null
+            }
+            accommodationProfitability={
+              branch.moduleType === 'accommodation'
+                ? {
+                    profitTrend: accommodationProfitSignal?.trend ?? null,
+                    profitExplanation: accommodationProfitSignal?.explanation ?? '',
                   }
                 : null
             }

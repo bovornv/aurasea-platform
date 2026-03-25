@@ -2,7 +2,7 @@
 
 /**
  * BranchTodaySummary — Top Metrics only (premium, Stripe/Linear-style).
- * Accommodation: Revenue → Occupancy → Rooms → ADR → RevPAR → Health (from accommodation_today_metrics_ui).
+ * Accommodation: Revenue → Occupancy → Rooms → ADR → RevPAR → Profitability (↑/→/↓) → Health.
  * F&B: Revenue | Customers | Avg Ticket | Avg Cost | Margin | Health.
  * Right-aligned data freshness chip: same status as Enter Data page (shared getDataFreshnessStatus).
  */
@@ -112,6 +112,11 @@ export interface BranchTodaySummaryProps {
     marginTrend: ProfitabilityTrend | null;
     marginExplanation: string;
   } | null;
+  /** accommodation_profitability_signal: trend arrow + explanation (Today strip). */
+  accommodationProfitability?: {
+    profitTrend: ProfitabilityTrend | null;
+    profitExplanation: string;
+  } | null;
   collectingLabel?: string;
   /** Freshness from getDataFreshnessStatus. When non-null, chip is always shown (same status as Enter Data page). */
   freshness?: { label: string; color: StatusChipColor } | null;
@@ -129,6 +134,7 @@ export function BranchTodaySummary({
   accommodation,
   fnb,
   fnbProfitability = null,
+  accommodationProfitability = null,
   collectingLabel = 'Collecting data...',
   freshness = null,
 }: BranchTodaySummaryProps) {
@@ -216,6 +222,14 @@ export function BranchTodaySummary({
               <span style={labelStyle}>RevPAR</span>
               <span style={valueStyle}>{revparStr}</span>
             </span>
+            <span style={sepStyle}>{sep}</span>
+            <ProfitTrendMetric
+              label={labelProfitability}
+              trend={accommodationProfitability?.profitTrend ?? null}
+              explanation={accommodationProfitability?.profitExplanation ?? ''}
+              insufficientText={insufficientData}
+              segmentStyle={segmentStyle}
+            />
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelHealth}</span>
