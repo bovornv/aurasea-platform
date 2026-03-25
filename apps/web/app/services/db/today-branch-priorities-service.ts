@@ -1,7 +1,7 @@
 /**
  * Branch Today — Today's Priorities
  * GET /rest/v1/today_priorities_view?branch_id=eq.{id}&business_type=eq.{type}
- *   &order=sort_score.desc&limit=3
+ *   &order=sort_score.desc&limit=4
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -19,10 +19,11 @@ export interface TodayBranchPriorityRow {
   description: string | null;
   short_title: string | null;
   action_text: string | null;
+  impact_thb: number | null;
   impact_estimate_thb: number | null;
   impact_label: string | null;
+  urgency: string | null;
   sort_score: number | null;
-  rank: number | null;
 }
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
@@ -48,6 +49,7 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
 function mapRow(row: Record<string, unknown>, branchId: string): TodayBranchPriorityRow {
   const title = pickStr(row, 'title', 'short_title', 'shortTitle');
   const description = pickStr(row, 'description', 'action_text', 'actionText');
+  const impact = pickNum(row, 'impact_thb', 'impact_estimate_thb', 'impact');
   return {
     branch_id: pickStr(row, 'branch_id', 'branchId') || branchId,
     business_type: pickStr(row, 'business_type', 'businessType') || 'unknown',
@@ -56,17 +58,18 @@ function mapRow(row: Record<string, unknown>, branchId: string): TodayBranchPrio
     description: description || null,
     short_title: title || pickStr(row, 'short_title', 'shortTitle') || null,
     action_text: description || pickStr(row, 'action_text', 'actionText') || null,
-    impact_estimate_thb: pickNum(row, 'impact_estimate_thb', 'impact'),
+    impact_thb: impact,
+    impact_estimate_thb: impact,
     impact_label: pickStr(row, 'impact_label', 'impactLabel') || null,
+    urgency: pickStr(row, 'urgency') || null,
     sort_score: pickNum(row, 'sort_score', 'priority_score'),
-    rank: pickNum(row, 'rank'),
   };
 }
 
 export async function fetchTodayBranchPriorities(
   branchId: string | null,
   businessType: 'accommodation' | 'fnb' | null | undefined,
-  limit: number = 3,
+  limit: number = 4,
   locale: 'en' | 'th' = 'en'
 ): Promise<TodayBranchPriorityRow[]> {
   if (!branchId?.trim() || !businessType || !isSupabaseAvailable()) return [];
@@ -76,7 +79,7 @@ export async function fetchTodayBranchPriorities(
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
-  const cap = Math.min(3, Math.max(1, limit));
+  const cap = Math.min(10, Math.max(1, limit));
   const { data, error } = await supabase
     .from('today_priorities_view')
     .select('*')

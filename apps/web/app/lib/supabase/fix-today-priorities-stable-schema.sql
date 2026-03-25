@@ -11,10 +11,10 @@
 -- If there are no triggered insights, the view returns 0 rows and the UI shows empty state
 -- (no hardcoded/generic suggestions).
 --
--- Output columns include: title, description, sort_score, rank (ROW_NUMBER per branch).
+-- Output: title, description, sort_score, rank (per branch), impact_thb, urgency, impact_label, metric_date.
 --
 -- Branch: GET /rest/v1/today_priorities_view?branch_id=eq.{uuid}&business_type=eq.{type}
---        &order=sort_score.desc&limit=3
+--        &order=sort_score.desc&limit=4
 -- =============================================================================
 
 DROP VIEW IF EXISTS public.today_priorities_view CASCADE;
@@ -193,8 +193,50 @@ enriched AS (
         ELSE 'Review today signals in Trends and log context in Enter Data.'::text
       END
     ) AS description,
-    NULL::numeric AS impact_estimate_thb,
+    (
+      CASE
+        WHEN r.alert_type_raw = 'Revenue Drop'::text
+          AND COALESCE(r.revenue_thb, 0::numeric) > 0::numeric
+          AND r.delta_pct IS NOT NULL THEN
+          GREATEST(
+            round(r.revenue_thb * LEAST(0.35::numeric, abs(r.delta_pct) / 100.0 * 0.45)),
+            1000::numeric
+          )
+        WHEN r.alert_type_raw IN ('Low Occupancy'::text, 'Occupancy low (level)'::text)
+          AND COALESCE(r.revenue_thb, 0::numeric) > 0::numeric THEN
+          GREATEST(round(r.revenue_thb * 0.08), 500::numeric)
+        WHEN r.alert_type_raw = 'ADR under pressure'::text
+          AND COALESCE(r.revenue_thb, 0::numeric) > 0::numeric THEN
+          GREATEST(round(r.revenue_thb * 0.04), 500::numeric)
+        WHEN r.alert_type_raw = 'Customer traffic low (level)'::text
+          AND COALESCE(r.revenue_thb, 0::numeric) > 0::numeric THEN
+          GREATEST(round(r.revenue_thb * 0.06), 300::numeric)
+        WHEN COALESCE(r.revenue_thb, 0::numeric) > 0::numeric THEN
+          GREATEST(round(r.revenue_thb * 0.03), 300::numeric)
+        ELSE NULL::numeric
+      END
+    ) AS impact_thb,
     'at risk'::text AS impact_label,
+    (
+      CASE
+        WHEN r.alert_type_raw = 'Revenue Drop'::text
+          AND r.delta_pct IS NOT NULL
+          AND r.delta_pct <= -25::numeric THEN 'Critical'::text
+        WHEN r.alert_type_raw = 'Revenue Drop'::text
+          AND r.delta_pct IS NOT NULL
+          AND r.delta_pct <= -15::numeric THEN 'High'::text
+        WHEN r.alert_type_raw = 'Low Occupancy'::text
+          AND r.delta_pct IS NOT NULL
+          AND r.delta_pct <= -25::numeric THEN 'Critical'::text
+        WHEN r.alert_type_raw = 'Low Occupancy'::text
+          AND r.delta_pct IS NOT NULL
+          AND r.delta_pct <= -15::numeric THEN 'High'::text
+        WHEN r.alert_type_raw = 'Occupancy low (level)'::text THEN 'High'::text
+        WHEN r.alert_type_raw = 'ADR under pressure'::text THEN 'Medium'::text
+        WHEN r.alert_type_raw = 'Customer traffic low (level)'::text THEN 'Medium'::text
+        ELSE 'Medium'::text
+      END
+    ) AS urgency,
     (
       COALESCE(
         CASE
@@ -234,7 +276,9 @@ SELECT
     ORDER BY d.sort_score DESC NULLS LAST, d.alert_type
   )::integer AS rank,
   d.impact_label AS impact_label,
-  d.metric_date AS metric_date
+  d.metric_date AS metric_date,
+  d.impact_thb AS impact_thb,
+  d.urgency AS urgency
 FROM dedup d
 WHERE d.dedup_rn = 1
 $ts$;
@@ -259,10 +303,13 @@ SELECT
   r.sort_score AS sort_score,
   r.rank AS rank,
   r.impact_label AS impact_label,
-  r.metric_date AS metric_date
+  r.metric_date AS metric_date,
+  r.impact_thb AS impact_thb,
+  r.impact_thb AS impact_estimate_thb,
+  r.urgency AS urgency
 FROM public.today_priorities_ranked r;
 
 COMMENT ON VIEW public.today_priorities_view IS
-  'Single priorities API view; filter branch_id, order=sort_score.desc, limit=3.';
+  'Single priorities API view; filter branch_id, order=sort_score.desc, limit=4 for first + next moves.';
 
 GRANT SELECT ON public.today_priorities_view TO anon, authenticated;

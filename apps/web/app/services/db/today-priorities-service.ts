@@ -20,7 +20,9 @@ export interface TodayPrioritiesRow {
   action_text: string | null;
   short_title: string | null;
   impact_estimate_thb: number | null;
+  impact_thb: number | null;
   impact_label: string | null;
+  urgency: string | null;
   reason_short: string | null;
   sort_score: number | null;
   /** 1 = highest priority within org (from SQL ROW_NUMBER). */
@@ -82,6 +84,7 @@ export async function fetchTodayPriorities(
     const r = row as Record<string, unknown>;
     const title = pickStr(r, 'title', 'short_title', 'shortTitle');
     const description = pickStr(r, 'description', 'action_text', 'actionText', 'recommended_action');
+    const impact = pickNum(r, 'impact_thb', 'impact_estimate_thb', 'impact');
     return {
       branch_id: pickStr(r, 'branch_id', 'branchId'),
       business_type: pickStr(r, 'business_type', 'businessType') || null,
@@ -92,8 +95,10 @@ export async function fetchTodayPriorities(
       description: description || null,
       action_text: description || pickStr(r, 'action_text', 'actionText') || null,
       short_title: title || pickStr(r, 'short_title', 'shortTitle') || null,
-      impact_estimate_thb: pickNum(r, 'impact_estimate_thb', 'impact'),
+      impact_thb: impact,
+      impact_estimate_thb: impact,
       impact_label: pickStr(r, 'impact_label', 'impactLabel') || null,
+      urgency: pickStr(r, 'urgency') || null,
       reason_short: pickStr(r, 'reason_short', 'reasonShort', 'cause') || null,
       sort_score: pickNum(r, 'sort_score', 'priority_score'),
       rank: pickNum(r, 'rank'),

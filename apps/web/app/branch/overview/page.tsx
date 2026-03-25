@@ -84,6 +84,47 @@ import {
 } from '../../utils/fnb-daily-margin';
 import { occupancyPercentFromMetric } from '../../utils/accommodation-economics';
 
+function todayPriorityUrgencyLabel(urgency: string | null | undefined, loc: string): string {
+  const u = (urgency || 'Medium').trim();
+  const key = u.toLowerCase();
+  if (loc === 'th') {
+    if (key === 'critical') return 'เร่งด่วนมาก';
+    if (key === 'high') return 'สูง';
+    if (key === 'low') return 'ต่ำ';
+    if (key === 'medium') return 'ปานกลาง';
+  }
+  return u;
+}
+
+function BranchTodayPriorityCard({ row, locale }: { row: TodayBranchPriorityRow; locale: string }) {
+  const th = locale === 'th';
+  const numLoc = th ? 'th-TH' : 'en-US';
+  const title =
+    (row.title || row.short_title || '').trim() || (th ? 'ประเด็นสำคัญ' : 'Priority');
+  const action =
+    (row.description || row.action_text || '').trim() ||
+    (th ? 'ทบทวนแผนปฏิบัติการ' : 'Review action plan');
+  const impactRaw = row.impact_thb ?? row.impact_estimate_thb;
+  const hasImpact =
+    impactRaw != null && Number.isFinite(Number(impactRaw)) && Number(impactRaw) > 0;
+  const impact = hasImpact ? Number(impactRaw) : null;
+  return (
+    <div style={{ lineHeight: 1.55 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{title}</div>
+      <div style={{ fontSize: 14, color: '#475569', marginTop: 6 }}>
+        <span aria-hidden>→ </span>
+        {action}
+      </div>
+      <div style={{ fontSize: 13, color: '#374151', marginTop: 8, fontWeight: 500 }}>
+        {th ? '฿ ผลกระทบ' : '฿ Impact'}: {impact != null ? formatCurrency(impact, numLoc) : th ? 'ไม่ระบุ' : 'n/a'}
+      </div>
+      <div style={{ fontSize: 13, color: '#374151', marginTop: 4, fontWeight: 500 }}>
+        {th ? 'ความเร่งด่วน' : 'Urgency'}: {todayPriorityUrgencyLabel(row.urgency, locale)}
+      </div>
+    </div>
+  );
+}
+
 export default function BranchOverviewPage() {
   // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONALS, NO EARLY RETURNS
   const { locale, t } = useI18n();
@@ -425,7 +466,7 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw(dates);
       setFreshnessLoaded(true);
     });
-    fetchTodayBranchPriorities(branch.id, branch.moduleType, 3, locale === 'th' ? 'th' : 'en')
+    fetchTodayBranchPriorities(branch.id, branch.moduleType, 4, locale === 'th' ? 'th' : 'en')
       .then((rows) => {
         setBranchPriorities(rows);
         setBranchPrioritiesLoading(false);
@@ -728,7 +769,8 @@ export default function BranchOverviewPage() {
     return null;
   }, [driverChartData, isAccommodation, isFnb, locale]);
 
-  const branchPrioritiesTop = useMemo(() => branchPriorities.slice(0, 3), [branchPriorities]);
+  const branchPriorityNext = useMemo(() => branchPriorities.slice(1, 4), [branchPriorities]);
+  const branchPriorityFirst = branchPriorities[0] ?? null;
 
   const revenueNow = useMemo(() => {
     const ts = todaySummaryRow as any;
@@ -1445,7 +1487,7 @@ export default function BranchOverviewPage() {
           </div>
         ) : null}
 
-        {/* 3. Today's Priorities (today_priorities_view by branch_id) */}
+        {/* 3. Today's Priorities — today_priorities_view: Fix This First + Next Best Moves */}
         <div
           style={{
             marginTop: learningStatus != null ? 0 : 24,
@@ -1460,56 +1502,57 @@ export default function BranchOverviewPage() {
           </h2>
           {branchPrioritiesLoading ? (
             <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
-          ) : branchPrioritiesTop.length === 0 ? (
+          ) : branchPriorities.length === 0 ? (
             <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.55 }}>
               {locale === 'th'
                 ? 'ไม่พบลำดับความสำคัญสำหรับวันนี้'
                 : 'No priorities for today'}
             </div>
           ) : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {branchPrioritiesTop.map((row, idx) => {
-                const rank = row.rank ?? idx + 1;
-                const title =
-                  (row.title || row.short_title || '').trim() ||
-                  (locale === 'th' ? 'ประเด็นสำคัญ' : 'Priority');
-                const action =
-                  (row.description || row.action_text || '').trim() ||
-                  (locale === 'th' ? 'ทบทวนแผนปฏิบัติการ' : 'Review action plan');
-                const impactRaw = row.impact_estimate_thb;
-                const hasImpact =
-                  impactRaw != null && Number.isFinite(Number(impactRaw)) && Number(impactRaw) > 0;
-                const impact = hasImpact ? Number(impactRaw) : 0;
-                const impactLabel = (row.impact_label || 'at risk').toLowerCase();
-                const isOpportunity = impactLabel.includes('opportunity');
-                const impactColor = isOpportunity ? '#059669' : '#b91c1c';
-                const impactText = isOpportunity
-                  ? locale === 'th'
-                    ? 'โอกาส'
-                    : 'opportunity'
-                  : locale === 'th'
-                    ? 'เสี่ยง'
-                    : 'at risk';
-                const numLoc = locale === 'th' ? 'th-TH' : 'en-US';
-                return (
-                  <li key={`priority-${row.branch_id}-${row.metric_date}-${row.rank ?? idx}`} style={{ lineHeight: 1.5 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
-                      {rank}. {title}
-                    </div>
-                    <div style={{ fontSize: 14, color: '#475569', marginTop: 4 }}>
-                      <span aria-hidden>{'→ '}</span>
-                      {action}
-                      {hasImpact ? (
-                        <span style={{ color: impactColor, fontWeight: 600 }}>
-                          {' '}
-                          (฿{formatCurrency(impact, numLoc)} {impactText})
-                        </span>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+              {branchPriorityFirst ? (
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: '#c2410c',
+                      marginBottom: 10,
+                      letterSpacing: '0.03em',
+                      textTransform: 'uppercase' as const,
+                    }}
+                  >
+                    {locale === 'th' ? '🔥 แก้ก่อน' : '🔥 Fix This First'}
+                  </div>
+                  <BranchTodayPriorityCard row={branchPriorityFirst} locale={locale} />
+                </div>
+              ) : null}
+              {branchPriorityNext.length > 0 ? (
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: '#4338ca',
+                      marginBottom: 10,
+                      letterSpacing: '0.03em',
+                      textTransform: 'uppercase' as const,
+                    }}
+                  >
+                    {locale === 'th' ? '🧠 ขั้นต่อไปที่คุ้มที่สุด' : '🧠 Next Best Moves'}
+                  </div>
+                  <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
+                    {branchPriorityNext.map((row) => (
+                      <li
+                        key={`priority-${row.branch_id}-${row.metric_date}-${row.sort_score ?? ''}-${row.title ?? ''}`}
+                      >
+                        <BranchTodayPriorityCard row={row} locale={locale} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
           )}
         </div>
 
