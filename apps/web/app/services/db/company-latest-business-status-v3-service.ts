@@ -1,6 +1,6 @@
 /**
- * Company Today — Latest business status (single source).
- * GET /rest/v1/company_latest_business_status_v2
+ * Company Today — Latest business status (single source v3).
+ * GET /rest/v1/company_latest_business_status_v3
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -10,27 +10,27 @@ import {
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
 
-const SELECT_V2 =
-  'organization_id,branch_id,branch_name,business_type,metric_date,health_score,revenue_thb,occupancy_pct,adr_thb,revpar_thb,profitability_label,customers,avg_ticket_thb,avg_cost_thb,margin_pct';
+const SELECT_V3 =
+  'organization_id,branch_id,branch_name,business_type,metric_date,health_score,revenue_thb,occupancy_pct,adr_thb,revpar_thb,profitability_symbol,customers,avg_ticket_thb,avg_cost_thb,margin_symbol';
 
-export type CompanyBusinessTypeV2 = 'accommodation' | 'fnb';
+export type CompanyBusinessTypeV3 = 'accommodation' | 'fnb';
 
-export interface CompanyLatestBusinessStatusV2Row {
+export interface CompanyLatestBusinessStatusV3Row {
   organization_id: string;
   branch_id: string;
   branch_name: string;
-  business_type: CompanyBusinessTypeV2;
+  business_type: CompanyBusinessTypeV3;
   metric_date: string | null;
   health_score: number | null;
   revenue_thb: number | null;
   occupancy_pct: number | null;
   adr_thb: number | null;
   revpar_thb: number | null;
-  profitability_label: string | null;
+  profitability_symbol: string | null;
   customers: number | null;
   avg_ticket_thb: number | null;
   avg_cost_thb: number | null;
-  margin_pct: number | null;
+  margin_symbol: string | null;
 }
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
@@ -55,12 +55,12 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
   return null;
 }
 
-function mapRow(r: Record<string, unknown>): CompanyLatestBusinessStatusV2Row | null {
+function mapRow(r: Record<string, unknown>): CompanyLatestBusinessStatusV3Row | null {
   const branchId = pickStr(r, 'branch_id', 'branchId');
   const orgId = pickStr(r, 'organization_id', 'organizationId');
   if (!branchId || !orgId) return null;
   const btRaw = pickStr(r, 'business_type', 'businessType').toLowerCase();
-  const business_type: CompanyBusinessTypeV2 = btRaw === 'fnb' ? 'fnb' : 'accommodation';
+  const business_type: CompanyBusinessTypeV3 = btRaw === 'fnb' ? 'fnb' : 'accommodation';
   const md = r.metric_date != null ? String(r.metric_date).slice(0, 10) : null;
   return {
     organization_id: orgId,
@@ -73,30 +73,27 @@ function mapRow(r: Record<string, unknown>): CompanyLatestBusinessStatusV2Row | 
     occupancy_pct: pickNum(r, 'occupancy_pct', 'occupancyPct'),
     adr_thb: pickNum(r, 'adr_thb', 'adrThb'),
     revpar_thb: pickNum(r, 'revpar_thb', 'revparThb'),
-    profitability_label: pickStr(r, 'profitability_label', 'profitabilityLabel') || null,
+    profitability_symbol: pickStr(r, 'profitability_symbol', 'profitabilitySymbol') || null,
     customers: pickNum(r, 'customers'),
     avg_ticket_thb: pickNum(r, 'avg_ticket_thb', 'avgTicketThb'),
     avg_cost_thb: pickNum(r, 'avg_cost_thb', 'avgCostThb'),
-    margin_pct: pickNum(r, 'margin_pct', 'marginPct'),
+    margin_symbol: pickStr(r, 'margin_symbol', 'marginSymbol') || null,
   };
 }
 
-/**
- * Rows for the signed-in org, optionally restricted to known branch IDs (e.g. current business group).
- */
-export async function fetchCompanyLatestBusinessStatusV2(
+export async function fetchCompanyLatestBusinessStatusV3(
   organizationId: string | null,
   branchIds: string[]
-): Promise<CompanyLatestBusinessStatusV2Row[]> {
+): Promise<CompanyLatestBusinessStatusV3Row[]> {
   const oid = organizationId?.trim();
   if (!oid || !isSupabaseAvailable()) return [];
-  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.company_latest_business_status_v2)) return [];
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.company_latest_business_status_v3)) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
   let query = supabase
-    .from('company_latest_business_status_v2')
-    .select(SELECT_V2)
+    .from('company_latest_business_status_v3')
+    .select(SELECT_V3)
     .eq('organization_id', oid)
     .order('branch_name', { ascending: true });
 
@@ -106,12 +103,11 @@ export async function fetchCompanyLatestBusinessStatusV2(
   }
 
   const { data, error } = await query;
-
   if (error) {
     if (isPostgrestObjectMissingError(error)) {
-      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.company_latest_business_status_v2);
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.company_latest_business_status_v3);
     } else if (process.env.NODE_ENV === 'development') {
-      console.warn('[company_latest_business_status_v2]', error.message);
+      console.warn('[company_latest_business_status_v3]', error.message);
     }
     return [];
   }
@@ -119,5 +115,6 @@ export async function fetchCompanyLatestBusinessStatusV2(
   const raw = Array.isArray(data) ? data : [];
   return raw
     .map((row) => mapRow(row as Record<string, unknown>))
-    .filter((x): x is CompanyLatestBusinessStatusV2Row => x != null);
+    .filter((x): x is CompanyLatestBusinessStatusV3Row => x != null);
 }
+

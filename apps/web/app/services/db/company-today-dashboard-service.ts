@@ -21,9 +21,9 @@ import { fetchWhatsWorkingToday, type WhatsWorkingTodayRow } from './whats-worki
 import { fetchOpportunitiesToday, type OpportunitiesTodayRow } from './opportunities-today-service';
 import { fetchWatchlistToday, type WatchlistTodayRow } from './watchlist-today-service';
 import {
-  fetchCompanyLatestBusinessStatusV2,
-  type CompanyLatestBusinessStatusV2Row,
-} from './company-latest-business-status-v2-service';
+  fetchCompanyLatestBusinessStatusV3,
+  type CompanyLatestBusinessStatusV3Row,
+} from './company-latest-business-status-v3-service';
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
   isPostgrestObjectMissingError,
@@ -46,8 +46,8 @@ export interface CompanyTodayDashboardData {
   opportunities: OpportunitiesTodayRow[];
   watchlist: WatchlistTodayRow[];
   dataConfidence: CompanyDataConfidenceRow | null;
-  /** Latest business status table — `company_latest_business_status_v2` only. */
-  latestBusinessStatus: CompanyLatestBusinessStatusV2Row[];
+  /** Latest business status table — `company_latest_business_status_v3` only. */
+  latestBusinessStatus: CompanyLatestBusinessStatusV3Row[];
 }
 
 const dashboardInFlight = new Map<string, Promise<CompanyTodayDashboardData>>();
@@ -360,16 +360,29 @@ export async function fetchCompanyTodayDashboard(
 
     const latestStatusPromise =
       orgId && branchIds.length > 0
-        ? fetchCompanyLatestBusinessStatusV2(orgId, branchIds)
+        ? fetchCompanyLatestBusinessStatusV3(orgId, branchIds)
         : orgId
-          ? fetchCompanyLatestBusinessStatusV2(orgId, [])
-          : Promise.resolve([] as CompanyLatestBusinessStatusV2Row[]);
+          ? fetchCompanyLatestBusinessStatusV3(orgId, [])
+          : Promise.resolve([] as CompanyLatestBusinessStatusV3Row[]);
 
     const [bundle, panels, latestBusinessStatus] = await Promise.all([
       bundlePromise,
       panelsPromise,
       latestStatusPromise,
     ]);
+
+    if (process.env.NODE_ENV === 'development') {
+      const healthByBranch = new Map(bundle.businessStatus.map((r) => [r.branchId, r.healthScore] as const));
+      latestBusinessStatus.forEach((row) => {
+        console.log('[company_latest_business_status_v3][health-compare]', {
+          branch_id: row.branch_id,
+          business_type: row.business_type,
+          company_row_payload: row,
+          health_score_company_source: row.health_score,
+          health_score_branch_page_source: healthByBranch.get(row.branch_id) ?? null,
+        });
+      });
+    }
 
     let priorities = panels.priorities;
     if (orgId && priorities.length === 0 && branchIds.length > 0) {
