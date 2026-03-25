@@ -249,6 +249,7 @@ function OwnerSummaryContent() {
           fetchCompanyTodayDashboard(organizationIdForData, groupBranchIds, {
             prioritiesLimit: 5,
             panelLimit: 3,
+            locale: locale === 'th' ? 'th' : 'en',
           }),
           new Promise<Awaited<ReturnType<typeof fetchCompanyTodayDashboard>>>((resolve) =>
             setTimeout(
@@ -260,6 +261,7 @@ function OwnerSummaryContent() {
                   opportunities: [],
                   watchlist: [],
                   dataConfidence: null,
+                  latestBusinessStatus: [],
                 }),
               DASHBOARD_TIMEOUT_MS
             )
@@ -286,7 +288,7 @@ function OwnerSummaryContent() {
     return () => {
       cancelled = true;
     };
-  }, [mounted, organizationIdForData, branchIdsKey, refreshTrigger]);
+  }, [mounted, organizationIdForData, branchIdsKey, refreshTrigger, locale]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -679,7 +681,10 @@ function OwnerSummaryContent() {
             }
           >
             <MonitoringErrorBoundary componentName="Company Business Status">
-              <CompanyBusinessStatusTables rows={companyTodayBundle?.businessStatus ?? []} locale={locale} />
+              <CompanyBusinessStatusTables
+                rows={companyDashboard?.latestBusinessStatus ?? []}
+                locale={locale}
+              />
             </MonitoringErrorBoundary>
           </OperatingSection>
         )}

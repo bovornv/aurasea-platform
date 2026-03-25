@@ -445,7 +445,7 @@ picked AS (
   SELECT * FROM dedup WHERE dedup_rn = 1
 )
 SELECT
-  p.organization_id AS organization_id,
+  COALESCE(p.organization_id, b.organization_id) AS organization_id,
   p.branch_id AS branch_id,
   p.branch_name AS branch_name,
   p.business_type AS business_type,
@@ -470,6 +470,7 @@ SELECT
   p.metric_date AS metric_date,
   p.impact_thb AS impact_thb
 FROM picked p
+LEFT JOIN public.branches b ON trim(both FROM b.id::text) = trim(both FROM p.branch_id::text)
 $ts$;
     RAISE NOTICE 'today_priorities_ranked: using source today_summary_clean';
   END IF;

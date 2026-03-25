@@ -13,6 +13,7 @@ export const POSTGREST_RESOURCE_KEYS = {
   today_priorities_view: 'table:today_priorities_view',
   today_priorities_company_view: 'table:today_priorities_company_view',
   today_company_dashboard: 'table:today_company_dashboard',
+  company_latest_business_status_v2: 'table:company_latest_business_status_v2',
   whats_working_today: 'table:whats_working_today',
   opportunities_today: 'table:opportunities_today',
   watchlist_today: 'table:watchlist_today',

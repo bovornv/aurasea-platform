@@ -5,9 +5,25 @@
 import { fetchCompanyTodayBundle, type CompanyTodayBundle } from './company-today-data-service';
 import { fetchCompanyDataConfidence, type CompanyDataConfidenceRow } from './company-data-confidence-service';
 import { fetchCompanyTodayPriorities, type TodayPrioritiesRow } from './today-priorities-service';
+import {
+  defaultBranchPrioritiesFallback,
+  fetchTodayBranchPriorities,
+  syntheticAccommodationPrioritiesFromTodayUi,
+  syntheticFnbPrioritiesFromTodayUi,
+  type TodayBranchPriorityRow,
+} from './today-branch-priorities-service';
+import {
+  getAccommodationTodayMetricsUi,
+  getFnbOperatingStatus,
+  getTodaySummary,
+} from './latest-metrics-service';
 import { fetchWhatsWorkingToday, type WhatsWorkingTodayRow } from './whats-working-today-service';
 import { fetchOpportunitiesToday, type OpportunitiesTodayRow } from './opportunities-today-service';
 import { fetchWatchlistToday, type WatchlistTodayRow } from './watchlist-today-service';
+import {
+  fetchCompanyLatestBusinessStatusV2,
+  type CompanyLatestBusinessStatusV2Row,
+} from './company-latest-business-status-v2-service';
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
   isPostgrestObjectMissingError,
@@ -30,6 +46,8 @@ export interface CompanyTodayDashboardData {
   opportunities: OpportunitiesTodayRow[];
   watchlist: WatchlistTodayRow[];
   dataConfidence: CompanyDataConfidenceRow | null;
+  /** Latest business status table — `company_latest_business_status_v2` only. */
+  latestBusinessStatus: CompanyLatestBusinessStatusV2Row[];
 }
 
 const dashboardInFlight = new Map<string, Promise<CompanyTodayDashboardData>>();
@@ -66,6 +84,120 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
     }
   }
   return null;
+}
+
+function withCompanyRankAndSegment(rows: TodayPrioritiesRow[], limit: number): TodayPrioritiesRow[] {
+  return rows.slice(0, limit).map((r, i) => {
+    const rank = i + 1;
+    const priority_segment = rank === 1 ? 'fix_first' : rank >= 2 && rank <= 4 ? 'next_moves' : 'more';
+    return { ...r, rank, priority_segment };
+  });
+}
+
+function branchPriorityRowToCompanyRow(
+  organizationId: string,
+  br: TodayBranchPriorityRow,
+  branchDisplayName?: string | null
+): TodayPrioritiesRow {
+  const bt =
+    br.business_type === 'fnb' || br.business_type === 'accommodation' ? br.business_type : 'accommodation';
+  return {
+    branch_id: br.branch_id,
+    business_type: bt,
+    organization_id: organizationId,
+    branch_name: branchDisplayName?.trim() || null,
+    alert_type: null,
+    title: br.title,
+    description: br.description,
+    action_text: br.action_text,
+    short_title: br.short_title,
+    impact_thb: br.impact_thb,
+    impact_estimate_thb: br.impact_estimate_thb,
+    impact_label: br.impact_label,
+    reason_short: null,
+    sort_score: br.sort_score,
+    rank: null,
+    priority_segment: null,
+  };
+}
+
+function branchMetaFromBundle(
+  bundle: CompanyTodayBundle,
+  branchId: string
+): { name: string; branchType: 'accommodation' | 'fnb' } {
+  const row = bundle.businessStatus.find((x) => x.branchId === branchId);
+  const name = row?.branchName?.trim() || branchId;
+  const branchType = row?.branchType === 'fnb' ? 'fnb' : 'accommodation';
+  return { name, branchType };
+}
+
+/**
+ * When org-scoped SQL priorities are empty, mirror branch Today: per-branch `today_priorities_view`,
+ * then the same synthetic + default fallbacks as branch overview.
+ */
+async function fillCompanyPrioritiesFromBranchesAndUi(
+  organizationId: string,
+  branchIds: string[],
+  bundle: CompanyTodayBundle,
+  locale: 'en' | 'th',
+  limit: number
+): Promise<TodayPrioritiesRow[]> {
+  const bids = [...new Set(branchIds.map((x) => x.trim()).filter(Boolean))];
+  if (bids.length === 0) return [];
+
+  const fromPerBranchView = (
+    await Promise.all(
+      bids.map(async (bid) => {
+        const { branchType, name } = branchMetaFromBundle(bundle, bid);
+        const rows = await fetchTodayBranchPriorities(bid, branchType, 4, locale);
+        return rows.map((br) => branchPriorityRowToCompanyRow(organizationId, br, name));
+      })
+    )
+  ).flat();
+
+  const sortedView = fromPerBranchView.sort(
+    (a, b) => (b.sort_score ?? 0) - (a.sort_score ?? 0)
+  );
+  if (sortedView.length > 0) {
+    return withCompanyRankAndSegment(sortedView, limit);
+  }
+
+  const syntheticFlat: TodayPrioritiesRow[] = [];
+  for (const bid of bids) {
+    const { name, branchType } = branchMetaFromBundle(bundle, bid);
+    let brRows: TodayBranchPriorityRow[] = [];
+    if (branchType === 'fnb') {
+      const fnb = await getFnbOperatingStatus(bid);
+      const summary = await getTodaySummary(bid, { uiSurface: 'fnb' });
+      brRows = syntheticFnbPrioritiesFromTodayUi(
+        bid,
+        name,
+        {
+          metric_date: fnb?.metric_date ?? null,
+          revenue: fnb?.revenue ?? null,
+          customers: fnb?.customers ?? null,
+          revenue_delta_day:
+            summary?.revenue_delta_day != null && Number.isFinite(Number(summary.revenue_delta_day))
+              ? Number(summary.revenue_delta_day)
+              : null,
+        },
+        locale
+      );
+      if (brRows.length === 0) {
+        brRows = defaultBranchPrioritiesFallback(bid, name, 'fnb', locale);
+      }
+    } else {
+      const acc = await getAccommodationTodayMetricsUi(bid);
+      brRows = syntheticAccommodationPrioritiesFromTodayUi(bid, name, acc, locale);
+      if (brRows.length === 0) {
+        brRows = defaultBranchPrioritiesFallback(bid, name, 'accommodation', locale);
+      }
+    }
+    syntheticFlat.push(...brRows.map((br) => branchPriorityRowToCompanyRow(organizationId, br, name)));
+  }
+
+  syntheticFlat.sort((a, b) => (b.sort_score ?? 0) - (a.sort_score ?? 0));
+  return withCompanyRankAndSegment(syntheticFlat, limit);
 }
 
 async function fetchCompanyPanelsFromDashboardView(
@@ -190,7 +322,7 @@ async function fetchCompanyPanelsFromDashboardView(
 export async function fetchCompanyTodayDashboard(
   organizationId: string | null,
   branchIds: string[],
-  options?: { prioritiesLimit?: number; panelLimit?: number }
+  options?: { prioritiesLimit?: number; panelLimit?: number; locale?: 'en' | 'th' }
 ): Promise<CompanyTodayDashboardData> {
   const key = dashboardKey(organizationId, branchIds);
   const existing = dashboardInFlight.get(key);
@@ -199,6 +331,7 @@ export async function fetchCompanyTodayDashboard(
   const p = (async () => {
     const prioLim = options?.prioritiesLimit ?? 5;
     const panelLim = options?.panelLimit ?? 3;
+    const locale: 'en' | 'th' = options?.locale === 'th' ? 'th' : 'en';
     const orgId = organizationId?.trim() ?? null;
     const bundlePromise = fetchCompanyTodayBundle(orgId, branchIds);
 
@@ -225,15 +358,36 @@ export async function fetchCompanyTodayDashboard(
       return { priorities, whatsWorking, opportunities, watchlist, dataConfidence };
     })();
 
-    const [bundle, panels] = await Promise.all([bundlePromise, panelsPromise]);
+    const latestStatusPromise =
+      orgId && branchIds.length > 0
+        ? fetchCompanyLatestBusinessStatusV2(orgId, branchIds)
+        : orgId
+          ? fetchCompanyLatestBusinessStatusV2(orgId, [])
+          : Promise.resolve([] as CompanyLatestBusinessStatusV2Row[]);
+
+    const [bundle, panels, latestBusinessStatus] = await Promise.all([
+      bundlePromise,
+      panelsPromise,
+      latestStatusPromise,
+    ]);
+
+    let priorities = panels.priorities;
+    if (orgId && priorities.length === 0 && branchIds.length > 0) {
+      try {
+        priorities = await fillCompanyPrioritiesFromBranchesAndUi(orgId, branchIds, bundle, locale, prioLim);
+      } catch {
+        priorities = panels.priorities;
+      }
+    }
 
     return {
       bundle,
-      priorities: panels.priorities,
+      priorities,
       whatsWorking: panels.whatsWorking,
       opportunities: panels.opportunities,
       watchlist: panels.watchlist,
       dataConfidence: panels.dataConfidence,
+      latestBusinessStatus,
     };
   })().finally(() => {
     dashboardInFlight.delete(key);

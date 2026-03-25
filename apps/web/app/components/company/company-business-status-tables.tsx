@@ -1,8 +1,7 @@
 'use client';
 
 import { useMemo, type CSSProperties } from 'react';
-import type { NormalizedBusinessRow } from '../../services/db/company-today-data-service';
-import type { ProfitabilityTrend } from '../../services/db/latest-metrics-service';
+import type { CompanyLatestBusinessStatusV2Row } from '../../services/db/company-latest-business-status-v2-service';
 import { formatCurrency } from '../../utils/formatting';
 
 /** Sticky column offset: health badge column */
@@ -36,23 +35,6 @@ function HealthBadge({ score }: { score: number | null }) {
     >
       {score != null && !isNaN(score) ? Math.round(score) : '—'}
     </span>
-  );
-}
-
-function trendGlyph(t: ProfitabilityTrend | null): { glyph: string; color: string } | null {
-  if (t === 'up') return { glyph: '↑', color: '#059669' };
-  if (t === 'flat') return { glyph: '→', color: '#9ca3af' };
-  if (t === 'down') return { glyph: '↓', color: '#dc2626' };
-  return null;
-}
-
-function TrendOnlyCell({ trend }: { trend: ProfitabilityTrend | null }) {
-  const g = trendGlyph(trend);
-  if (!g) {
-    return <span style={{ color: '#9ca3af', fontWeight: 600 }}>—</span>;
-  }
-  return (
-    <span style={{ color: g.color, fontWeight: 600, fontSize: '16px', lineHeight: 1 }}>{g.glyph}</span>
   );
 }
 
@@ -131,13 +113,38 @@ const tdNum: CSSProperties = { ...tdBase, textAlign: 'right', fontVariantNumeric
 const thArrow: CSSProperties = { ...thBase, textAlign: 'center' };
 const tdArrow: CSSProperties = { ...tdBase, textAlign: 'center' };
 
+function numLocale(locale: string): string {
+  return locale === 'th' ? 'th-TH' : 'en-US';
+}
+
+function missingLabel(locale: string): string {
+  return locale === 'th' ? 'ไม่มีข้อมูล' : 'No data';
+}
+
+function daysSinceMetricDate(metricDate: string | null): number | null {
+  if (!metricDate?.trim()) return null;
+  const ymd = metricDate.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  let metric: Date;
+  if (ymd) {
+    metric = new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+  } else {
+    const d = new Date(metricDate);
+    if (isNaN(d.getTime())) return null;
+    metric = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  const today = new Date();
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diff = Math.round((t0.getTime() - metric.getTime()) / 86400000);
+  return Math.max(0, diff);
+}
+
 function branchFreshnessLine(
-  row: NormalizedBusinessRow,
+  row: CompanyLatestBusinessStatusV2Row,
   locale: string
 ): { text: string; stale: boolean } | null {
-  const days = row.daysSinceUpdate;
+  const days = daysSinceMetricDate(row.metric_date);
   if (days == null || isNaN(days)) return null;
-  const d = Math.floor(Math.max(0, days));
+  const d = Math.floor(days);
   const th = locale === 'th';
   if (d === 0) return { text: th ? 'อัปเดตล่าสุด: วันนี้' : 'Last updated: Today', stale: false };
   if (d === 1) return { text: th ? 'อัปเดตล่าสุด: เมื่อวาน' : 'Last updated: Yesterday', stale: false };
@@ -147,11 +154,11 @@ function branchFreshnessLine(
   };
 }
 
-function BranchNameCell({ row, locale }: { row: NormalizedBusinessRow; locale: string }) {
+function BranchNameCell({ row, locale }: { row: CompanyLatestBusinessStatusV2Row; locale: string }) {
   const line = branchFreshnessLine(row, locale);
   return (
     <div>
-      <div>{row.branchName}</div>
+      <div>{row.branch_name}</div>
       {line ? (
         <div
           style={{
@@ -168,19 +175,83 @@ function BranchNameCell({ row, locale }: { row: NormalizedBusinessRow; locale: s
   );
 }
 
+function ProfitabilityLabelCell({ label, locale }: { label: string | null; locale: string }) {
+  const fb = missingLabel(locale);
+  if (label == null || String(label).trim() === '') {
+    return <span style={{ color: '#9ca3af', fontWeight: 500 }}>{fb}</span>;
+  }
+  const t = String(label).trim();
+  let color = '#0f172a';
+  if (/^up$/i.test(t)) color = '#059669';
+  else if (/^down$/i.test(t)) color = '#dc2626';
+  else if (/^flat$/i.test(t)) color = '#64748b';
+  return (
+    <span style={{ color, fontWeight: 600 }} title={t}>
+      {t}
+    </span>
+  );
+}
+
+function MarginPctCell({ marginPct, locale }: { marginPct: number | null; locale: string }) {
+  const fb = missingLabel(locale);
+  if (marginPct == null || !Number.isFinite(marginPct)) {
+    return <span style={{ color: '#9ca3af', fontWeight: 500 }}>{fb}</span>;
+  }
+  const n = Math.round(marginPct * 10) / 10;
+  return <span style={{ fontWeight: 600 }}>{`${n}%`}</span>;
+}
+
+function CellMoney({
+  value,
+  locale,
+}: {
+  value: number | null;
+  locale: string;
+}) {
+  const fb = missingLabel(locale);
+  if (value == null || !Number.isFinite(value)) {
+    return <span style={{ color: '#9ca3af' }}>{fb}</span>;
+  }
+  return <span>฿{formatCurrency(value, numLocale(locale))}</span>;
+}
+
+function CellPercent({
+  value,
+  locale,
+  suffix = '%',
+}: {
+  value: number | null;
+  locale: string;
+  suffix?: string;
+}) {
+  const fb = missingLabel(locale);
+  if (value == null || !Number.isFinite(value)) {
+    return <span style={{ color: '#9ca3af' }}>{fb}</span>;
+  }
+  return <span>{`${Math.round(value)}${suffix}`}</span>;
+}
+
+function CellInt({ value, locale }: { value: number | null; locale: string }) {
+  const fb = missingLabel(locale);
+  if (value == null || !Number.isFinite(value)) {
+    return <span style={{ color: '#9ca3af' }}>{fb}</span>;
+  }
+  return <span>{Math.round(value).toLocaleString(numLocale(locale))}</span>;
+}
+
 interface Props {
-  /** From `branch_business_status_api` (normalized). */
-  rows: NormalizedBusinessRow[];
+  /** From `company_latest_business_status_v2` only. */
+  rows: CompanyLatestBusinessStatusV2Row[];
   locale?: string;
 }
 
 export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
   const { accommodationRows, fnbRows } = useMemo(() => {
-    const acc = rows.filter((r) => r.branchType === 'accommodation');
-    const fnb = rows.filter((r) => r.branchType === 'fnb');
-    const byHealth = (a: NormalizedBusinessRow, b: NormalizedBusinessRow) => {
-      const ha = a.healthScore ?? 999;
-      const hb = b.healthScore ?? 999;
+    const acc = rows.filter((r) => r.business_type === 'accommodation');
+    const fnb = rows.filter((r) => r.business_type === 'fnb');
+    const byHealth = (a: CompanyLatestBusinessStatusV2Row, b: CompanyLatestBusinessStatusV2Row) => {
+      const ha = a.health_score ?? 999;
+      const hb = b.health_score ?? 999;
       return ha - hb;
     };
     acc.sort(byHealth);
@@ -194,16 +265,14 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
   );
 
   const branchHeader = isTh ? 'สาขา' : 'Branch name';
+  const emptyAcc = isTh ? 'ไม่มีข้อมูลที่พัก' : 'No accommodation rows.';
+  const emptyFnb = isTh ? 'ไม่มีข้อมูล F&B' : 'No F&B rows.';
 
   return (
     <div>
       {subTitle(isTh ? 'ที่พัก' : 'Accommodation')}
       {accommodationRows.length === 0 ? (
-        <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
-          {isTh
-            ? 'ไม่มีแถวที่พักใน branch_business_status_api'
-            : 'No accommodation branches in branch_business_status_api.'}
-        </p>
+        <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{emptyAcc}</p>
       ) : (
         <div
           style={{
@@ -226,29 +295,27 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
             </thead>
             <tbody>
               {accommodationRows.map((r) => (
-                <tr key={`${r.branchId}-${r.branchType}`}>
+                <tr key={`${r.branch_id}-accommodation`}>
                   <td style={stickyHealthTd}>
-                    <HealthBadge score={r.healthScore} />
+                    <HealthBadge score={r.health_score} />
                   </td>
                   <td style={stickyBranchTd}>
                     <BranchNameCell row={r} locale={locale} />
                   </td>
-                  <td style={tdNum}>฿{formatCurrency(r.revenueThb)}</td>
                   <td style={tdNum}>
-                    {r.occupancyPct != null && Number.isFinite(r.occupancyPct)
-                      ? `${Math.round(r.occupancyPct)}%`
-                      : '—'}
+                    <CellMoney value={r.revenue_thb} locale={locale} />
                   </td>
                   <td style={tdNum}>
-                    {r.adrThb != null && Number.isFinite(r.adrThb) ? `฿${formatCurrency(r.adrThb)}` : '—'}
+                    <CellPercent value={r.occupancy_pct} locale={locale} />
                   </td>
                   <td style={tdNum}>
-                    {r.revparThb != null && Number.isFinite(r.revparThb)
-                      ? `฿${formatCurrency(r.revparThb)}`
-                      : '—'}
+                    <CellMoney value={r.adr_thb} locale={locale} />
+                  </td>
+                  <td style={tdNum}>
+                    <CellMoney value={r.revpar_thb} locale={locale} />
                   </td>
                   <td style={tdArrow}>
-                    <TrendOnlyCell trend={r.profitabilityTrend} />
+                    <ProfitabilityLabelCell label={r.profitability_label} locale={locale} />
                   </td>
                 </tr>
               ))}
@@ -259,11 +326,7 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
 
       {subTitle('F&B')}
       {fnbRows.length === 0 ? (
-        <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>
-          {isTh
-            ? 'ไม่มีแถว F&B ใน branch_business_status_api'
-            : 'No F&B branches in branch_business_status_api.'}
-        </p>
+        <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{emptyFnb}</p>
       ) : (
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={tableStyle}>
@@ -280,31 +343,27 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
             </thead>
             <tbody>
               {fnbRows.map((r) => (
-                <tr key={`${r.branchId}-${r.branchType}`}>
+                <tr key={`${r.branch_id}-fnb`}>
                   <td style={stickyHealthTd}>
-                    <HealthBadge score={r.healthScore} />
+                    <HealthBadge score={r.health_score} />
                   </td>
                   <td style={stickyBranchTd}>
                     <BranchNameCell row={r} locale={locale} />
                   </td>
-                  <td style={tdNum}>฿{formatCurrency(r.revenueThb)}</td>
                   <td style={tdNum}>
-                    {r.customers != null && Number.isFinite(r.customers)
-                      ? formatCurrency(r.customers, 'en-US')
-                      : '—'}
+                    <CellMoney value={r.revenue_thb} locale={locale} />
                   </td>
                   <td style={tdNum}>
-                    {r.avgTicketThb != null && Number.isFinite(r.avgTicketThb)
-                      ? `฿${formatCurrency(r.avgTicketThb)}`
-                      : '—'}
+                    <CellInt value={r.customers} locale={locale} />
                   </td>
                   <td style={tdNum}>
-                    {r.avgDailyCostThb != null && Number.isFinite(r.avgDailyCostThb)
-                      ? `฿${formatCurrency(r.avgDailyCostThb)}`
-                      : '—'}
+                    <CellMoney value={r.avg_ticket_thb} locale={locale} />
+                  </td>
+                  <td style={tdNum}>
+                    <CellMoney value={r.avg_cost_thb} locale={locale} />
                   </td>
                   <td style={tdArrow}>
-                    <TrendOnlyCell trend={r.marginTrend} />
+                    <MarginPctCell marginPct={r.margin_pct} locale={locale} />
                   </td>
                 </tr>
               ))}
