@@ -376,19 +376,19 @@ GRANT SELECT ON public.today_priorities_clean TO anon, authenticated;
 
 CREATE VIEW public.today_priorities_view AS
 SELECT
-  c.organization_id,
-  c.branch_id,
-  c.branch_name,
-  c.alert_type,
-  c.title,
-  c.description,
-  c.short_title,
-  c.action_text,
-  c.impact_estimate_thb,
-  c.impact_label,
-  c.reason_short,
-  c.sort_score,
-  c.rank,
+  c.organization_id AS organization_id,
+  c.branch_id AS branch_id,
+  c.branch_name AS branch_name,
+  c.alert_type AS alert_type,
+  c.title AS title,
+  c.description AS description,
+  c.short_title AS short_title,
+  c.action_text AS action_text,
+  c.impact_estimate_thb AS impact_estimate_thb,
+  c.impact_label AS impact_label,
+  c.reason_short AS reason_short,
+  c.sort_score AS sort_score,
+  c.rank AS rank,
   (
     CASE
       WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
@@ -400,7 +400,7 @@ SELECT
       ELSE c.business_type
     END
   ) AS business_type,
-  c.metric_date
+  c.metric_date AS metric_date
 FROM public.today_priorities_clean c
 LEFT JOIN public.branches b ON b.id::text = TRIM(BOTH FROM c.branch_id::text);
 

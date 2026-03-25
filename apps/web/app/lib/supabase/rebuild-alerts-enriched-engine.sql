@@ -19,6 +19,7 @@ DROP VIEW IF EXISTS opportunities_today CASCADE;
 DROP VIEW IF EXISTS watchlist_today CASCADE;
 DROP VIEW IF EXISTS whats_working_today CASCADE;
 DROP VIEW IF EXISTS today_branch_priorities CASCADE;
+DROP VIEW IF EXISTS today_priorities_view CASCADE;
 DROP VIEW IF EXISTS today_priorities_clean CASCADE;
 DROP VIEW IF EXISTS today_priorities CASCADE;
 DROP VIEW IF EXISTS today_action_plan CASCADE;
@@ -573,17 +574,17 @@ COMMENT ON VIEW today_priorities_clean IS
 
 CREATE VIEW today_priorities_view AS
 SELECT
-    c.organization_id,
-    c.branch_id,
-    c.branch_name,
-    c.alert_type,
-    c.action_text,
-    c.short_title,
-    c.impact_estimate_thb,
-    c.impact_label,
-    c.reason_short,
-    c.sort_score,
-    c.rank,
+    c.organization_id AS organization_id,
+    c.branch_id AS branch_id,
+    c.branch_name AS branch_name,
+    c.alert_type AS alert_type,
+    c.action_text AS action_text,
+    c.short_title AS short_title,
+    c.impact_estimate_thb AS impact_estimate_thb,
+    c.impact_label AS impact_label,
+    c.reason_short AS reason_short,
+    c.sort_score AS sort_score,
+    c.rank AS rank,
     (
         CASE
             WHEN COALESCE(NULLIF(TRIM(BOTH FROM c.branch_name), ''), NULLIF(TRIM(BOTH FROM b.branch_name), ''), NULLIF(TRIM(BOTH FROM b.name), ''), '') ILIKE '%cafe%' THEN 'fnb'::text
@@ -655,7 +656,7 @@ GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authentica
 CREATE OR REPLACE VIEW whats_working_today AS
 WITH base AS (
     SELECT
-        t.branch_id::text AS branch_id,
+        t.branch_id::uuid AS branch_id,
         t.metric_date::date AS metric_date,
         COALESCE(
             NULLIF(TRIM(j.jb->>'total_revenue'), '')::numeric,
@@ -666,7 +667,7 @@ WITH base AS (
         ) AS total_revenue,
         NULLIF(TRIM(j.jb->>'revenue_delta_day'), '')::numeric AS revenue_delta_day,
         NULLIF(TRIM(j.jb->>'occupancy_delta_week'), '')::numeric AS occupancy_delta_week,
-        b.organization_id,
+        b.organization_id::uuid AS organization_id,
         COALESCE(b.branch_name, b.name) AS branch_name,
         CASE
             WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
@@ -697,10 +698,12 @@ latest AS (
 signals AS (
     SELECT
         l.organization_id::uuid AS organization_id,
-        l.branch_id::text AS branch_id,
+        l.branch_id::uuid AS branch_id,
         l.branch_name::text AS branch_name,
         l.metric_date::date AS metric_date,
         ('Customer traffic up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%) (' || l.branch_name || ')')::text AS highlight_text,
+        ('Customer traffic up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%)')::text AS title,
+        ('Branch: ' || l.branch_name)::text AS description,
         (COALESCE(l.revenue_delta_day, 0) * 1000::numeric + COALESCE(l.total_revenue, 0))::numeric AS sort_score
     FROM latest l
     WHERE l.branch_type = 'fnb'
@@ -710,10 +713,12 @@ signals AS (
     UNION ALL
     SELECT
         l.organization_id::uuid,
-        l.branch_id::text,
+        l.branch_id::uuid,
         l.branch_name::text,
         l.metric_date::date,
         ('Revenue trending up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%) (' || l.branch_name || ')')::text,
+        ('Revenue trending up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%)')::text,
+        ('Branch: ' || l.branch_name)::text,
         (COALESCE(l.revenue_delta_day, 0) * 1000::numeric + COALESCE(l.total_revenue, 0))::numeric
     FROM latest l
     WHERE l.branch_type = 'accommodation'
@@ -723,10 +728,12 @@ signals AS (
     UNION ALL
     SELECT
         l.organization_id::uuid,
-        l.branch_id::text,
+        l.branch_id::uuid,
         l.branch_name::text,
         l.metric_date::date,
         ('Occupancy improving (+' || ROUND(ABS(l.occupancy_delta_week))::text || '%) (' || l.branch_name || ')')::text,
+        ('Occupancy improving (+' || ROUND(ABS(l.occupancy_delta_week))::text || '%)')::text,
+        ('Branch: ' || l.branch_name)::text,
         (COALESCE(l.occupancy_delta_week, 0) * 800::numeric + COALESCE(l.total_revenue, 0))::numeric
     FROM latest l
     WHERE l.branch_type = 'accommodation'
@@ -752,7 +759,7 @@ org_pool AS (
             ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name))
         )[1] AS sample_branch_id
     FROM branches b
-    LEFT JOIN latest l ON l.branch_id = TRIM(BOTH FROM b.id::text)
+    LEFT JOIN latest l ON l.branch_id = b.id::uuid
     WHERE b.organization_id IS NOT NULL
     GROUP BY b.organization_id
 ),
@@ -764,10 +771,12 @@ has_positive AS (
 fallback AS (
     SELECT
         o.organization_id::uuid AS organization_id,
-        COALESCE(o.sample_branch_id, NULL::text)::text AS branch_id,
+        COALESCE(o.sample_branch_id, NULL::text)::uuid AS branch_id,
         COALESCE(o.sample_branch_name, NULL::text)::text AS branch_name,
         o.latest_metric_date::date AS metric_date,
         'No major operational risks detected'::text AS highlight_text,
+        'All good'::text AS title,
+        'No major operational risks detected'::text AS description,
         300::numeric AS sort_score
     FROM org_pool o
     LEFT JOIN has_positive hp ON hp.organization_id = o.organization_id
@@ -777,9 +786,11 @@ fallback AS (
 
     SELECT
         o.organization_id::uuid,
-        COALESCE(o.sample_branch_id, NULL::text)::text,
+        COALESCE(o.sample_branch_id, NULL::text)::uuid,
         COALESCE(o.sample_branch_name, NULL::text)::text,
         o.latest_metric_date::date,
+        'Performance stable across branches'::text,
+        'Stable performance'::text,
         'Performance stable across branches'::text,
         200::numeric
     FROM org_pool o
@@ -790,9 +801,11 @@ fallback AS (
 
     SELECT
         o.organization_id::uuid,
-        COALESCE(o.sample_branch_id, NULL::text)::text,
+        COALESCE(o.sample_branch_id, NULL::text)::uuid,
         COALESCE(o.sample_branch_name, NULL::text)::text,
         o.latest_metric_date::date,
+        (COALESCE(o.sample_branch_name, 'Branch') || ' traffic stable')::text,
+        'Traffic stable'::text,
         (COALESCE(o.sample_branch_name, 'Branch') || ' traffic stable')::text,
         100::numeric
     FROM org_pool o
@@ -815,6 +828,8 @@ deduped_rows AS (
         a.branch_name,
         a.metric_date,
         a.highlight_text,
+        a.title,
+        a.description,
         a.sort_score
     FROM all_rows a
     WHERE a.organization_id IS NOT NULL
@@ -831,6 +846,8 @@ ranked AS (
         d.branch_name,
         d.metric_date,
         d.highlight_text,
+        d.title,
+        d.description,
         d.sort_score,
         ROW_NUMBER() OVER (
             PARTITION BY d.organization_id
@@ -843,6 +860,8 @@ SELECT
     r.branch_id,
     r.branch_name,
     r.metric_date,
+    r.title,
+    r.description,
     r.highlight_text,
     r.sort_score
 FROM ranked r
@@ -857,32 +876,24 @@ GRANT SELECT ON whats_working_today TO anon, authenticated;
 CREATE OR REPLACE VIEW opportunities_today AS
 WITH base AS (
     SELECT
-        e.organization_id,
-        e.branch_id::text AS branch_id,
-        e.branch_name,
-        e.branch_type,
-        e.metric_date::date AS metric_date,
-        COALESCE(e.impact_estimate_thb, 0)::numeric AS impact_estimate_thb,
-        e.recommended_action
-    FROM alerts_enriched e
-    WHERE e.alert_category = 'opportunity'
-),
-enriched AS (
-    SELECT
-        COALESCE(b.organization_id, base.organization_id) AS organization_id,
-        base.branch_id,
-        COALESCE(
-            NULLIF(TRIM(BOTH FROM base.branch_name), ''),
-            NULLIF(TRIM(BOTH FROM b.branch_name), ''),
-            NULLIF(TRIM(BOTH FROM b.name), ''),
-            base.branch_id
-        ) AS branch_name,
-        base.branch_type,
-        base.metric_date,
-        base.impact_estimate_thb,
-        base.recommended_action
-    FROM base
-    LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM base.branch_id::text)
+        t.branch_id::uuid AS branch_id,
+        t.metric_date::date AS metric_date,
+        j.jb AS j,
+        b.organization_id::uuid AS organization_id,
+        COALESCE(b.branch_name, b.name) AS branch_name,
+        CASE
+            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+                'accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'
+            ) THEN 'accommodation'::text
+            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+                'fnb', 'restaurant', 'cafe', 'cafe_restaurant'
+            ) THEN 'fnb'::text
+            ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
+        END AS branch_type
+    FROM today_summary_clean t
+    CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
+    LEFT JOIN branches b ON b.id::text = t.branch_id::text
+    WHERE b.organization_id IS NOT NULL
 ),
 latest AS (
     SELECT DISTINCT ON (branch_id)
@@ -891,18 +902,35 @@ latest AS (
         branch_name,
         branch_type,
         metric_date,
-        impact_estimate_thb,
-        recommended_action
-    FROM enriched
-    WHERE organization_id IS NOT NULL
+        COALESCE(NULLIF(TRIM(j->>'revenue_delta_day'), '')::numeric, NULL::numeric) AS revenue_delta_day,
+        COALESCE(
+            NULLIF(TRIM(j->>'total_revenue'), '')::numeric,
+            NULLIF(TRIM(j->>'revenue'), '')::numeric,
+            NULLIF(TRIM(j->>'total_revenue_thb'), '')::numeric,
+            NULLIF(TRIM(j->>'revenue_thb'), '')::numeric,
+            0::numeric
+        ) AS revenue_thb
+    FROM base
     ORDER BY branch_id, metric_date DESC NULLS LAST
 ),
-final AS (
+signals AS (
     SELECT
         l.organization_id,
         l.branch_id,
         l.branch_name,
         l.metric_date,
+        (
+            CASE
+                WHEN l.branch_type = 'accommodation'
+                    AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5 THEN
+                    'Add a weekend package'::text
+                WHEN l.branch_type = 'fnb' THEN
+                    'Increase avg ticket'::text
+                ELSE
+                    'Raise price slightly'::text
+            END
+        ) AS title,
+        ('Branch: ' || l.branch_name)::text AS description,
         (
             CASE
                 WHEN l.branch_type = 'accommodation'
@@ -914,17 +942,35 @@ final AS (
                     'High demand detected → raise price slightly (' || l.branch_name || ')'
             END
         ) AS opportunity_text,
-        (l.impact_estimate_thb * 100::numeric + EXTRACT(EPOCH FROM l.metric_date::timestamp)::numeric) AS sort_score
+        (
+            150::numeric
+            + COALESCE(l.revenue_thb, 0)::numeric / 2000::numeric
+            + ((abs(hashtext(COALESCE(l.branch_id::text, '') || COALESCE(l.branch_name, ''))))::numeric % 1000000::numeric) / 1000000000::numeric
+        ) AS sort_score
     FROM latest l
+    WHERE l.revenue_delta_day IS NOT NULL
+      AND l.revenue_delta_day >= 10
+),
+ranked AS (
+    SELECT
+        s.*,
+        ROW_NUMBER() OVER (
+            PARTITION BY s.organization_id
+            ORDER BY s.sort_score DESC NULLS LAST, s.metric_date DESC NULLS LAST
+        ) AS rn
+    FROM signals s
 )
 SELECT
-    f.organization_id,
-    f.branch_id,
-    f.branch_name,
-    f.metric_date,
-    f.opportunity_text,
-    f.sort_score
-FROM final f;
+    r.organization_id,
+    r.branch_id,
+    r.branch_name,
+    r.metric_date,
+    r.title,
+    r.description,
+    r.opportunity_text,
+    r.sort_score
+FROM ranked r
+WHERE r.rn <= 3;
 
 COMMENT ON VIEW opportunities_today IS
     'Opportunity alerts; latest per branch; GET order=sort_score.desc&limit=3';
@@ -935,7 +981,7 @@ GRANT SELECT ON opportunities_today TO anon, authenticated;
 CREATE OR REPLACE VIEW watchlist_today AS
 WITH base AS (
     SELECT
-        t.branch_id::text AS branch_id,
+        t.branch_id::uuid AS branch_id,
         t.metric_date::date AS metric_date,
         COALESCE(
             NULLIF(TRIM(j.jb->>'total_revenue'), '')::numeric,
@@ -954,7 +1000,7 @@ WITH base AS (
             NULLIF(TRIM(j.jb->>'rooms_sold'), '')::numeric,
             0::numeric
         ) AS rooms_sold,
-        b.organization_id,
+        b.organization_id::uuid AS organization_id,
         COALESCE(b.branch_name, b.name) AS branch_name
     FROM today_summary_clean t
     CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
@@ -993,10 +1039,12 @@ latest AS (
 signals AS (
     SELECT
         l.organization_id::uuid AS organization_id,
-        l.branch_id::text AS branch_id,
+        l.branch_id::uuid AS branch_id,
         l.branch_name::text AS branch_name,
         l.metric_date::date AS metric_date,
         (l.branch_name || ' revenue trending down (3 days)')::text AS warning_text,
+        'Revenue softening'::text AS title,
+        ('Branch: ' || l.branch_name)::text AS description,
         (120::numeric + COALESCE(l.total_revenue, 0) / 1000::numeric)::numeric AS sort_score
     FROM latest l
     WHERE l.rev_l1 IS NOT NULL
@@ -1008,10 +1056,12 @@ signals AS (
 
     SELECT
         l.organization_id::uuid,
-        l.branch_id::text,
+        l.branch_id::uuid,
         l.branch_name::text,
         l.metric_date::date,
         ('Customer traffic softening (' || l.branch_name || ')')::text,
+        'Customer traffic softening'::text,
+        ('Branch: ' || l.branch_name)::text,
         110::numeric
     FROM latest l
     WHERE l.cust_l1 IS NOT NULL
@@ -1024,10 +1074,12 @@ signals AS (
 
     SELECT
         l.organization_id::uuid,
-        l.branch_id::text,
+        l.branch_id::uuid,
         l.branch_name::text,
         l.metric_date::date,
         (l.branch_name || ' rooms sold softening (3 days)')::text,
+        'Rooms sold softening'::text,
+        ('Branch: ' || l.branch_name)::text,
         100::numeric
     FROM latest l
     WHERE l.room_l1 IS NOT NULL
@@ -1063,10 +1115,12 @@ has_signal AS (
 fallback AS (
     SELECT
         o.organization_id::uuid AS organization_id,
-        o.sample_branch_id::text AS branch_id,
+        o.sample_branch_id::uuid AS branch_id,
         o.sample_branch_name::text AS branch_name,
         NULL::date AS metric_date,
         'No early warning signals detected'::text AS warning_text,
+        'All good'::text AS title,
+        'No early warning signals detected'::text AS description,
         30::numeric AS sort_score
     FROM org_pool o
     LEFT JOIN has_signal hs ON hs.organization_id = o.organization_id
@@ -1083,6 +1137,8 @@ ranked AS (
         a.branch_id,
         a.branch_name,
         a.metric_date,
+        a.title,
+        a.description,
         a.warning_text,
         a.sort_score,
         ROW_NUMBER() OVER (
@@ -1097,6 +1153,8 @@ SELECT
     r.branch_id,
     r.branch_name,
     r.metric_date,
+    r.title,
+    r.description,
     r.warning_text,
     r.sort_score
 FROM ranked r
