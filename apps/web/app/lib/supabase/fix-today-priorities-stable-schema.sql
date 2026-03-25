@@ -55,7 +55,15 @@ $empty$;
   ELSE
     EXECUTE $ts$
 CREATE VIEW public.today_priorities_ranked AS
-WITH base AS (
+WITH latest_day AS (
+  SELECT
+    trim(both FROM t.branch_id::text) AS bid,
+    MAX(t.metric_date::date) AS d
+  FROM public.today_summary_clean t
+  WHERE t.branch_id IS NOT NULL
+  GROUP BY trim(both FROM t.branch_id::text)
+),
+base AS (
   SELECT
     t.branch_id::uuid AS branch_id,
     t.metric_date::date AS metric_date,
@@ -67,6 +75,7 @@ WITH base AS (
       ELSE 'accommodation'::text
     END AS business_type
   FROM public.today_summary_clean t
+  INNER JOIN latest_day ld ON trim(both FROM t.branch_id::text) = ld.bid AND t.metric_date::date = ld.d
   CROSS JOIN LATERAL (SELECT to_jsonb(t) AS jb) jb
   LEFT JOIN public.branches b ON trim(both FROM b.id::text) = trim(both FROM t.branch_id::text)
   WHERE t.branch_id IS NOT NULL
@@ -80,7 +89,20 @@ signals AS (
     business_type,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'revenue_delta_day'), '')::numeric, NULL::numeric) AS revenue_delta_day,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'occupancy_delta_week'), '')::numeric, NULL::numeric) AS occupancy_delta_week,
-    COALESCE(NULLIF(TRIM(BOTH FROM j->>'occupancy_rate'), '')::numeric, NULL::numeric) AS occupancy_rate,
+    COALESCE(
+      NULLIF(TRIM(BOTH FROM j->>'occupancy_rate'), '')::numeric,
+      CASE
+        WHEN NULLIF(TRIM(BOTH FROM j->>'capacity'), '')::numeric > 0::numeric
+          AND NULLIF(TRIM(BOTH FROM j->>'utilized'), '')::numeric IS NOT NULL THEN
+          (NULLIF(TRIM(BOTH FROM j->>'utilized'), '')::numeric
+            / NULLIF(TRIM(BOTH FROM j->>'capacity'), '')::numeric) * 100::numeric
+        WHEN NULLIF(TRIM(BOTH FROM j->>'rooms_available'), '')::numeric > 0::numeric
+          AND NULLIF(TRIM(BOTH FROM j->>'rooms_sold'), '')::numeric IS NOT NULL THEN
+          (NULLIF(TRIM(BOTH FROM j->>'rooms_sold'), '')::numeric
+            / NULLIF(TRIM(BOTH FROM j->>'rooms_available'), '')::numeric) * 100::numeric
+        ELSE NULL::numeric
+      END
+    ) AS occupancy_rate,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'adr'), '')::numeric, NULL::numeric) AS adr,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'revpar'), '')::numeric, NULL::numeric) AS revpar,
     COALESCE(NULLIF(TRIM(BOTH FROM j->>'customers'), '')::numeric, NULLIF(TRIM(BOTH FROM j->>'total_customers'), '')::numeric, NULL::numeric) AS customers,

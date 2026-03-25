@@ -72,6 +72,7 @@ import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import {
   fetchTodayBranchPriorities,
   resolveBusinessTypeForPriorities,
+  syntheticAccommodationPrioritiesFromTodayUi,
   type TodayBranchPriorityRow,
 } from '../../services/db/today-branch-priorities-service';
 import { normalizeWhatsWorkingTitle } from '../../services/db/whats-working-today-service';
@@ -752,8 +753,20 @@ export default function BranchOverviewPage() {
     return null;
   }, [driverChartData, isAccommodation, isFnb, locale]);
 
-  const branchPriorityNext = useMemo(() => branchPriorities.slice(1, 4), [branchPriorities]);
-  const branchPriorityFirst = branchPriorities[0] ?? null;
+  const branchPrioritiesForUi = useMemo(() => {
+    if (branchPriorities.length > 0) return branchPriorities;
+    if (!branch) return [];
+    if (resolveBusinessTypeForPriorities(branch.moduleType, branch.modules) !== 'accommodation') return [];
+    return syntheticAccommodationPrioritiesFromTodayUi(
+      branch.id,
+      branch.branchName,
+      accTodayUiRow,
+      locale === 'th' ? 'th' : 'en'
+    );
+  }, [branchPriorities, branch, accTodayUiRow, locale]);
+
+  const branchPriorityNext = useMemo(() => branchPrioritiesForUi.slice(1, 4), [branchPrioritiesForUi]);
+  const branchPriorityFirst = branchPrioritiesForUi[0] ?? null;
 
   const revenueNow = useMemo(() => {
     const ts = todaySummaryRow as any;
@@ -1485,7 +1498,7 @@ export default function BranchOverviewPage() {
           </h2>
           {branchPrioritiesLoading ? (
             <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
-          ) : branchPriorities.length === 0 ? (
+          ) : branchPrioritiesForUi.length === 0 ? (
             <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.55 }}>
               {locale === 'th'
                 ? 'ไม่พบลำดับความสำคัญสำหรับวันนี้'

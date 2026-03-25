@@ -4,6 +4,8 @@
  *   &order=sort_score.desc&limit=4
  */
 import { ModuleType } from '../../models/business-group';
+import { occupancyPercentFromMetric } from '../../utils/accommodation-economics';
+import { formatCurrency } from '../../utils/formatting';
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
   isPostgrestObjectMissingError,
@@ -24,6 +26,78 @@ export function resolveBusinessTypeForPriorities(
   if (modules?.includes(ModuleType.ACCOMMODATION)) return 'accommodation';
   if (modules?.includes(ModuleType.FNB)) return 'fnb';
   return 'accommodation';
+}
+
+/** Same signals as SQL `today_priorities_ranked` when the view row lacks occupancy_rate / latest-day scope. */
+export type AccommodationTodayUiLike = {
+  metric_date?: string | null;
+  revenue?: number | null;
+  revenue_delta?: number | null;
+  occupancy?: number | null;
+};
+
+export function syntheticAccommodationPrioritiesFromTodayUi(
+  branchId: string,
+  branchName: string,
+  ui: AccommodationTodayUiLike | null,
+  locale: 'en' | 'th'
+): TodayBranchPriorityRow[] {
+  if (!ui || !branchId.trim()) return [];
+  const th = locale === 'th';
+  const numLoc = th ? 'th-TH' : 'en-US';
+  const name = branchName.trim() || (th ? 'สาขา' : 'Branch');
+  const rev = Number(ui.revenue);
+  const hasRev = Number.isFinite(rev) && rev > 0;
+  const out: TodayBranchPriorityRow[] = [];
+
+  const rd = ui.revenue_delta;
+  if (rd != null && Number.isFinite(Number(rd)) && Number(rd) <= -10) {
+    const delta = Number(rd);
+    const impact = hasRev ? Math.max(Math.round(rev * Math.min(0.35, (Math.abs(delta) / 100) * 0.45)), 1000) : null;
+    const titleBase = th ? `รายได้ลดลง — ${name}` : `Revenue drop — ${name}`;
+    const title = impact != null && impact > 0 ? `${titleBase} (฿${formatCurrency(impact, numLoc)})` : titleBase;
+    const description = th
+      ? 'รายได้ลดลงเมื่อเทียบกับเมื่อวาน ตรวจราคา ช่องทางการขาย และแพ็กเกจ; บันทึกบริบทใน Enter Data'
+      : 'Revenue is down vs yesterday. Check pricing, channel mix, and packages; log context in Enter Data.';
+    out.push({
+      branch_id: branchId.trim(),
+      business_type: 'accommodation',
+      metric_date: ui.metric_date != null ? String(ui.metric_date).slice(0, 10) : null,
+      title,
+      description,
+      short_title: title,
+      action_text: description,
+      impact_thb: impact,
+      impact_estimate_thb: impact,
+      impact_label: 'at risk',
+      sort_score: impact != null ? impact * 1e12 + 5_000_000 : 4_000_000,
+    });
+  }
+
+  const occPct = occupancyPercentFromMetric(ui.occupancy);
+  if (occPct != null && occPct < 60) {
+    const impact = hasRev ? Math.max(Math.round(rev * 0.08), 500) : null;
+    const titleBase = th ? `อัตราเข้าพักต่ำ — ${name}` : `Occupancy low — ${name}`;
+    const title = impact != null && impact > 0 ? `${titleBase} (฿${formatCurrency(impact, numLoc)})` : titleBase;
+    const description = th
+      ? 'อัตราเข้าพักระดับวันนี้ต่ำ พิจารณาโปรโมชัน OTA แพ็กเกจระยะสั้น และขอบราคา'
+      : 'Occupancy level is low today. Consider OTA boosts, last-minute packages, and pricing fences.';
+    out.push({
+      branch_id: branchId.trim(),
+      business_type: 'accommodation',
+      metric_date: ui.metric_date != null ? String(ui.metric_date).slice(0, 10) : null,
+      title,
+      description,
+      short_title: title,
+      action_text: description,
+      impact_thb: impact,
+      impact_estimate_thb: impact,
+      impact_label: 'at risk',
+      sort_score: impact != null ? impact * 1e12 + 3_000_000 : 3_500_000,
+    });
+  }
+
+  return out.sort((a, b) => (b.sort_score ?? 0) - (a.sort_score ?? 0)).slice(0, 4);
 }
 
 export interface TodayBranchPriorityRow {
