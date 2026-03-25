@@ -15,8 +15,9 @@ import {
 import {
   logBranchBusinessStatusApiDev,
   SELECT_BRANCH_BUSINESS_STATUS_API_HEALTH_ONLY,
-  TABLE_BRANCH_BUSINESS_STATUS_API,
+  getBranchBusinessStatusApiTable,
 } from './branch-business-status-api-columns';
+import { logPostgrestPhase1Read } from '../../lib/supabase/postgrest-phase1-cutover';
 
 function getTodayDateString(): string {
   const d = new Date();
@@ -266,8 +267,9 @@ async function getHealthScoreFromBranchBusinessStatusApi(
 
     const select = SELECT_BRANCH_BUSINESS_STATUS_API_HEALTH_ONLY;
     try {
+      const table = getBranchBusinessStatusApiTable();
       const { data, error } = await supabase
-        .from(TABLE_BRANCH_BUSINESS_STATUS_API)
+        .from(table)
         .select(select)
         .eq('branch_id', branchId)
         .maybeSingle();
@@ -278,6 +280,11 @@ async function getHealthScoreFromBranchBusinessStatusApi(
         data,
         error,
         uiSurface: callSite === 'health_kpi_accommodation' ? 'accommodation' : 'fnb',
+      });
+      logPostgrestPhase1Read('branch_business_status_api', {
+        branchId,
+        rowCount: data != null ? 1 : 0,
+        error: error ? { message: error.message, code: String(error.code ?? '') } : null,
       });
 
       if (error) {

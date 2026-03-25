@@ -13,8 +13,9 @@ import { normalizeProfitabilityTrend, type ProfitabilityTrend } from './latest-m
 import {
   logBranchBusinessStatusApiDev,
   SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY,
-  TABLE_BRANCH_BUSINESS_STATUS_API,
+  getBranchBusinessStatusApiTable,
 } from './branch-business-status-api-columns';
+import { logPostgrestPhase1Read } from '../../lib/supabase/postgrest-phase1-cutover';
 
 const companyTodayBundleInFlight = new Map<string, Promise<CompanyTodayBundle>>();
 
@@ -541,11 +542,12 @@ async function fetchCompanyTodayBundleCore(
   const skipCrit = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.get_alerts_critical);
   const skipToday = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.alerts_today);
 
+  const bsTable = getBranchBusinessStatusApiTable();
   const [bsRes, branchesRes, critRes, todayRes] = await Promise.all([
     skipBs
       ? Promise.resolve({ data: null, error: null } as const)
       : supabase
-          .from(TABLE_BRANCH_BUSINESS_STATUS_API)
+          .from(bsTable)
           .select(SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY)
           .in('branch_id', idFilter),
     supabase.from('branches').select('id,module_type,branch_name,name,organization_id').in('id', idFilter),
@@ -565,6 +567,12 @@ async function fetchCompanyTodayBundleCore(
       data: bsRes.data,
       error: bsRes.error,
       uiSurface: 'company_today',
+    });
+    const bsRowsEarly = asRecordArray(bsRes.data);
+    logPostgrestPhase1Read('branch_business_status_api', {
+      organizationId,
+      rowCount: bsRowsEarly.length,
+      error: bsRes.error ? { message: bsRes.error.message, code: String(bsRes.error.code ?? '') } : null,
     });
   }
 
@@ -631,7 +639,7 @@ async function fetchCompanyTodayBundleCore(
   let bsRows = asRecordArray(bsRes.data);
   if (!skipBs && bsRows.length === 0 && organizationId) {
     const orgRes = await supabase
-      .from(TABLE_BRANCH_BUSINESS_STATUS_API)
+      .from(bsTable)
       .select(SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY)
       .eq('organization_id', organizationId);
     logBranchBusinessStatusApiDev('company_today_org_fallback', {
@@ -641,6 +649,11 @@ async function fetchCompanyTodayBundleCore(
       data: orgRes.data,
       error: orgRes.error,
       uiSurface: 'company_today',
+    });
+    logPostgrestPhase1Read('branch_business_status_api', {
+      organizationId,
+      rowCount: asRecordArray(orgRes.data).length,
+      error: orgRes.error ? { message: orgRes.error.message, code: String(orgRes.error.code ?? '') } : null,
     });
     if (orgRes.error) {
       if (isPostgrestObjectMissingError(orgRes.error)) {

@@ -13,11 +13,12 @@ import {
 } from '../lib/supabase/postgrest-missing-resource';
 import type { AlertContract } from '../../../../core/sme-os/contracts/alerts';
 import {
+  getBranchBusinessStatusApiTable,
   logBranchBusinessStatusApiDev,
   SELECT_BRANCH_BUSINESS_STATUS_API_ANOMALY,
-  TABLE_BRANCH_BUSINESS_STATUS_API,
   type BranchBusinessStatusApiUiSurface,
 } from './db/branch-business-status-api-columns';
+import { logPostgrestPhase1Read } from '../lib/supabase/postgrest-phase1-cutover';
 
 export interface BranchAnomalySignalRow {
   branch_id: string;
@@ -56,8 +57,9 @@ export async function getLatestAnomalySignal(
     }
 
     const select = SELECT_BRANCH_BUSINESS_STATUS_API_ANOMALY;
+    const table = getBranchBusinessStatusApiTable();
     const { data, error } = await supabase
-      .from(TABLE_BRANCH_BUSINESS_STATUS_API)
+      .from(table)
       .select(select)
       .eq('branch_id', branchId)
       .maybeSingle();
@@ -68,6 +70,11 @@ export async function getLatestAnomalySignal(
       data,
       error,
       uiSurface: opts?.uiSurface ?? 'unknown',
+    });
+    logPostgrestPhase1Read('branch_business_status_api', {
+      branchId,
+      rowCount: data != null ? 1 : 0,
+      error: error ? { message: error.message, code: String(error.code ?? '') } : null,
     });
 
     if (error) {

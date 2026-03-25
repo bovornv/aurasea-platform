@@ -9,6 +9,10 @@ import {
   markPostgrestResourceMissing,
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
+import {
+  logPostgrestPhase1Read,
+  resolvePostgrestPhase1Table,
+} from '../../lib/supabase/postgrest-phase1-cutover';
 
 export interface TodayPrioritiesRow {
   branch_id: string;
@@ -86,12 +90,20 @@ export async function fetchCompanyTodayPriorities(
   if (!supabase) return [];
 
   const cap = Math.min(5, Math.max(1, limit));
+  const table = resolvePostgrestPhase1Table('today_priorities_company_view');
   const { data, error } = await supabase
-    .from('today_priorities_company_view')
+    .from(table)
     .select('*')
     .eq('organization_id', organizationId.trim())
     .order('rank', { ascending: true })
     .limit(cap);
+
+  const rawForLog = Array.isArray(data) ? data : [];
+  logPostgrestPhase1Read('today_priorities_company_view', {
+    organizationId: organizationId.trim(),
+    rowCount: rawForLog.length,
+    error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+  });
 
   if (error) {
     if (isPostgrestObjectMissingError(error)) {
@@ -124,13 +136,21 @@ export async function fetchTodayPriorities(
   if (!supabase) return [];
 
   const cap = Math.min(5, Math.max(1, limit));
+  const table = resolvePostgrestPhase1Table('today_priorities_view');
   const { data, error } = await supabase
-    .from('today_priorities_view')
+    .from(table)
     .select('*')
     .eq('organization_id', organizationId.trim())
     .eq('business_type', businessType)
     .order('sort_score', { ascending: false })
     .limit(cap);
+
+  const rawForLog = Array.isArray(data) ? data : [];
+  logPostgrestPhase1Read('today_priorities_view', {
+    organizationId: organizationId.trim(),
+    rowCount: rawForLog.length,
+    error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+  });
 
   if (error) {
     if (isPostgrestObjectMissingError(error)) {

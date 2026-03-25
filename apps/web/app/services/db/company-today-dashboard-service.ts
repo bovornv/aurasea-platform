@@ -31,6 +31,10 @@ import {
   markPostgrestResourceMissing,
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
+import {
+  logPostgrestPhase1Read,
+  resolvePostgrestPhase1Table,
+} from '../../lib/supabase/postgrest-phase1-cutover';
 import { dedupeWhatsWorkingHighlightLines } from './whats-working-today-service';
 import {
   resolveTodayPanelDisplay,
@@ -436,12 +440,19 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
   const [workingRes, oppRes, watchRes] = await Promise.all([
     (async () => {
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.whats_working_today)) return [];
+      const wwTable = resolvePostgrestPhase1Table('whats_working_today');
       const { data, error } = await supabase
-        .from('whats_working_today')
+        .from(wwTable)
         .select(SELECT_WHATS_WORKING_TODAY_BRANCH)
         .eq('branch_id', bid)
         .order('sort_score', { ascending: false })
         .limit(3);
+      const wwRaw = Array.isArray(data) ? data : [];
+      logPostgrestPhase1Read('whats_working_today', {
+        branchId: bid,
+        rowCount: wwRaw.length,
+        error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+      });
       if (error) {
         if (isPostgrestObjectMissingError(error)) {
           markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.whats_working_today);
@@ -482,12 +493,19 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
     })(),
     (async () => {
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.watchlist_today)) return [];
+      const wlTable = resolvePostgrestPhase1Table('watchlist_today');
       const { data, error } = await supabase
-        .from('watchlist_today')
+        .from(wlTable)
         .select(SELECT_WATCHLIST_TODAY_BRANCH)
         .eq('branch_id', bid)
         .order('sort_score', { ascending: false })
         .limit(3);
+      const wlRaw = Array.isArray(data) ? data : [];
+      logPostgrestPhase1Read('watchlist_today', {
+        branchId: bid,
+        rowCount: wlRaw.length,
+        error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+      });
       if (error) {
         if (isPostgrestObjectMissingError(error)) {
           markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.watchlist_today);

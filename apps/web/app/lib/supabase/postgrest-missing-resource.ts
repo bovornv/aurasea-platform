@@ -5,6 +5,7 @@
 
 const missing = new Set<string>();
 
+/** Logical feature keys for session “missing” cache; physical `.from()` name may differ (see `postgrest-phase1-cutover.ts`). */
 export const POSTGREST_RESOURCE_KEYS = {
   /** Stable PostgREST contract: `public.branch_business_status_api` */
   branch_business_status_api: 'table:branch_business_status_api',

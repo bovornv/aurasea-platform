@@ -9,6 +9,10 @@ import {
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
 import {
+  logPostgrestPhase1Read,
+  resolvePostgrestPhase1Table,
+} from '../../lib/supabase/postgrest-phase1-cutover';
+import {
   pickStr,
   resolveTodayPanelDisplay,
   SELECT_WHATS_WORKING_TODAY,
@@ -84,12 +88,20 @@ export async function fetchWhatsWorkingToday(
   if (!supabase) return [];
 
   const cap = Math.min(10, Math.max(1, limit));
+  const table = resolvePostgrestPhase1Table('whats_working_today');
   const { data, error } = await supabase
-    .from('whats_working_today')
+    .from(table)
     .select(SELECT_WHATS_WORKING_TODAY)
     .eq('organization_id', organizationId.trim())
     .order('sort_score', { ascending: false })
     .limit(cap);
+
+  const rawForLog = Array.isArray(data) ? data : [];
+  logPostgrestPhase1Read('whats_working_today', {
+    organizationId: organizationId.trim(),
+    rowCount: rawForLog.length,
+    error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+  });
 
   if (error) {
     if (isPostgrestObjectMissingError(error)) {

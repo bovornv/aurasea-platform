@@ -16,9 +16,10 @@ import {
 import {
   logBranchBusinessStatusApiDev,
   SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY,
-  TABLE_BRANCH_BUSINESS_STATUS_API,
+  getBranchBusinessStatusApiTable,
   type BranchBusinessStatusApiUiSurface,
 } from './branch-business-status-api-columns';
+import { logPostgrestPhase1Read } from '../../lib/supabase/postgrest-phase1-cutover';
 
 export type BranchModuleType = 'accommodation' | 'fnb';
 
@@ -425,8 +426,9 @@ export async function getTodaySummary(
     }
 
     const select = SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY;
+    const table = getBranchBusinessStatusApiTable();
     const { data, error } = await supabase
-      .from(TABLE_BRANCH_BUSINESS_STATUS_API)
+      .from(table)
       .select(select)
       .eq('branch_id', branchId)
       .maybeSingle();
@@ -437,6 +439,11 @@ export async function getTodaySummary(
       data,
       error,
       uiSurface: opts?.uiSurface ?? 'unknown',
+    });
+    logPostgrestPhase1Read('branch_business_status_api', {
+      branchId,
+      rowCount: data != null ? 1 : 0,
+      error: error ? { message: error.message, code: String(error.code ?? '') } : null,
     });
 
     if (error) {

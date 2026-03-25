@@ -1,8 +1,12 @@
 /**
  * PostgREST reads for `public.branch_business_status_api` — explicit selects only (no *).
+ * Physical relation: live `branch_business_status_api` or `branch_business_status_api_v_next` when phase 1 is on.
  */
+import { resolvePostgrestPhase1Table } from '../../lib/supabase/postgrest-phase1-cutover';
 
-export const TABLE_BRANCH_BUSINESS_STATUS_API = 'branch_business_status_api' as const;
+export function getBranchBusinessStatusApiTable(): string {
+  return resolvePostgrestPhase1Table('branch_business_status_api');
+}
 
 /** Company Today owner tables — all API columns needed for normalization + org filter. */
 export const SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY =
@@ -41,7 +45,7 @@ export function logBranchBusinessStatusApiDev(
 ): void {
   if (process.env.NODE_ENV !== 'development') return;
   const payload = {
-    endpoint: TABLE_BRANCH_BUSINESS_STATUS_API,
+    endpoint: getBranchBusinessStatusApiTable(),
     callSite: site,
     uiSurface: detail.uiSurface ?? null,
     select: detail.select,

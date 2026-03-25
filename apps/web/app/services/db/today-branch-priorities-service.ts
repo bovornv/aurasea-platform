@@ -13,6 +13,10 @@ import {
   markPostgrestResourceMissing,
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
+import {
+  logPostgrestPhase1Read,
+  resolvePostgrestPhase1Table,
+} from '../../lib/supabase/postgrest-phase1-cutover';
 
 /**
  * Must match SQL today_priorities_ranked.business_type (non-F&B branches → accommodation).
@@ -276,13 +280,21 @@ export async function fetchTodayBranchPriorities(
   if (!supabase) return [];
 
   const cap = Math.min(10, Math.max(1, limit));
+  const table = resolvePostgrestPhase1Table('today_priorities_view');
   const { data, error } = await supabase
-    .from('today_priorities_view')
+    .from(table)
     .select('*')
     .eq('branch_id', branchId.trim())
     .eq('business_type', bt)
     .order('sort_score', { ascending: false })
     .limit(cap);
+
+  const rawForLog = Array.isArray(data) ? data : [];
+  logPostgrestPhase1Read('today_priorities_view', {
+    branchId: branchId.trim(),
+    rowCount: rawForLog.length,
+    error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+  });
 
   if (error) {
     if (isPostgrestObjectMissingError(error)) {
