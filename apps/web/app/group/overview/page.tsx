@@ -49,16 +49,12 @@ import { CompanyLastUpdated } from '../../components/company/company-last-update
 import { CompanyBusinessStatusTables } from '../../components/company/company-business-status-tables';
 import { CompanyBusinessTrendSummary } from '../../components/company/company-business-trend-summary';
 import { CompanyTodaysPriorities } from '../../components/company/company-todays-priorities';
-import type { TodayPrioritiesRow } from '../../services/db/today-priorities-service';
-import type { WhatsWorkingTodayRow } from '../../services/db/whats-working-today-service';
-import type { OpportunitiesTodayRow } from '../../services/db/opportunities-today-service';
-import type { WatchlistTodayRow } from '../../services/db/watchlist-today-service';
-import type { CompanyDataConfidenceRow } from '../../services/db/company-data-confidence-service';
 import { CompanyDataConfidence } from '../../components/company/company-data-confidence';
 import {
   fetchCompanyTrendsSummary,
   type CompanyTrendsSummaryRow,
 } from '../../services/db/company-trends-summary-service';
+import type { CompanyTodayDashboardData } from '../../services/db/company-today-dashboard-service';
 function OwnerSummaryContent() {
   // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONALS, NO EARLY RETURNS
   const router = useRouter();
@@ -85,16 +81,7 @@ function OwnerSummaryContent() {
   const [aiDailySummaryLoading, setAiDailySummaryLoading] = useState(false);
   const [trendsSummaryRow, setTrendsSummaryRow] = useState<CompanyTrendsSummaryRow | null>(null);
   const [trendsSummaryLoading, setTrendsSummaryLoading] = useState(false);
-  const [prioritiesRows, setPrioritiesRows] = useState<TodayPrioritiesRow[]>([]);
-  const [prioritiesLoading, setPrioritiesLoading] = useState(false);
-  const [whatsWorkingRows, setWhatsWorkingRows] = useState<WhatsWorkingTodayRow[]>([]);
-  const [whatsWorkingLoading, setWhatsWorkingLoading] = useState(false);
-  const [opportunitiesRows, setOpportunitiesRows] = useState<OpportunitiesTodayRow[]>([]);
-  const [opportunitiesLoading, setOpportunitiesLoading] = useState(false);
-  const [watchlistRows, setWatchlistRows] = useState<WatchlistTodayRow[]>([]);
-  const [watchlistLoading, setWatchlistLoading] = useState(false);
-  const [dataConfidenceRow, setDataConfidenceRow] = useState<CompanyDataConfidenceRow | null>(null);
-  const [dataConfidenceLoading, setDataConfidenceLoading] = useState(false);
+  const [companyDashboard, setCompanyDashboard] = useState<CompanyTodayDashboardData | null>(null);
 
   /** After first successful load for this key, avoid flipping panel loaders on refreshTrigger-only updates. */
   const companyDashboardHydratedKeyRef = useRef<string>('');
@@ -241,17 +228,8 @@ function OwnerSummaryContent() {
     if (!organizationIdForData) {
       companyDashboardHydratedKeyRef.current = '';
       setCompanyTodayBundle(null);
+      setCompanyDashboard(null);
       setCompanyTodayLoading(false);
-      setPrioritiesRows([]);
-      setPrioritiesLoading(false);
-      setWhatsWorkingRows([]);
-      setWhatsWorkingLoading(false);
-      setOpportunitiesRows([]);
-      setOpportunitiesLoading(false);
-      setWatchlistRows([]);
-      setWatchlistLoading(false);
-      setDataConfidenceRow(null);
-      setDataConfidenceLoading(false);
       return;
     }
 
@@ -263,11 +241,6 @@ function OwnerSummaryContent() {
 
     if (showLoaders) {
       setCompanyTodayLoading(true);
-      setPrioritiesLoading(true);
-      setWhatsWorkingLoading(true);
-      setOpportunitiesLoading(true);
-      setWatchlistLoading(true);
-      setDataConfidenceLoading(true);
     }
 
     (async () => {
@@ -294,31 +267,18 @@ function OwnerSummaryContent() {
         ]);
         if (!cancelled) {
           setCompanyTodayBundle(dash.bundle);
-          setPrioritiesRows(dash.priorities);
-          setWhatsWorkingRows(dash.whatsWorking);
-          setOpportunitiesRows(dash.opportunities);
-          setWatchlistRows(dash.watchlist);
-          setDataConfidenceRow(dash.dataConfidence);
+          setCompanyDashboard(dash);
           companyDashboardHydratedKeyRef.current = dashboardKey;
         }
       } catch {
         if (!cancelled) {
           setCompanyTodayBundle(null);
-          setPrioritiesRows([]);
-          setWhatsWorkingRows([]);
-          setOpportunitiesRows([]);
-          setWatchlistRows([]);
-          setDataConfidenceRow(null);
+          setCompanyDashboard(null);
           companyDashboardHydratedKeyRef.current = '';
         }
       } finally {
         if (!cancelled) {
           setCompanyTodayLoading(false);
-          setPrioritiesLoading(false);
-          setWhatsWorkingLoading(false);
-          setOpportunitiesLoading(false);
-          setWatchlistLoading(false);
-          setDataConfidenceLoading(false);
         }
       }
     })();
@@ -654,6 +614,11 @@ function OwnerSummaryContent() {
         : 'Loading summary…'
       : (aiDailySummaryText?.trim() ?? '');
   const showAiDailySummaryBlock = aiDailySummaryLoading || aiSummaryBody.length > 0;
+  const prioritiesRows = companyDashboard?.priorities ?? [];
+  const whatsWorkingRows = companyDashboard?.whatsWorking ?? [];
+  const opportunitiesRows = companyDashboard?.opportunities ?? [];
+  const watchlistRows = companyDashboard?.watchlist ?? [];
+  const dataConfidenceRow = companyDashboard?.dataConfidence ?? null;
 
   return (
     <PageLayout title="" subtitle="">
@@ -694,12 +659,12 @@ function OwnerSummaryContent() {
 
         <CompanyDataConfidence
           row={dataConfidenceRow}
-          loading={dataConfidenceLoading}
+          loading={companyTodayLoading}
           locale={locale}
         />
 
         <MonitoringErrorBoundary componentName="Today's Priorities">
-          <CompanyTodaysPriorities rows={prioritiesRows} loading={prioritiesLoading} locale={locale} />
+          <CompanyTodaysPriorities rows={prioritiesRows} loading={companyTodayLoading} locale={locale} />
         </MonitoringErrorBoundary>
 
         {!groupHealthScore && <ActivationBlock />}
@@ -740,7 +705,7 @@ function OwnerSummaryContent() {
           <MonitoringErrorBoundary componentName="What's Working">
             <CompanyWhatsWorkingToday
               rows={whatsWorkingRows}
-              loading={whatsWorkingLoading}
+              loading={companyTodayLoading}
               locale={locale}
             />
           </MonitoringErrorBoundary>
@@ -757,7 +722,7 @@ function OwnerSummaryContent() {
           <MonitoringErrorBoundary componentName="Opportunities">
             <CompanyOpportunitiesToday
               rows={opportunitiesRows}
-              loading={opportunitiesLoading}
+              loading={companyTodayLoading}
               locale={locale}
             />
           </MonitoringErrorBoundary>
@@ -774,7 +739,7 @@ function OwnerSummaryContent() {
           <MonitoringErrorBoundary componentName="Watchlist">
             <CompanyWatchlistToday
               rows={watchlistRows}
-              loading={watchlistLoading}
+              loading={companyTodayLoading}
               locale={locale}
             />
           </MonitoringErrorBoundary>

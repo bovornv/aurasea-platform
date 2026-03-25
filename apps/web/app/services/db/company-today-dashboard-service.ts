@@ -39,6 +39,151 @@ function dashboardKey(organizationId: string | null, branchIds: string[]): strin
   return `${organizationId ?? 'none'}::${[...branchIds].sort().join(',')}`;
 }
 
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v != null && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+}
+
+function asRecordArray(v: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((x): x is Record<string, unknown> => x != null && typeof x === 'object');
+}
+
+function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v != null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+
+function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const k of keys) {
+    const v = r[k];
+    if (typeof v === 'number' && isFinite(v) && !isNaN(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '') {
+      const n = Number(v.replace(/,/g, ''));
+      if (!isNaN(n) && isFinite(n)) return n;
+    }
+  }
+  return null;
+}
+
+async function fetchCompanyPanelsFromDashboardView(
+  organizationId: string,
+  prioritiesLimit: number,
+  panelLimit: number
+): Promise<{
+  priorities: TodayPrioritiesRow[];
+  whatsWorking: WhatsWorkingTodayRow[];
+  opportunities: OpportunitiesTodayRow[];
+  watchlist: WatchlistTodayRow[];
+  dataConfidence: CompanyDataConfidenceRow | null;
+} | null> {
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.today_company_dashboard)) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('today_company_dashboard')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+
+  if (error) {
+    if (isPostgrestObjectMissingError(error)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.today_company_dashboard);
+      return null;
+    }
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[today_company_dashboard]', error.message);
+    }
+    return null;
+  }
+
+  const root = asRecord(data);
+  if (!root) {
+    return {
+      priorities: [],
+      whatsWorking: [],
+      opportunities: [],
+      watchlist: [],
+      dataConfidence: null,
+    };
+  }
+
+  const priorities = asRecordArray(root.priorities)
+    .slice(0, Math.max(1, Math.min(5, prioritiesLimit)))
+    .map((r): TodayPrioritiesRow => ({
+      branch_id: pickStr(r, 'branch_id', 'branchId'),
+      business_type: pickStr(r, 'business_type', 'businessType') || null,
+      organization_id: organizationId,
+      branch_name: pickStr(r, 'branch_name', 'branchName') || null,
+      alert_type: pickStr(r, 'alert_type', 'alertType') || null,
+      title: pickStr(r, 'title') || null,
+      description: pickStr(r, 'description') || null,
+      action_text: pickStr(r, 'description', 'action_text', 'actionText') || null,
+      short_title: pickStr(r, 'title', 'short_title', 'shortTitle') || null,
+      impact_estimate_thb: pickNum(r, 'impact_estimate_thb', 'impact_thb'),
+      impact_thb: pickNum(r, 'impact_thb', 'impact_estimate_thb'),
+      impact_label: pickStr(r, 'impact_label', 'impactLabel') || null,
+      reason_short: pickStr(r, 'reason_short', 'reasonShort', 'cause') || null,
+      sort_score: pickNum(r, 'sort_score', 'priority_score'),
+      rank: pickNum(r, 'rank'),
+      priority_segment: pickStr(r, 'priority_segment', 'prioritySegment') || null,
+    }));
+
+  const whatsWorking = asRecordArray(root.whats_working)
+    .slice(0, Math.max(1, Math.min(10, panelLimit)))
+    .map((r): WhatsWorkingTodayRow => ({
+      organization_id: organizationId,
+      branch_id: pickStr(r, 'branch_id', 'branchId'),
+      branch_name: null,
+      metric_date: pickStr(r, 'metric_date') || null,
+      title: pickStr(r, 'title') || null,
+      description: pickStr(r, 'description') || null,
+      highlight_text: pickStr(r, 'highlight_text', 'highlightText', 'title', 'description') || null,
+      sort_score: pickNum(r, 'sort_score'),
+    }));
+
+  const opportunities = asRecordArray(root.opportunities)
+    .slice(0, Math.max(1, Math.min(10, panelLimit)))
+    .map((r): OpportunitiesTodayRow => ({
+      organization_id: organizationId,
+      branch_id: pickStr(r, 'branch_id', 'branchId'),
+      branch_name: null,
+      metric_date: pickStr(r, 'metric_date') || null,
+      title: pickStr(r, 'title') || null,
+      description: pickStr(r, 'description') || null,
+      opportunity_text: pickStr(r, 'opportunity_text', 'opportunityText', 'title', 'description') || null,
+      sort_score: pickNum(r, 'sort_score'),
+    }));
+
+  const watchlist = asRecordArray(root.watchlist)
+    .slice(0, Math.max(1, Math.min(3, panelLimit)))
+    .map((r): WatchlistTodayRow => ({
+      organization_id: organizationId,
+      branch_id: pickStr(r, 'branch_id', 'branchId'),
+      branch_name: null,
+      metric_date: pickStr(r, 'metric_date') || null,
+      title: pickStr(r, 'title') || null,
+      description: pickStr(r, 'description') || null,
+      warning_text: pickStr(r, 'warning_text', 'warningText', 'title', 'description') || null,
+      sort_score: pickNum(r, 'sort_score'),
+    }));
+
+  const confidenceRaw = asRecord(root.confidence);
+  const dataConfidence: CompanyDataConfidenceRow | null = confidenceRaw
+    ? {
+        organization_id: pickStr(confidenceRaw, 'organization_id') || organizationId,
+        data_days: Math.max(0, Math.round(pickNum(confidenceRaw, 'data_days') ?? 0)),
+        max_days: Math.max(1, Math.round(pickNum(confidenceRaw, 'max_days') ?? 30)),
+        confidence_level: pickStr(confidenceRaw, 'confidence_level') || 'Low',
+      }
+    : null;
+
+  return { priorities, whatsWorking, opportunities, watchlist, dataConfidence };
+}
+
 /**
  * One parallel batch: company bundle (business + critical + alerts_today) + org-scoped panels + data confidence.
  */
@@ -55,23 +200,40 @@ export async function fetchCompanyTodayDashboard(
     const prioLim = options?.prioritiesLimit ?? 5;
     const panelLim = options?.panelLimit ?? 3;
     const orgId = organizationId?.trim() ?? null;
+    const bundlePromise = fetchCompanyTodayBundle(orgId, branchIds);
 
-    const [bundle, priorities, whatsWorking, opportunities, watchlist, dataConfidence] = await Promise.all([
-      fetchCompanyTodayBundle(orgId, branchIds),
-      orgId ? fetchCompanyTodayPriorities(orgId, prioLim) : Promise.resolve([]),
-      orgId ? fetchWhatsWorkingToday(orgId, panelLim) : Promise.resolve([]),
-      orgId ? fetchOpportunitiesToday(orgId, panelLim) : Promise.resolve([]),
-      orgId ? fetchWatchlistToday(orgId, panelLim) : Promise.resolve([]),
-      orgId ? fetchCompanyDataConfidence(orgId) : Promise.resolve(null),
-    ]);
+    const panelsPromise = (async () => {
+      if (!orgId) {
+        return {
+          priorities: [] as TodayPrioritiesRow[],
+          whatsWorking: [] as WhatsWorkingTodayRow[],
+          opportunities: [] as OpportunitiesTodayRow[],
+          watchlist: [] as WatchlistTodayRow[],
+          dataConfidence: null as CompanyDataConfidenceRow | null,
+        };
+      }
+      const fromDashboard = await fetchCompanyPanelsFromDashboardView(orgId, prioLim, panelLim);
+      if (fromDashboard) return fromDashboard;
+      // Fallback path until `today_company_dashboard` is deployed.
+      const [priorities, whatsWorking, opportunities, watchlist, dataConfidence] = await Promise.all([
+        fetchCompanyTodayPriorities(orgId, prioLim),
+        fetchWhatsWorkingToday(orgId, panelLim),
+        fetchOpportunitiesToday(orgId, panelLim),
+        fetchWatchlistToday(orgId, panelLim),
+        fetchCompanyDataConfidence(orgId),
+      ]);
+      return { priorities, whatsWorking, opportunities, watchlist, dataConfidence };
+    })();
+
+    const [bundle, panels] = await Promise.all([bundlePromise, panelsPromise]);
 
     return {
       bundle,
-      priorities,
-      whatsWorking,
-      opportunities,
-      watchlist,
-      dataConfidence,
+      priorities: panels.priorities,
+      whatsWorking: panels.whatsWorking,
+      opportunities: panels.opportunities,
+      watchlist: panels.watchlist,
+      dataConfidence: panels.dataConfidence,
     };
   })().finally(() => {
     dashboardInFlight.delete(key);
