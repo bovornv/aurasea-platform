@@ -81,7 +81,6 @@ function healthColor(score: number | null | undefined): React.CSSProperties {
 
 export interface BranchTodaySummaryAccommodation {
   occupancyRate: number | null;
-  occupancyDeltaPct: number | null;
   roomsSold: number | null;
   totalRooms: number | null;
   revenue: number | null;
@@ -135,7 +134,6 @@ export function BranchTodaySummary({
 }: BranchTodaySummaryProps) {
   const isTh = loc === 'th';
   const vsYesterday = isTh ? 'เทียบเมื่อวาน' : 'vs yesterday';
-  const vsLastWeek = isTh ? 'เทียบสัปดาห์ก่อน' : 'vs last week';
   const labelOccupancy = isTh ? 'อัตราการเข้าพัก' : 'Occupancy';
   const labelRooms = isTh ? 'ห้อง' : 'Rooms';
   const labelRevenue = isTh ? 'รายได้' : 'Revenue';
@@ -172,7 +170,6 @@ export function BranchTodaySummary({
   if (branchType === 'accommodation' && accommodation) {
     const a = accommodation;
     const occ = a.occupancyRate != null ? Math.round(a.occupancyRate) : null;
-    const occDelta = a.occupancyDeltaPct;
     const roomsStr =
       a.roomsSold != null && a.totalRooms != null
         ? `${a.roomsSold}/${a.totalRooms}`
@@ -203,11 +200,6 @@ export function BranchTodaySummary({
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelOccupancy}</span>
               <span style={valueStyle}>{occ != null ? `${occ}%` : '—'}</span>
-              {occDelta != null && Number.isFinite(occDelta) && (
-                <span style={occDelta >= 0 ? deltaPos : deltaNeg}>
-                  {' '}({occDelta >= 0 ? '+' : ''}{occDelta.toFixed(0)}% {vsLastWeek})
-                </span>
-              )}
             </span>
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>

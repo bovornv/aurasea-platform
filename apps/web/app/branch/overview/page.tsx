@@ -46,6 +46,7 @@ import {
   getTodaySummary,
   getBranchTrendSeriesWithFallback,
   getAccommodationTodayMetricsUi,
+  ACCOMMODATION_UI_HEALTH_FALLBACK,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
   type TodaySummaryRow,
@@ -112,7 +113,7 @@ export default function BranchOverviewPage() {
   const [accommodationEarlySignal, setAccommodationEarlySignal] = useState<string | null>(null);
   // Learning: branch_learning_status.learning_days (distinct dates ∪ acc + fnb)
   const [learningStatus, setLearningStatus] = useState<BranchLearningStatusRow | null>(null);
-  // Today summary view (date-based joins): revenue_delta_day, occupancy_delta_week for Latest Performance
+  // Today summary view: revenue_delta_day for fallback revenue delta (no occupancy WoW in UI)
   const [todaySummaryRow, setTodaySummaryRow] = useState<TodaySummaryRow | null>(null);
   // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
   const [freshnessDatesFromRaw, setFreshnessDatesFromRaw] = useState<string[]>([]);
@@ -1049,7 +1050,7 @@ export default function BranchOverviewPage() {
     });
   }, [branch?.moduleType, dailyMetricsForTrends, fnbOperatingStatus?.metric_date, latestDailyMetric?.date, locale]);
 
-  // Today summary for compact one-line (accommodation: vs last week same weekday; F&B: vs yesterday)
+  // Today summary for compact one-line (accommodation: revenue vs yesterday; no occupancy WoW; F&B: vs yesterday)
   const todaySummary = useMemo(() => {
     const isFnb = branch?.moduleType === 'fnb';
     const isAccommodation = branch?.moduleType === 'accommodation';
@@ -1068,9 +1069,8 @@ export default function BranchOverviewPage() {
       if (key) metricsByDate.set(key, m);
     });
     const datesDesc = [...metricsByDate.keys()].sort((a, b) => b.localeCompare(a));
-    // Use the latest date that exists in the feed so prev-day/prev-week lookups always hit the map (fixes invisible deltas)
+    // Use the latest date that exists in the feed so prev-day lookups always hit the map (fixes invisible deltas)
     const referenceDate = datesDesc[0] ?? latestDate ?? null;
-    const prevWeekDate = referenceDate && isAccommodation ? addDays(referenceDate, -7) : null;
     const prevDayDate = referenceDate ? addDays(referenceDate, -1) : null;
     // F&B: previous day metric (with fallback so delta can show)
     const prevMetric =
@@ -1087,15 +1087,6 @@ export default function BranchOverviewPage() {
         ? metricsByDate.get(prevDayDate) ??
           (() => {
             const fallback = datesDesc.find((d) => d < referenceDate);
-            return fallback ? metricsByDate.get(fallback) ?? null : null;
-          })()
-        : null;
-    // Previous-week metric for occupancy: exact same-weekday first, else closest date <= prevWeekDate (so occupancy delta shows with 8+ days)
-    const prevMetricWeek =
-      isAccommodation && prevWeekDate
-        ? metricsByDate.get(prevWeekDate) ??
-          (() => {
-            const fallback = datesDesc.find((d) => d <= prevWeekDate);
             return fallback ? metricsByDate.get(fallback) ?? null : null;
           })()
         : null;
@@ -1124,11 +1115,10 @@ export default function BranchOverviewPage() {
         const healthForSummary =
           ui!.health_score != null && Number.isFinite(Number(ui!.health_score))
             ? Number(ui!.health_score)
-            : null;
+            : ACCOMMODATION_UI_HEALTH_FALLBACK;
         return {
           accommodation: {
             occupancyRate: occ,
-            occupancyDeltaPct: null,
             roomsSold,
             totalRooms,
             revenue: rev,
@@ -1150,12 +1140,6 @@ export default function BranchOverviewPage() {
           : totalRooms != null && totalRooms > 0 && roomsSold != null
             ? (roomsSold / totalRooms) * 100
             : null;
-      const prevRooms = prevMetricWeek?.roomsSold ?? null;
-      const prevTotal = prevMetricWeek?.roomsAvailable ?? totalRooms;
-      const prevOcc =
-        prevTotal != null && prevTotal > 0
-          ? ((prevRooms ?? 0) / prevTotal) * 100
-          : null;
       const prevRevDay = prevDayMetricExact?.revenue ?? null;
       const revenueDeltaPctDay =
         todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
@@ -1163,19 +1147,13 @@ export default function BranchOverviewPage() {
           : rev != null && prevRevDay != null && prevRevDay > 0
             ? ((rev - prevRevDay) / prevRevDay) * 100
             : null;
-      const occupancyDeltaPct =
-        todaySummaryRow?.occupancy_delta_week != null && Number.isFinite(todaySummaryRow.occupancy_delta_week)
-          ? todaySummaryRow.occupancy_delta_week
-          : occ != null && prevOcc != null && prevOcc > 0
-            ? ((occ - prevOcc) / prevOcc) * 100
-            : null;
       const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
       const revpar = totalRooms != null && totalRooms > 0 && rev != null ? rev / totalRooms : null;
-      const healthForSummary = healthScore ?? todaySummaryRow?.health_score ?? null;
+      const healthForSummary =
+        healthScore ?? todaySummaryRow?.health_score ?? ACCOMMODATION_UI_HEALTH_FALLBACK;
       return {
         accommodation: {
           occupancyRate: occ,
-          occupancyDeltaPct,
           roomsSold: roomsSold ?? null,
           totalRooms: totalRooms ?? null,
           revenue: rev,

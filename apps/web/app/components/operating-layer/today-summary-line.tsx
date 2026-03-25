@@ -3,7 +3,7 @@
 /**
  * Compact single-line operational summary for Today page.
  * Replaces the Business Health Score, Today's Revenue, Rooms, Early Signal, Confidence cards.
- * - Accommodation: Occupancy X% (delta vs last week) | Rooms X/total | Revenue ฿X (delta) | ADR ฿X | RevPAR ฿X | Health X {icon}
+ * - Accommodation: Occupancy X% | Rooms X/total | Revenue ฿X (delta vs yesterday) | ADR ฿X | RevPAR ฿X | Health X {icon}
  * - F&B: Revenue ฿X (delta vs yesterday) | Customers X (delta) | Avg Ticket ฿X | Health X {icon}
  * No cards, borders, or shadows. Delta: positive = green, negative = red. Health last with icon.
  */
@@ -19,7 +19,6 @@ const deltaNegative: React.CSSProperties = { color: '#dc2626', fontSize: '12px' 
 
 export interface TodaySummaryAccommodation {
   occupancyRate: number | null;
-  occupancyDeltaPct: number | null;
   roomsSold: number | null;
   totalRooms: number | null;
   revenue: number | null;
@@ -72,18 +71,13 @@ export function TodaySummaryLine({
     const revpar = a.revpar != null ? `฿${formatCurrency(a.revpar)}` : '—';
     const health = a.healthScore != null ? Math.round(a.healthScore) : '—';
     const healthIcon = getHealthIcon(a.healthScore);
-    const vsLabel = loc === 'th' ? 'เทียบสัปดาห์ก่อน' : 'vs last week';
+    const vsYesterday = loc === 'th' ? 'เทียบเมื่อวาน' : 'vs yesterday';
 
     return (
       <div style={wrapStyle}>
         <span style={segmentGap}>
           <span style={labelStyle}>Occupancy</span>
           <span style={valueStyle}>{occ != null ? `${occ}%` : collectingLabel}</span>
-          {a.occupancyDeltaPct != null && Number.isFinite(a.occupancyDeltaPct) && (
-            <span style={a.occupancyDeltaPct >= 0 ? deltaPositive : deltaNegative}>
-              {' '}({a.occupancyDeltaPct >= 0 ? '+' : ''}{a.occupancyDeltaPct.toFixed(1)}% {vsLabel})
-            </span>
-          )}
         </span>
         <span style={segmentGap}>
           <span style={labelStyle}>Rooms</span>
@@ -94,7 +88,7 @@ export function TodaySummaryLine({
           <span style={valueStyle}>{rev}</span>
           {a.revenueDeltaPct != null && Number.isFinite(a.revenueDeltaPct) && (
             <span style={a.revenueDeltaPct >= 0 ? deltaPositive : deltaNegative}>
-              {' '}({a.revenueDeltaPct >= 0 ? '+' : ''}{a.revenueDeltaPct.toFixed(1)}% {vsLabel})
+              {' '}({a.revenueDeltaPct >= 0 ? '+' : ''}{a.revenueDeltaPct.toFixed(1)}% {vsYesterday})
             </span>
           )}
         </span>

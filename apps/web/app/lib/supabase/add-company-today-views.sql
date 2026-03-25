@@ -12,6 +12,9 @@
 -- branch_performance_signal → branch_business_status). Requires accommodation_profitability_signal,
 -- fnb_profitability_signal, today_summary_clean (via branch_business_status), branches.
 --
+-- **Branch Today top bar (accommodation):** `add-accommodation-today-metrics-ui-view.sql` creates
+-- `accommodation_today_metrics_ui` (COALESCE health_score to 50; branch_id join via ::text to today_summary_clean).
+--
 -- Unified alerts pipeline (recommended): run the **entire** rebuild-alerts-enriched-engine.sql script
 -- (not bare view names). Uses branch_business_status (backed by today_summary_clean + signals).
 --   alerts_enriched → alerts_today → branch_alerts_today (alias), alerts_critical, alerts_top3_revenue_leaks, alerts_fix_this_first
