@@ -52,7 +52,7 @@ export async function fetchCompanyTodayDashboard(
   if (existing) return existing;
 
   const p = (async () => {
-    const prioLim = options?.prioritiesLimit ?? 3;
+    const prioLim = options?.prioritiesLimit ?? 5;
     const panelLim = options?.panelLimit ?? 3;
     const orgId = organizationId?.trim() ?? null;
 

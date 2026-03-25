@@ -11,7 +11,7 @@
 
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { PageLayout } from '../../components/page-layout';
 import { useOrgBranchPaths } from '../../hooks/use-org-branch-paths';
@@ -96,6 +96,9 @@ function OwnerSummaryContent() {
   const [dataConfidenceRow, setDataConfidenceRow] = useState<CompanyDataConfidenceRow | null>(null);
   const [dataConfidenceLoading, setDataConfidenceLoading] = useState(false);
 
+  /** After first successful load for this key, avoid flipping panel loaders on refreshTrigger-only updates. */
+  const companyDashboardHydratedKeyRef = useRef<string>('');
+
   // PART 1: System validation (development only) - Uses singleton pattern to prevent multiple instances
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 120000 });
 
@@ -120,7 +123,7 @@ function OwnerSummaryContent() {
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [healthScoreLoading, alertsLoading, groupHealthScore, rawAlerts, companyTodayBundle]);
+  }, [healthScoreLoading, alertsLoading, groupHealthScore, rawAlerts]);
 
   // Listen for branch/organization/metrics changes to reload data
   useEffect(() => {
@@ -183,17 +186,28 @@ function OwnerSummaryContent() {
     ? (currentBranch?.branchName || setup.businessName || businessGroup?.name || t('hospitality.dashboard.title'))
     : 'Organization';
 
+  // Do NOT depend on getBusinessGroup() object identity — it returns a new object every render (JSON parse).
   const groupBranchIds = useMemo(() => {
-    if (!mounted || !businessGroup) return [];
+    if (!mounted || typeof window === 'undefined') return [];
+    const bg = businessGroupService.getBusinessGroup();
+    if (!bg?.id) return [];
     return businessGroupService
       .getAllBranches()
-      .filter((b) => b.businessGroupId === businessGroup.id)
+      .filter((b) => b.businessGroupId === bg.id)
       .map((b) => b.id);
-  }, [mounted, businessGroup, refreshTrigger]);
+  }, [mounted, refreshTrigger, activeOrganizationId, permissions.organizationId]);
+
+  const organizationIdForData = (
+    activeOrganizationId ??
+    permissions.organizationId ??
+    ''
+  ).trim();
+
+  const branchIdsKey = useMemo(() => [...groupBranchIds].sort().join(','), [groupBranchIds]);
 
   useEffect(() => {
     if (!mounted) return;
-    const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
+    const orgId = organizationIdForData || null;
     if (!orgId) {
       setAiDailySummaryText(null);
       setAiDailySummaryLoading(false);
@@ -219,12 +233,13 @@ function OwnerSummaryContent() {
     return () => {
       cancelled = true;
     };
-  }, [mounted, activeOrganizationId, permissions.organizationId, refreshTrigger]);
+  }, [mounted, organizationIdForData, refreshTrigger]);
 
   useEffect(() => {
     if (!mounted) return;
-    const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
-    if (!orgId?.trim()) {
+
+    if (!organizationIdForData) {
+      companyDashboardHydratedKeyRef.current = '';
       setCompanyTodayBundle(null);
       setCompanyTodayLoading(false);
       setPrioritiesRows([]);
@@ -239,18 +254,31 @@ function OwnerSummaryContent() {
       setDataConfidenceLoading(false);
       return;
     }
+
+    if (companyDashboardInFlightRef.current) return;
+
+    const dashboardKey = `${organizationIdForData}::${branchIdsKey}::${refreshTrigger}`;
+    const showLoaders = companyDashboardHydratedKeyRef.current !== dashboardKey;
+
     let cancelled = false;
     const DASHBOARD_TIMEOUT_MS = 28000;
-    setCompanyTodayLoading(true);
-    setPrioritiesLoading(true);
-    setWhatsWorkingLoading(true);
-    setOpportunitiesLoading(true);
-    setWatchlistLoading(true);
-    setDataConfidenceLoading(true);
+
+    if (showLoaders) {
+      setCompanyTodayLoading(true);
+      setPrioritiesLoading(true);
+      setWhatsWorkingLoading(true);
+      setOpportunitiesLoading(true);
+      setWatchlistLoading(true);
+      setDataConfidenceLoading(true);
+    }
+
     (async () => {
       try {
         const dash = await Promise.race([
-          fetchCompanyTodayDashboard(orgId, groupBranchIds, { prioritiesLimit: 5, panelLimit: 3 }),
+          fetchCompanyTodayDashboard(organizationIdForData, groupBranchIds, {
+            prioritiesLimit: 5,
+            panelLimit: 3,
+          }),
           new Promise<Awaited<ReturnType<typeof fetchCompanyTodayDashboard>>>((resolve) =>
             setTimeout(
               () =>
@@ -273,6 +301,7 @@ function OwnerSummaryContent() {
           setOpportunitiesRows(dash.opportunities);
           setWatchlistRows(dash.watchlist);
           setDataConfidenceRow(dash.dataConfidence);
+          companyDashboardHydratedKeyRef.current = dashboardKey;
         }
       } catch {
         if (!cancelled) {
@@ -282,6 +311,7 @@ function OwnerSummaryContent() {
           setOpportunitiesRows([]);
           setWatchlistRows([]);
           setDataConfidenceRow(null);
+          companyDashboardHydratedKeyRef.current = '';
         }
       } finally {
         if (!cancelled) {
@@ -294,15 +324,15 @@ function OwnerSummaryContent() {
         }
       }
     })();
+
     return () => {
       cancelled = true;
     };
-  }, [mounted, groupBranchIds, refreshTrigger, activeOrganizationId, permissions.organizationId]);
+  }, [mounted, organizationIdForData, branchIdsKey, refreshTrigger]);
 
   useEffect(() => {
     if (!mounted) return;
-    const orgId = activeOrganizationId ?? permissions.organizationId ?? null;
-    if (!orgId?.trim()) {
+    if (!organizationIdForData) {
       setTrendsSummaryRow(null);
       setTrendsSummaryLoading(false);
       return;
@@ -311,7 +341,7 @@ function OwnerSummaryContent() {
     setTrendsSummaryLoading(true);
     (async () => {
       const r = await Promise.race([
-        fetchCompanyTrendsSummary(orgId),
+        fetchCompanyTrendsSummary(organizationIdForData),
         new Promise<CompanyTrendsSummaryRow | null>((resolve) =>
           setTimeout(() => resolve(null), 14000)
         ),
@@ -324,34 +354,41 @@ function OwnerSummaryContent() {
     return () => {
       cancelled = true;
     };
-  }, [mounted, activeOrganizationId, permissions.organizationId, refreshTrigger]);
+  }, [mounted, organizationIdForData, refreshTrigger]);
+
+  // Stable id only — do not depend on getBusinessGroup() object identity (new object each render).
+  const businessGroupIdForScores = useMemo(() => {
+    if (!mounted || typeof window === 'undefined') return null;
+    return businessGroupService.getBusinessGroup()?.id ?? null;
+  }, [mounted, refreshTrigger, activeOrganizationId, permissions.organizationId]);
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   // Get branch scores sorted by lowest health score first
   // STEP 1: Recalculates on: metrics update, branch change, testMode change, simulation change
   const branchScores = useMemo(() => {
-    if (!mounted || !businessGroup || !rawAlerts) return [];
-    
+    if (!mounted || !businessGroupIdForScores || !rawAlerts) return [];
+
     const roleForScores: 'owner' | 'manager' | 'branch' =
       permissions.role === 'owner' || permissions.role === 'admin' ? 'owner'
       : permissions.role === 'manager' ? 'manager'
       : 'branch';
-    const scores = getBranchHealthScores(rawAlerts, businessGroup.id, {
+    const scores = getBranchHealthScores(rawAlerts, businessGroupIdForScores, {
       role: roleForScores,
       organizationId: permissions.organizationId,
       branchIds: permissions.branchIds,
     });
-    
+
     // Sort by lowest health score first
     return scores.sort((a, b) => a.healthScore - b.healthScore);
   }, [
-    rawAlerts, 
-    businessGroup, 
-    permissions, 
-    mounted, 
-    refreshTrigger, 
+    rawAlerts,
+    businessGroupIdForScores,
+    permissions.role,
+    permissions.organizationId,
+    permissions.branchIds,
+    mounted,
+    refreshTrigger,
     testMode.version,
-    // STEP 1: Add simulation dependencies to force recalculation
     testMode.simulationType,
     testMode.simulationScenario,
   ]);
@@ -428,7 +465,6 @@ function OwnerSummaryContent() {
       console.log('[OwnerSummary] Loading states:', {
         healthScoreLoading,
         alertsLoading,
-        loading,
         groupHealthScore: !!groupHealthScore,
         groupHealthScoreValue: groupHealthScore?.healthScore,
         alertsCount: alerts.length,
@@ -437,7 +473,7 @@ function OwnerSummaryContent() {
         branchScoresCount: branchScores.length,
       });
     }
-  }, [healthScoreLoading, alertsLoading, loading, groupHealthScore, alerts, safeRawAlerts, businessGroup, branchScores]);
+  }, [healthScoreLoading, alertsLoading, groupHealthScore, alerts, safeRawAlerts, businessGroup?.id, branchScores.length]);
 
   // NOW we can do conditional returns AFTER all hooks
   // Show consistent loading state until mounted (prevents hydration mismatch)
