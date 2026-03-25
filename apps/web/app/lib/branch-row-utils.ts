@@ -14,10 +14,33 @@ export function pickBranchDisplayName(row: Record<string, unknown>): string {
 /**
  * UI / routing module bucket from branches.module_type. Undefined if column missing or unknown — do not use for access gates.
  */
+const ACCOMMODATION_MODULE_TYPES = new Set([
+  'accommodation',
+  'hotel',
+  'hotel_resort',
+  'rooms',
+  'hotel_with_cafe',
+  'resort',
+  'boutique_hotel',
+  'hostel',
+  'villa',
+  'lodging',
+  'guesthouse',
+  'guest_house',
+  'apartment',
+  'serviced_apartment',
+  'motel',
+  'inn',
+  'property',
+]);
+
+const FNB_MODULE_TYPES = new Set(['fnb', 'restaurant', 'cafe', 'cafe_restaurant']);
+
 export function pickBranchModuleType(row: Record<string, unknown>): Branch['moduleType'] {
-  const mt = String(row.module_type ?? '').toLowerCase();
-  if (['accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'].includes(mt)) return 'accommodation';
-  if (['fnb', 'restaurant', 'cafe', 'cafe_restaurant'].includes(mt)) return 'fnb';
+  const mt = String(row.module_type ?? '').toLowerCase().trim();
+  if (!mt) return undefined;
+  if (ACCOMMODATION_MODULE_TYPES.has(mt)) return 'accommodation';
+  if (FNB_MODULE_TYPES.has(mt)) return 'fnb';
   return undefined;
 }
 

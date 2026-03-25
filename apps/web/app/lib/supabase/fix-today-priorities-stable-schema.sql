@@ -68,7 +68,7 @@ WITH base AS (
     END AS business_type
   FROM public.today_summary_clean t
   CROSS JOIN LATERAL (SELECT to_jsonb(t) AS jb) jb
-  LEFT JOIN public.branches b ON b.id::uuid = t.branch_id::uuid
+  LEFT JOIN public.branches b ON trim(both FROM b.id::text) = trim(both FROM t.branch_id::text)
   WHERE t.branch_id IS NOT NULL
 ),
 signals AS (
@@ -87,12 +87,12 @@ signals AS (
     COALESCE(
       NULLIF(TRIM(BOTH FROM j->>'total_revenue'), '')::numeric,
       NULLIF(TRIM(BOTH FROM j->>'revenue'), '')::numeric,
+      NULLIF(TRIM(BOTH FROM j->>'accommodation_revenue'), '')::numeric,
       NULLIF(TRIM(BOTH FROM j->>'total_revenue_thb'), '')::numeric,
       NULLIF(TRIM(BOTH FROM j->>'revenue_thb'), '')::numeric,
       0::numeric
     ) AS revenue_thb
   FROM base
-  WHERE organization_id IS NOT NULL
 ),
 raw AS (
   SELECT

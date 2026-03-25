@@ -71,6 +71,7 @@ import { getHealthScoreFromAccommodationHealthToday } from '../../services/db/he
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import {
   fetchTodayBranchPriorities,
+  resolveBusinessTypeForPriorities,
   type TodayBranchPriorityRow,
 } from '../../services/db/today-branch-priorities-service';
 import { normalizeWhatsWorkingTitle } from '../../services/db/whats-working-today-service';
@@ -443,7 +444,12 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw(dates);
       setFreshnessLoaded(true);
     });
-    fetchTodayBranchPriorities(branch.id, branch.moduleType, 4, locale === 'th' ? 'th' : 'en')
+    fetchTodayBranchPriorities(
+      branch.id,
+      resolveBusinessTypeForPriorities(branch.moduleType, branch.modules),
+      4,
+      locale === 'th' ? 'th' : 'en'
+    )
       .then((rows) => {
         setBranchPriorities(rows);
         setBranchPrioritiesLoading(false);

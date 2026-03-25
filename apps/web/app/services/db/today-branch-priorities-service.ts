@@ -3,6 +3,7 @@
  * GET /rest/v1/today_priorities_view?branch_id=eq.{id}&business_type=eq.{type}
  *   &order=sort_score.desc&limit=4
  */
+import { ModuleType } from '../../models/business-group';
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
   isPostgrestObjectMissingError,
@@ -10,6 +11,20 @@ import {
   markPostgrestResourceMissing,
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
+
+/**
+ * Must match SQL today_priorities_ranked.business_type (non-F&B branches → accommodation).
+ * When module_type is missing/unknown in UI, prefer accommodation so PostgREST filter matches the view.
+ */
+export function resolveBusinessTypeForPriorities(
+  moduleType: 'accommodation' | 'fnb' | undefined,
+  modules?: ModuleType[]
+): 'accommodation' | 'fnb' {
+  if (moduleType === 'fnb' || moduleType === 'accommodation') return moduleType;
+  if (modules?.includes(ModuleType.ACCOMMODATION)) return 'accommodation';
+  if (modules?.includes(ModuleType.FNB)) return 'fnb';
+  return 'accommodation';
+}
 
 export interface TodayBranchPriorityRow {
   branch_id: string;
@@ -70,7 +85,8 @@ export async function fetchTodayBranchPriorities(
   limit: number = 4,
   locale: 'en' | 'th' = 'en'
 ): Promise<TodayBranchPriorityRow[]> {
-  if (!branchId?.trim() || !businessType || !isSupabaseAvailable()) return [];
+  if (!branchId?.trim() || !isSupabaseAvailable()) return [];
+  const bt = businessType === 'fnb' || businessType === 'accommodation' ? businessType : 'accommodation';
   if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.today_priorities_view)) {
     return [];
   }
@@ -82,7 +98,7 @@ export async function fetchTodayBranchPriorities(
     .from('today_priorities_view')
     .select('*')
     .eq('branch_id', branchId.trim())
-    .eq('business_type', businessType)
+    .eq('business_type', bt)
     .order('sort_score', { ascending: false })
     .limit(cap);
 
