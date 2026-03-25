@@ -41,8 +41,10 @@
 -- 4b) alerts_fix_this_first (Company Today — Fix This First; add-alerts-fix-this-first-view.sql or rebuild-alerts-enriched-engine.sql)
 --    branch_id, organization_id, branch_name, alert_type, severity, impact_estimate_thb, cause, recommended_action, priority_score
 --
--- 4c) today_priorities / today_priorities_clean — add-today-priorities-view.sql or rebuild-alerts-enriched-engine.sql
---     400 on API: run fix-today-priorities-clean-400.sql (organization_id, sort_score, rank; order rank.asc).
+-- 4c) today_priorities / today_priorities_clean / today_priorities_view —
+--     Prefer fix-today-priorities-stable-schema.sql (alert_type-driven title/description/sort_score; no action_text/impact columns required).
+--     Legacy: add-today-priorities-view.sql or rebuild-alerts-enriched-engine.sql
+--     400 on API: fix-today-priorities-clean-400.sql (superseded by stable schema when possible).
 --     today_priorities_view keeps legacy column order and appends business_type at the end.
 --
 -- 4d) whats_working_today — add-whats-working-today-view.sql or rebuild-alerts-enriched-engine.sql

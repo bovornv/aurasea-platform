@@ -46,12 +46,30 @@ WITH ts AS (
     SELECT
         t.branch_id::text AS branch_id,
         t.metric_date::date AS metric_date,
-        COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
-        COALESCE(t.accommodation_revenue, t.total_revenue, 0)::numeric AS accommodation_revenue,
-        COALESCE(t.fnb_revenue, 0)::numeric AS fnb_revenue,
-        t.revenue_delta_day::numeric AS revenue_delta_day,
-        t.occupancy_delta_week::numeric AS occupancy_delta_week,
-        COALESCE(t.customers, 0)::numeric AS customers,
+        COALESCE(
+            NULLIF(TRIM(j.jb->>'total_revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'total_revenue_thb'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'revenue_thb'), '')::numeric,
+            0::numeric
+        ) AS total_revenue,
+        COALESCE(
+            NULLIF(TRIM(j.jb->>'accommodation_revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'accommodation_revenue_thb'), '')::numeric,
+            NULL::numeric
+        ) AS accommodation_revenue,
+        COALESCE(
+            NULLIF(TRIM(j.jb->>'fnb_revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'fnb_revenue_thb'), '')::numeric,
+            NULL::numeric
+        ) AS fnb_revenue,
+        NULLIF(TRIM(j.jb->>'revenue_delta_day'), '')::numeric AS revenue_delta_day,
+        NULLIF(TRIM(j.jb->>'occupancy_delta_week'), '')::numeric AS occupancy_delta_week,
+        COALESCE(
+            NULLIF(TRIM(j.jb->>'customers'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'total_customers'), '')::numeric,
+            0::numeric
+        ) AS customers,
         b.organization_id,
         COALESCE(b.branch_name, b.name) AS branch_name,
         CASE
@@ -64,6 +82,7 @@ WITH ts AS (
             ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
         END AS branch_type
     FROM today_summary_clean t
+    CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
     LEFT JOIN branches b
         ON b.id::text = t.branch_id::text
 ),
@@ -638,9 +657,15 @@ WITH base AS (
     SELECT
         t.branch_id::text AS branch_id,
         t.metric_date::date AS metric_date,
-        COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
-        t.revenue_delta_day::numeric AS revenue_delta_day,
-        t.occupancy_delta_week::numeric AS occupancy_delta_week,
+        COALESCE(
+            NULLIF(TRIM(j.jb->>'total_revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'total_revenue_thb'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'revenue_thb'), '')::numeric,
+            0::numeric
+        ) AS total_revenue,
+        NULLIF(TRIM(j.jb->>'revenue_delta_day'), '')::numeric AS revenue_delta_day,
+        NULLIF(TRIM(j.jb->>'occupancy_delta_week'), '')::numeric AS occupancy_delta_week,
         b.organization_id,
         COALESCE(b.branch_name, b.name) AS branch_name,
         CASE
@@ -653,6 +678,7 @@ WITH base AS (
             ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
         END AS branch_type
     FROM today_summary_clean t
+    CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
     LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
 ),
 latest AS (
@@ -911,12 +937,27 @@ WITH base AS (
     SELECT
         t.branch_id::text AS branch_id,
         t.metric_date::date AS metric_date,
-        COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
-        t.customers::numeric AS customers,
-        t.utilized::numeric AS rooms_sold,
+        COALESCE(
+            NULLIF(TRIM(j.jb->>'total_revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'total_revenue_thb'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'revenue_thb'), '')::numeric,
+            0::numeric
+        ) AS total_revenue,
+        COALESCE(
+            NULLIF(TRIM(j.jb->>'customers'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'total_customers'), '')::numeric,
+            0::numeric
+        ) AS customers,
+        COALESCE(
+            NULLIF(TRIM(j.jb->>'utilized'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'rooms_sold'), '')::numeric,
+            0::numeric
+        ) AS rooms_sold,
         b.organization_id,
         COALESCE(b.branch_name, b.name) AS branch_name
     FROM today_summary_clean t
+    CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
     LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
     WHERE b.organization_id IS NOT NULL
 ),

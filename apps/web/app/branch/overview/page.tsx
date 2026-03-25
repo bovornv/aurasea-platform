@@ -425,7 +425,7 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw(dates);
       setFreshnessLoaded(true);
     });
-    fetchTodayBranchPriorities(branch.id, branch.moduleType, 3)
+    fetchTodayBranchPriorities(branch.id, branch.moduleType, 3, locale === 'th' ? 'th' : 'en')
       .then((rows) => {
         setBranchPriorities(rows);
         setBranchPrioritiesLoading(false);
@@ -434,7 +434,7 @@ export default function BranchOverviewPage() {
         setBranchPriorities([]);
         setBranchPrioritiesLoading(false);
       });
-  }, [branch?.id, branch?.moduleType]);
+  }, [branch?.id, branch?.moduleType, locale]);
 
   useEffect(() => {
     if (!branch?.id) {
@@ -455,7 +455,6 @@ export default function BranchOverviewPage() {
       if (detail?.branchId === branch?.id) {
         refreshOperatingStatus();
         getBranchLearningStatus(branch.id).then(setLearningStatus);
-        fetchTodayBranchPriorities(branch.id, branch.moduleType, 3).then(setBranchPriorities);
         if (branch.moduleType === 'accommodation') {
           getAccommodationMonthlyFixedCostStatus(branch.id).then((s) => {
             setMonthlyFixedCostStatus({ hasValue: s.hasValue, dataDaysCount: s.dataDaysCount });
@@ -477,7 +476,7 @@ export default function BranchOverviewPage() {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('aurasea:metrics-saved', onMetricsSaved);
     };
-  }, [branch?.id, branch?.moduleType, refreshOperatingStatus]);
+  }, [branch?.id, branch?.moduleType, locale, refreshOperatingStatus]);
 
   useEffect(() => {
     if (!branch?.id) return;
@@ -1446,7 +1445,7 @@ export default function BranchOverviewPage() {
           </div>
         ) : null}
 
-        {/* 3. Today's Priorities (today_branch_priorities) */}
+        {/* 3. Today's Priorities (today_priorities_view by branch_id) */}
         <div
           style={{
             marginTop: learningStatus != null ? 0 : 24,
@@ -1471,9 +1470,16 @@ export default function BranchOverviewPage() {
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
               {branchPrioritiesTop.map((row, idx) => {
                 const rank = row.rank ?? idx + 1;
-                const title = (row.short_title || '').trim() || (locale === 'th' ? 'ประเด็นสำคัญ' : 'Priority');
-                const action = (row.action_text || '').trim() || (locale === 'th' ? 'ทบทวนแผนปฏิบัติการ' : 'Review action plan');
-                const impact = row.impact_estimate_thb ?? 0;
+                const title =
+                  (row.title || row.short_title || '').trim() ||
+                  (locale === 'th' ? 'ประเด็นสำคัญ' : 'Priority');
+                const action =
+                  (row.description || row.action_text || '').trim() ||
+                  (locale === 'th' ? 'ทบทวนแผนปฏิบัติการ' : 'Review action plan');
+                const impactRaw = row.impact_estimate_thb;
+                const hasImpact =
+                  impactRaw != null && Number.isFinite(Number(impactRaw)) && Number(impactRaw) > 0;
+                const impact = hasImpact ? Number(impactRaw) : 0;
                 const impactLabel = (row.impact_label || 'at risk').toLowerCase();
                 const isOpportunity = impactLabel.includes('opportunity');
                 const impactColor = isOpportunity ? '#059669' : '#b91c1c';
@@ -1493,10 +1499,12 @@ export default function BranchOverviewPage() {
                     <div style={{ fontSize: 14, color: '#475569', marginTop: 4 }}>
                       <span aria-hidden>{'→ '}</span>
                       {action}
-                      <span style={{ color: impactColor, fontWeight: 600 }}>
-                        {' '}
-                        (฿{formatCurrency(impact, numLoc)} {impactText})
-                      </span>
+                      {hasImpact ? (
+                        <span style={{ color: impactColor, fontWeight: 600 }}>
+                          {' '}
+                          (฿{formatCurrency(impact, numLoc)} {impactText})
+                        </span>
+                      ) : null}
                     </div>
                   </li>
                 );

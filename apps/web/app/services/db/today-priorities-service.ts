@@ -1,5 +1,5 @@
 /**
- * GET /rest/v1/today_priorities_view?select=*&organization_id=eq.{uuid}&order=rank.asc&limit=3
+ * GET /rest/v1/today_priorities_view?organization_id=eq.{uuid}&order=sort_score.desc&limit=3
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -15,6 +15,8 @@ export interface TodayPrioritiesRow {
   organization_id: string | null;
   branch_name: string | null;
   alert_type: string | null;
+  title: string | null;
+  description: string | null;
   action_text: string | null;
   short_title: string | null;
   impact_estimate_thb: number | null;
@@ -64,7 +66,7 @@ export async function fetchTodayPriorities(
   if (businessType) {
     query = query.eq('business_type', businessType);
   }
-  const { data, error } = await query.order('rank', { ascending: true }).limit(cap);
+  const { data, error } = await query.order('sort_score', { ascending: false }).limit(cap);
 
   if (error) {
     if (isPostgrestObjectMissingError(error)) {
@@ -78,14 +80,18 @@ export async function fetchTodayPriorities(
   const raw = Array.isArray(data) ? data : [];
   return raw.map((row) => {
     const r = row as Record<string, unknown>;
+    const title = pickStr(r, 'title', 'short_title', 'shortTitle');
+    const description = pickStr(r, 'description', 'action_text', 'actionText', 'recommended_action');
     return {
       branch_id: pickStr(r, 'branch_id', 'branchId'),
       business_type: pickStr(r, 'business_type', 'businessType') || null,
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_name: pickStr(r, 'branch_name', 'branchName') || null,
       alert_type: pickStr(r, 'alert_type', 'alertType') || null,
-      action_text: pickStr(r, 'action_text', 'actionText', 'recommended_action') || null,
-      short_title: pickStr(r, 'short_title', 'shortTitle', 'action_short') || null,
+      title: title || null,
+      description: description || null,
+      action_text: description || pickStr(r, 'action_text', 'actionText') || null,
+      short_title: title || pickStr(r, 'short_title', 'shortTitle') || null,
       impact_estimate_thb: pickNum(r, 'impact_estimate_thb', 'impact'),
       impact_label: pickStr(r, 'impact_label', 'impactLabel') || null,
       reason_short: pickStr(r, 'reason_short', 'reasonShort', 'cause') || null,
