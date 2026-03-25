@@ -22,7 +22,6 @@ export interface TodayPrioritiesRow {
   impact_estimate_thb: number | null;
   impact_thb: number | null;
   impact_label: string | null;
-  urgency: string | null;
   reason_short: string | null;
   sort_score: number | null;
   /** 1 = highest priority within org (from SQL ROW_NUMBER). */
@@ -98,7 +97,6 @@ export async function fetchTodayPriorities(
       impact_thb: impact,
       impact_estimate_thb: impact,
       impact_label: pickStr(r, 'impact_label', 'impactLabel') || null,
-      urgency: pickStr(r, 'urgency') || null,
       reason_short: pickStr(r, 'reason_short', 'reasonShort', 'cause') || null,
       sort_score: pickNum(r, 'sort_score', 'priority_score'),
       rank: pickNum(r, 'rank'),

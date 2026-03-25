@@ -62,13 +62,16 @@ export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
               (row.title?.trim() ||
                 row.short_title?.trim() ||
                 `${(row.alert_type || 'alert').replace(/_/g, ' ')} — ${branch}`) || branch;
-            const amt = row.impact_estimate_thb;
+            const amt = row.impact_thb ?? row.impact_estimate_thb;
             const hasImpact = amt != null && Number.isFinite(Number(amt)) && Number(amt) > 0;
             const amtStr = hasImpact ? formatCurrency(Number(amt), numLocale) : '';
             const riskWord = impactSuffix(th, row.impact_label);
-            const titleLine = hasImpact
-              ? `${rank}. ${headline} (฿${amtStr} ${riskWord})`
-              : `${rank}. ${headline}`;
+            const impactInTitle = /\(฿[\d,]/.test(headline);
+            const titleLine = impactInTitle
+              ? `${rank}. ${headline}`
+              : hasImpact
+                ? `${rank}. ${headline} (฿${amtStr} ${riskWord})`
+                : `${rank}. ${headline}`;
             const action = (row.description ?? row.action_text ?? '').trim() || actionFallback;
             const key = `p-${row.branch_id}-${row.alert_type}-${idx}`;
 

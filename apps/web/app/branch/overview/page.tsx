@@ -84,42 +84,19 @@ import {
 } from '../../utils/fnb-daily-margin';
 import { occupancyPercentFromMetric } from '../../utils/accommodation-economics';
 
-function todayPriorityUrgencyLabel(urgency: string | null | undefined, loc: string): string {
-  const u = (urgency || 'Medium').trim();
-  const key = u.toLowerCase();
-  if (loc === 'th') {
-    if (key === 'critical') return 'เร่งด่วนมาก';
-    if (key === 'high') return 'สูง';
-    if (key === 'low') return 'ต่ำ';
-    if (key === 'medium') return 'ปานกลาง';
-  }
-  return u;
-}
-
 function BranchTodayPriorityCard({ row, locale }: { row: TodayBranchPriorityRow; locale: string }) {
   const th = locale === 'th';
-  const numLoc = th ? 'th-TH' : 'en-US';
   const title =
     (row.title || row.short_title || '').trim() || (th ? 'ประเด็นสำคัญ' : 'Priority');
   const action =
     (row.description || row.action_text || '').trim() ||
     (th ? 'ทบทวนแผนปฏิบัติการ' : 'Review action plan');
-  const impactRaw = row.impact_thb ?? row.impact_estimate_thb;
-  const hasImpact =
-    impactRaw != null && Number.isFinite(Number(impactRaw)) && Number(impactRaw) > 0;
-  const impact = hasImpact ? Number(impactRaw) : null;
   return (
     <div style={{ lineHeight: 1.55 }}>
       <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{title}</div>
       <div style={{ fontSize: 14, color: '#475569', marginTop: 6 }}>
         <span aria-hidden>→ </span>
         {action}
-      </div>
-      <div style={{ fontSize: 13, color: '#374151', marginTop: 8, fontWeight: 500 }}>
-        {th ? '฿ ผลกระทบ' : '฿ Impact'}: {impact != null ? formatCurrency(impact, numLoc) : th ? 'ไม่ระบุ' : 'n/a'}
-      </div>
-      <div style={{ fontSize: 13, color: '#374151', marginTop: 4, fontWeight: 500 }}>
-        {th ? 'ความเร่งด่วน' : 'Urgency'}: {todayPriorityUrgencyLabel(row.urgency, locale)}
       </div>
     </div>
   );

@@ -11,7 +11,8 @@
 -- If there are no triggered insights, the view returns 0 rows and the UI shows empty state
 -- (no hardcoded/generic suggestions).
 --
--- Output: title, description, sort_score, rank (per branch), impact_thb, urgency, impact_label, metric_date.
+-- Output: title (impact inline), description, sort_score, rank, impact_thb, impact_label, metric_date.
+-- Dedup: one row per (branch_id, problem_type), strongest by impact_thb desc.
 --
 -- Branch: GET /rest/v1/today_priorities_view?branch_id=eq.{uuid}&business_type=eq.{type}
 --        &order=sort_score.desc&limit=4
@@ -41,12 +42,12 @@ FROM (
   VALUES (
     NULL::uuid, NULL::uuid, NULL::text, NULL::text,
     NULL::text, NULL::text, NULL::text,
-    NULL::numeric, NULL::integer, NULL::text, NULL::date
+    NULL::numeric, NULL::integer, NULL::text, NULL::date, NULL::numeric
   )
 ) AS v(
   organization_id, branch_id, branch_name, business_type,
   alert_type, title, description,
-  sort_score, rank, impact_label, metric_date
+  sort_score, rank, impact_label, metric_date, impact_thb
 )
 WHERE false
 $empty$;
@@ -171,13 +172,22 @@ enriched AS (
     r.alert_type_raw AS alert_type,
     (
       CASE
+        WHEN r.alert_type_raw IN ('Low Occupancy'::text, 'Occupancy low (level)'::text) THEN 'occupancy'::text
+        WHEN r.alert_type_raw = 'Revenue Drop'::text THEN 'revenue_drop'::text
+        WHEN r.alert_type_raw = 'ADR under pressure'::text THEN 'adr_pressure'::text
+        WHEN r.alert_type_raw = 'Customer traffic low (level)'::text THEN 'fnb_traffic'::text
+        ELSE regexp_replace(lower(r.alert_type_raw), '[[:space:]]+'::text, '_'::text, 'g'::text)
+      END
+    ) AS problem_type,
+    (
+      CASE
         WHEN NULLIF(TRIM(BOTH FROM r.branch_name), '') IS NOT NULL THEN
           TRIM(BOTH FROM REPLACE(r.alert_type_raw, '_'::text, ' '::text))
           || ' — '::text
           || TRIM(BOTH FROM r.branch_name)
         ELSE NULLIF(TRIM(BOTH FROM REPLACE(r.alert_type_raw, '_'::text, ' '::text)), ''::text)
       END
-    ) AS title,
+    ) AS title_base,
     (
       CASE
         WHEN r.alert_type_raw = 'Revenue Drop' THEN
@@ -218,26 +228,6 @@ enriched AS (
     ) AS impact_thb,
     'at risk'::text AS impact_label,
     (
-      CASE
-        WHEN r.alert_type_raw = 'Revenue Drop'::text
-          AND r.delta_pct IS NOT NULL
-          AND r.delta_pct <= -25::numeric THEN 'Critical'::text
-        WHEN r.alert_type_raw = 'Revenue Drop'::text
-          AND r.delta_pct IS NOT NULL
-          AND r.delta_pct <= -15::numeric THEN 'High'::text
-        WHEN r.alert_type_raw = 'Low Occupancy'::text
-          AND r.delta_pct IS NOT NULL
-          AND r.delta_pct <= -25::numeric THEN 'Critical'::text
-        WHEN r.alert_type_raw = 'Low Occupancy'::text
-          AND r.delta_pct IS NOT NULL
-          AND r.delta_pct <= -15::numeric THEN 'High'::text
-        WHEN r.alert_type_raw = 'Occupancy low (level)'::text THEN 'High'::text
-        WHEN r.alert_type_raw = 'ADR under pressure'::text THEN 'Medium'::text
-        WHEN r.alert_type_raw = 'Customer traffic low (level)'::text THEN 'Medium'::text
-        ELSE 'Medium'::text
-      END
-    ) AS urgency,
-    (
       COALESCE(
         CASE
           WHEN r.delta_pct IS NOT NULL THEN abs(r.delta_pct) * 100::numeric
@@ -255,32 +245,42 @@ enriched AS (
 ),
 dedup AS (
   SELECT
-    *,
+    e.*,
     ROW_NUMBER() OVER (
-      PARTITION BY organization_id, branch_id, alert_type
-      ORDER BY sort_score DESC NULLS LAST
+      PARTITION BY e.branch_id, e.problem_type
+      ORDER BY e.impact_thb DESC NULLS LAST, e.sort_score DESC NULLS LAST, e.alert_type
     ) AS dedup_rn
-  FROM enriched
+  FROM enriched e
+),
+picked AS (
+  SELECT * FROM dedup WHERE dedup_rn = 1
 )
 SELECT
-  d.organization_id AS organization_id,
-  d.branch_id AS branch_id,
-  d.branch_name AS branch_name,
-  d.business_type AS business_type,
-  d.alert_type AS alert_type,
-  d.title AS title,
-  d.description AS description,
-  d.sort_score AS sort_score,
+  p.organization_id AS organization_id,
+  p.branch_id AS branch_id,
+  p.branch_name AS branch_name,
+  p.business_type AS business_type,
+  p.alert_type AS alert_type,
+  trim(
+    BOTH
+    FROM
+      p.title_base
+      || CASE
+           WHEN p.impact_thb IS NOT NULL THEN
+             ' (฿'::text || trim(BOTH FROM to_char(round(p.impact_thb), 'FM999,999,999,999'::text)) || ')'::text
+           ELSE ''::text
+         END
+  ) AS title,
+  p.description AS description,
+  (COALESCE(p.impact_thb, 0::numeric) * 1000000000000::numeric + p.sort_score) AS sort_score,
   ROW_NUMBER() OVER (
-    PARTITION BY d.branch_id, d.business_type
-    ORDER BY d.sort_score DESC NULLS LAST, d.alert_type
+    PARTITION BY p.branch_id, p.business_type
+    ORDER BY COALESCE(p.impact_thb, 0::numeric) DESC, p.sort_score DESC NULLS LAST, p.alert_type
   )::integer AS rank,
-  d.impact_label AS impact_label,
-  d.metric_date AS metric_date,
-  d.impact_thb AS impact_thb,
-  d.urgency AS urgency
-FROM dedup d
-WHERE d.dedup_rn = 1
+  p.impact_label AS impact_label,
+  p.metric_date AS metric_date,
+  p.impact_thb AS impact_thb
+FROM picked p
 $ts$;
     RAISE NOTICE 'today_priorities_ranked: using source today_summary_clean';
   END IF;
@@ -305,8 +305,7 @@ SELECT
   r.impact_label AS impact_label,
   r.metric_date AS metric_date,
   r.impact_thb AS impact_thb,
-  r.impact_thb AS impact_estimate_thb,
-  r.urgency AS urgency
+  r.impact_thb AS impact_estimate_thb
 FROM public.today_priorities_ranked r;
 
 COMMENT ON VIEW public.today_priorities_view IS
