@@ -70,9 +70,11 @@ import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics
 import { getHealthScoreFromAccommodationHealthToday } from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import {
+  defaultBranchPrioritiesFallback,
   fetchTodayBranchPriorities,
   resolveBusinessTypeForPriorities,
   syntheticAccommodationPrioritiesFromTodayUi,
+  syntheticFnbPrioritiesFromTodayUi,
   type TodayBranchPriorityRow,
 } from '../../services/db/today-branch-priorities-service';
 import { normalizeWhatsWorkingTitle } from '../../services/db/whats-working-today-service';
@@ -756,14 +758,25 @@ export default function BranchOverviewPage() {
   const branchPrioritiesForUi = useMemo(() => {
     if (branchPriorities.length > 0) return branchPriorities;
     if (!branch) return [];
-    if (resolveBusinessTypeForPriorities(branch.moduleType, branch.modules) !== 'accommodation') return [];
-    return syntheticAccommodationPrioritiesFromTodayUi(
-      branch.id,
-      branch.branchName,
-      accTodayUiRow,
-      locale === 'th' ? 'th' : 'en'
-    );
-  }, [branchPriorities, branch, accTodayUiRow, locale]);
+    const biz = resolveBusinessTypeForPriorities(branch.moduleType, branch.modules);
+    const loc = locale === 'th' ? 'th' : 'en';
+    let syn: TodayBranchPriorityRow[] = [];
+    if (biz === 'accommodation') {
+      syn = syntheticAccommodationPrioritiesFromTodayUi(branch.id, branch.branchName, accTodayUiRow, loc);
+    } else {
+      syn = syntheticFnbPrioritiesFromTodayUi(branch.id, branch.branchName, {
+        metric_date: fnbOperatingStatus?.metric_date,
+        revenue: fnbOperatingStatus?.revenue,
+        customers: fnbOperatingStatus?.customers,
+        revenue_delta_day:
+          todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
+            ? todaySummaryRow.revenue_delta_day
+            : null,
+      }, loc);
+    }
+    if (syn.length > 0) return syn;
+    return defaultBranchPrioritiesFallback(branch.id, branch.branchName, biz, loc);
+  }, [branchPriorities, branch, accTodayUiRow, fnbOperatingStatus, todaySummaryRow, locale]);
 
   const branchPriorityNext = useMemo(() => branchPrioritiesForUi.slice(1, 4), [branchPrioritiesForUi]);
   const branchPriorityFirst = branchPrioritiesForUi[0] ?? null;

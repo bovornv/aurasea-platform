@@ -100,6 +100,114 @@ export function syntheticAccommodationPrioritiesFromTodayUi(
   return out.sort((a, b) => (b.sort_score ?? 0) - (a.sort_score ?? 0)).slice(0, 4);
 }
 
+export type FnbTodayUiLike = {
+  metric_date?: string | null;
+  revenue?: number | null;
+  customers?: number | null;
+  /** Prefer `today_summary_clean` / Today summary revenue_delta_day when present */
+  revenue_delta_day?: number | null;
+};
+
+export function syntheticFnbPrioritiesFromTodayUi(
+  branchId: string,
+  branchName: string,
+  ui: FnbTodayUiLike | null,
+  locale: 'en' | 'th'
+): TodayBranchPriorityRow[] {
+  if (!branchId.trim()) return [];
+  const th = locale === 'th';
+  const numLoc = th ? 'th-TH' : 'en-US';
+  const name = branchName.trim() || (th ? 'สาขา' : 'Branch');
+  const rev = ui?.revenue != null ? Number(ui.revenue) : NaN;
+  const hasRev = Number.isFinite(rev) && rev > 0;
+  const out: TodayBranchPriorityRow[] = [];
+  const md = ui?.metric_date != null ? String(ui.metric_date).slice(0, 10) : null;
+
+  const rd = ui?.revenue_delta_day;
+  if (rd != null && Number.isFinite(Number(rd)) && Number(rd) <= -10) {
+    const delta = Number(rd);
+    const impact = hasRev ? Math.max(Math.round(rev * Math.min(0.35, (Math.abs(delta) / 100) * 0.45)), 1000) : null;
+    const titleBase = th ? `รายได้ลดลง — ${name}` : `Revenue drop — ${name}`;
+    const title = impact != null && impact > 0 ? `${titleBase} (฿${formatCurrency(impact, numLoc)})` : titleBase;
+    const description = th
+      ? 'รายได้ลดลงเมื่อเทียบกับเมื่อวาน ตรวจราคา ช่องทาง และเมนูขายดี; บันทึกบริบทใน Enter Data'
+      : 'Revenue is down vs yesterday. Check pricing, promos, and top sellers; log context in Enter Data.';
+    out.push({
+      branch_id: branchId.trim(),
+      business_type: 'fnb',
+      metric_date: md,
+      title,
+      description,
+      short_title: title,
+      action_text: description,
+      impact_thb: impact,
+      impact_estimate_thb: impact,
+      impact_label: 'at risk',
+      sort_score: impact != null ? impact * 1e12 + 5_000_000 : 4_000_000,
+    });
+  }
+
+  const cust = ui?.customers;
+  if (cust != null && Number.isFinite(Number(cust)) && Number(cust) < 20) {
+    const impact = hasRev ? Math.max(Math.round(rev * 0.06), 300) : null;
+    const titleBase = th ? `ลูกค้าน้อยวันนี้ — ${name}` : `Customer traffic low — ${name}`;
+    const title = impact != null && impact > 0 ? `${titleBase} (฿${formatCurrency(impact, numLoc)})` : titleBase;
+    const description = th
+      ? 'จำนวนลูกค้าต่ำวันนี้ ตรวจโปร ช่วงเวลาเปิด และเมนูขายดี; ตรวจสอบใน Trends'
+      : 'Customer count is low today. Review promos, operating hours, and top-sellers; validate in Trends.';
+    out.push({
+      branch_id: branchId.trim(),
+      business_type: 'fnb',
+      metric_date: md,
+      title,
+      description,
+      short_title: title,
+      action_text: description,
+      impact_thb: impact,
+      impact_estimate_thb: impact,
+      impact_label: 'at risk',
+      sort_score: impact != null ? impact * 1e12 + 3_000_000 : 3_500_000,
+    });
+  }
+
+  return out.sort((a, b) => (b.sort_score ?? 0) - (a.sort_score ?? 0)).slice(0, 4);
+}
+
+/** One neutral executive row when API + risk synthetics produce nothing (branch Today should never feel “blank”). */
+export function defaultBranchPrioritiesFallback(
+  branchId: string,
+  branchName: string,
+  businessType: 'accommodation' | 'fnb',
+  locale: 'en' | 'th'
+): TodayBranchPriorityRow[] {
+  const th = locale === 'th';
+  const name = branchName.trim() || (th ? 'สาขา' : 'Branch');
+  const title = th ? `จับสัญญาณวันนี้ให้แน่น — ${name}` : `Sharpen today’s read — ${name}`;
+  const description =
+    businessType === 'fnb'
+      ? th
+        ? '→ ดู Trends หาจังหวะยอดและตะกร้า แล้วยืนยันตัวเลขใน Enter Data'
+        : '→ Scan Trends for traffic and ticket patterns, then confirm numbers in Enter Data.'
+      : th
+        ? '→ ดู Trends เรื่องอัตราเข้าพักและรายได้ แล้วบันทึกบริบทใน Enter Data'
+        : '→ Review Trends for occupancy and revenue rhythm, then log context in Enter Data.';
+  return [
+    {
+      branch_id: branchId.trim(),
+      business_type: businessType,
+      metric_date: null,
+      title,
+      description,
+      short_title: title,
+      action_text: description,
+      impact_thb: null,
+      impact_estimate_thb: null,
+      impact_label: 'at risk',
+      sort_score: 1,
+    },
+  ];
+}
+
 export interface TodayBranchPriorityRow {
   branch_id: string;
   business_type: 'accommodation' | 'fnb' | string;
