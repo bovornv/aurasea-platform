@@ -45,115 +45,6 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
   return null;
 }
 
-function fallbackPriorities(
-  branchId: string,
-  businessType: 'accommodation' | 'fnb',
-  locale: 'en' | 'th'
-): TodayBranchPriorityRow[] {
-  const th = locale === 'th';
-  const rows: Omit<TodayBranchPriorityRow, 'branch_id' | 'business_type'>[] =
-    businessType === 'fnb'
-      ? [
-          {
-            metric_date: null,
-            title: th ? 'บันทึกยอดวันนี้' : "Log today's sales",
-            description: th
-              ? 'กรอกรายได้ ลูกค้า และต้นทุนวันนี้ใน Enter Data เพื่อให้สัญญาณแม่นยำ'
-              : 'Enter revenue, customers, and costs in Enter Data so signals stay accurate.',
-            short_title: th ? 'บันทึกยอดวันนี้' : "Log today's sales",
-            action_text: th
-              ? 'กรอกรายได้ ลูกค้า และต้นทุนวันนี้ใน Enter Data เพื่อให้สัญญาณแม่นยำ'
-              : 'Enter revenue, customers, and costs in Enter Data so signals stay accurate.',
-            impact_estimate_thb: null,
-            impact_label: 'at risk',
-            sort_score: 100,
-            rank: 1,
-          },
-          {
-            metric_date: null,
-            title: th ? 'เช็กแนวโน้ม' : 'Check Trends',
-            description: th
-              ? 'เปรียบเทียบสัปดาห์นี้กับสัปดาห์ก่อนเพื่อจับการเปลี่ยนแปลงเร็ว'
-              : 'Compare this week vs last week to catch drift early.',
-            short_title: th ? 'เช็กแนวโน้ม' : 'Check Trends',
-            action_text: th
-              ? 'เปรียบเทียบสัปดาห์นี้กับสัปดาห์ก่อนเพื่อจับการเปลี่ยนแปลงเร็ว'
-              : 'Compare this week vs last week to catch drift early.',
-            impact_estimate_thb: null,
-            impact_label: 'at risk',
-            sort_score: 99,
-            rank: 2,
-          },
-          {
-            metric_date: null,
-            title: th ? 'ปรับเมนูและราคา' : 'Tune menu & pricing',
-            description: th
-              ? 'ทบทวนเมนูขายดีและต้นทุนต่อจานเพื่อรักษามาร์จิ้น'
-              : 'Review top sellers and plate cost to protect margin.',
-            short_title: th ? 'ปรับเมนูและราคา' : 'Tune menu & pricing',
-            action_text: th
-              ? 'ทบทวนเมนูขายดีและต้นทุนต่อจานเพื่อรักษามาร์จิ้น'
-              : 'Review top sellers and plate cost to protect margin.',
-            impact_estimate_thb: null,
-            impact_label: 'opportunity',
-            sort_score: 98,
-            rank: 3,
-          },
-        ]
-      : [
-          {
-            metric_date: null,
-            title: th ? 'บันทึกข้อมูลวันนี้' : "Log today's performance",
-            description: th
-              ? 'กรอกรายได้ ห้องขาย และต้นทุนใน Enter Data เพื่อให้สัญญาณแม่นยำ'
-              : 'Capture revenue, rooms, and costs in Enter Data so signals stay accurate.',
-            short_title: th ? 'บันทึกข้อมูลวันนี้' : "Log today's performance",
-            action_text: th
-              ? 'กรอกรายได้ ห้องขาย และต้นทุนใน Enter Data เพื่อให้สัญญาณแม่นยำ'
-              : 'Capture revenue, rooms, and costs in Enter Data so signals stay accurate.',
-            impact_estimate_thb: null,
-            impact_label: 'at risk',
-            sort_score: 100,
-            rank: 1,
-          },
-          {
-            metric_date: null,
-            title: th ? 'เช็กแนวโน้ม' : 'Check Trends',
-            description: th
-              ? 'เปรียบเทียบสัปดาห์นี้กับสัปดาห์ก่อนเพื่อจับการเปลี่ยนแปลงเร็ว'
-              : 'Compare this week vs last week to catch drift early.',
-            short_title: th ? 'เช็กแนวโน้ม' : 'Check Trends',
-            action_text: th
-              ? 'เปรียบเทียบสัปดาห์นี้กับสัปดาห์ก่อนเพื่อจับการเปลี่ยนแปลงเร็ว'
-              : 'Compare this week vs last week to catch drift early.',
-            impact_estimate_thb: null,
-            impact_label: 'at risk',
-            sort_score: 99,
-            rank: 2,
-          },
-          {
-            metric_date: null,
-            title: th ? 'รีวิวราคาและช่องทาง' : 'Review pricing & channels',
-            description: th
-              ? 'ปรับ OTA และราคาเดินทางหากอัตราเข้าพักหรือ ADR เปลี่ยน'
-              : 'Adjust OTAs and walk-in strategy if occupancy or ADR moved.',
-            short_title: th ? 'รีวิวราคาและช่องทาง' : 'Review pricing & channels',
-            action_text: th
-              ? 'ปรับ OTA และราคาเดินทางหากอัตราเข้าพักหรือ ADR เปลี่ยน'
-              : 'Adjust OTAs and walk-in strategy if occupancy or ADR moved.',
-            impact_estimate_thb: null,
-            impact_label: 'opportunity',
-            sort_score: 98,
-            rank: 3,
-          },
-        ];
-  return rows.map((r) => ({
-    branch_id: branchId,
-    business_type: businessType,
-    ...r,
-  }));
-}
-
 function mapRow(row: Record<string, unknown>, branchId: string): TodayBranchPriorityRow {
   const title = pickStr(row, 'title', 'short_title', 'shortTitle');
   const description = pickStr(row, 'description', 'action_text', 'actionText');
@@ -178,16 +69,12 @@ export async function fetchTodayBranchPriorities(
   limit: number = 3,
   locale: 'en' | 'th' = 'en'
 ): Promise<TodayBranchPriorityRow[]> {
-  if (!branchId?.trim() || !businessType || !isSupabaseAvailable()) {
-    return branchId?.trim() && businessType
-      ? fallbackPriorities(branchId.trim(), businessType, locale)
-      : [];
-  }
+  if (!branchId?.trim() || !businessType || !isSupabaseAvailable()) return [];
   if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.today_priorities_view)) {
-    return fallbackPriorities(branchId.trim(), businessType, locale);
+    return [];
   }
   const supabase = getSupabaseClient();
-  if (!supabase) return fallbackPriorities(branchId.trim(), businessType, locale);
+  if (!supabase) return [];
 
   const cap = Math.min(3, Math.max(1, limit));
   const { data, error } = await supabase
@@ -204,12 +91,10 @@ export async function fetchTodayBranchPriorities(
     } else if (process.env.NODE_ENV === 'development') {
       console.warn('[today_priorities_view branch]', error.message);
     }
-    return fallbackPriorities(branchId.trim(), businessType, locale);
+    return [];
   }
 
   const raw = Array.isArray(data) ? data : [];
-  if (raw.length === 0) {
-    return fallbackPriorities(branchId.trim(), businessType, locale);
-  }
+  if (raw.length === 0) return [];
   return raw.map((row) => mapRow(row as Record<string, unknown>, branchId.trim()));
 }
