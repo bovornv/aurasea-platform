@@ -46,7 +46,6 @@ import {
   getTodaySummary,
   getBranchTrendSeriesWithFallback,
   getAccommodationTodayMetricsUi,
-  ACCOMMODATION_UI_HEALTH_FALLBACK,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
   type TodaySummaryRow,
@@ -1090,6 +1089,7 @@ export default function BranchOverviewPage() {
             return fallback ? metricsByDate.get(fallback) ?? null : null;
           })()
         : null;
+    const prevRevDay = prevDayMetricExact?.revenue ?? null;
 
     if (isAccommodation) {
       const ui = accTodayUiRow;
@@ -1111,11 +1111,15 @@ export default function BranchOverviewPage() {
         const revenueDeltaPct =
           ui!.revenue_delta != null && Number.isFinite(Number(ui!.revenue_delta))
             ? Number(ui!.revenue_delta)
-            : null;
+            : todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
+              ? todaySummaryRow.revenue_delta_day
+              : rev != null && prevRevDay != null && prevRevDay > 0
+                ? ((rev - prevRevDay) / prevRevDay) * 100
+                : null;
         const healthForSummary =
           ui!.health_score != null && Number.isFinite(Number(ui!.health_score))
             ? Number(ui!.health_score)
-            : ACCOMMODATION_UI_HEALTH_FALLBACK;
+            : healthScore ?? todaySummaryRow?.health_score ?? null;
         return {
           accommodation: {
             occupancyRate: occ,
@@ -1140,7 +1144,6 @@ export default function BranchOverviewPage() {
           : totalRooms != null && totalRooms > 0 && roomsSold != null
             ? (roomsSold / totalRooms) * 100
             : null;
-      const prevRevDay = prevDayMetricExact?.revenue ?? null;
       const revenueDeltaPctDay =
         todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
           ? todaySummaryRow.revenue_delta_day
@@ -1149,8 +1152,7 @@ export default function BranchOverviewPage() {
             : null;
       const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
       const revpar = totalRooms != null && totalRooms > 0 && rev != null ? rev / totalRooms : null;
-      const healthForSummary =
-        healthScore ?? todaySummaryRow?.health_score ?? ACCOMMODATION_UI_HEALTH_FALLBACK;
+      const healthForSummary = healthScore ?? todaySummaryRow?.health_score ?? null;
       return {
         accommodation: {
           occupancyRate: occ,

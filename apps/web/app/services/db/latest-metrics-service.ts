@@ -111,15 +111,6 @@ export async function getFnbOperatingStatus(
   } as FnbOperatingStatusRow;
 }
 
-/** Matches SQL COALESCE(health_score, 50) on `accommodation_today_metrics_ui`. */
-export const ACCOMMODATION_UI_HEALTH_FALLBACK = 50;
-
-function normalizeAccommodationUiHealth(raw: unknown): number {
-  if (raw == null) return ACCOMMODATION_UI_HEALTH_FALLBACK;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : ACCOMMODATION_UI_HEALTH_FALLBACK;
-}
-
 /** Row from `accommodation_today_metrics_ui` — accommodation Today top metrics row. */
 export interface AccommodationTodayMetricsUiRow {
   branch_id: string;
@@ -131,7 +122,6 @@ export interface AccommodationTodayMetricsUiRow {
   rooms_available?: number | null;
   adr?: number | null;
   revpar?: number | null;
-  /** Always finite; defaults to ACCOMMODATION_UI_HEALTH_FALLBACK when DB sends null. */
   health_score?: number | null;
 }
 
@@ -185,7 +175,7 @@ export async function getAccommodationTodayMetricsUi(
       rooms_available: row.rooms_available != null ? Number(row.rooms_available) : null,
       adr: row.adr != null ? Number(row.adr) : null,
       revpar: row.revpar != null ? Number(row.revpar) : null,
-      health_score: normalizeAccommodationUiHealth(row.health_score),
+      health_score: row.health_score != null ? Number(row.health_score) : null,
     };
   })().finally(() => {
     accommodationTodayUiInFlight.delete(branchId);

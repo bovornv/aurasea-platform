@@ -2,8 +2,9 @@
 -- App: getAccommodationTodayMetricsUi — eq(branch_id), order metric_date desc, limit 1
 --
 -- Fixes:
---   - health_score: COALESCE(today_summary_clean.health_score, 50) so UI never shows empty Health
---   - Join today_summary_clean on branch_id via ::text (uuid vs text safe) + metric_date
+--   - health_score from latest branch summary row (avoid date-mismatch nulls)
+--   - revenue_delta from latest branch summary row (vs yesterday)
+--   - Join via branch_id::text (uuid/text safe)
 --
 -- Prerequisites: public.accommodation_daily_metrics, public.today_summary_clean
 -- Revenue column: revenue OR total_revenue_thb (detected below)
@@ -42,7 +43,7 @@ SELECT
   a.branch_id::uuid AS branch_id,
   a.metric_date::date AS metric_date,
   %1$s AS revenue,
-  t.revenue_delta_day AS revenue_delta,
+  ts.revenue_delta_day AS revenue_delta,
   CASE
     WHEN COALESCE(a.rooms_available, 0) > 0 AND a.rooms_sold IS NOT NULL
     THEN (a.rooms_sold::numeric / NULLIF(a.rooms_available::numeric, 0))::numeric
@@ -58,11 +59,15 @@ SELECT
     WHEN COALESCE(a.rooms_available, 0) > 0 THEN (%1$s / NULLIF(a.rooms_available::numeric, 0))::numeric
     ELSE NULL::numeric
   END AS revpar,
-  COALESCE(t.health_score, 50::numeric)::numeric AS health_score
+  ts.health_score::numeric AS health_score
 FROM public.accommodation_daily_metrics a
-LEFT JOIN public.today_summary_clean t
-  ON t.branch_id::text = a.branch_id::text
- AND t.metric_date::date = a.metric_date::date
+LEFT JOIN LATERAL (
+  SELECT t.revenue_delta_day, t.health_score
+  FROM public.today_summary_clean t
+  WHERE t.branch_id::text = a.branch_id::text
+  ORDER BY t.metric_date DESC NULLS LAST
+  LIMIT 1
+) ts ON TRUE
 $v$,
     rev_sql
   );
@@ -71,6 +76,6 @@ $v$,
 END $$;
 
 COMMENT ON VIEW public.accommodation_today_metrics_ui IS
-  'Per-day accommodation KPIs + revenue_delta_day and health from today_summary_clean; health defaults to 50.';
+  'Per-day accommodation KPIs + latest branch revenue_delta_day/health from today_summary_clean.';
 
 GRANT SELECT ON public.accommodation_today_metrics_ui TO anon, authenticated;
