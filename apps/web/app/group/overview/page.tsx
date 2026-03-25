@@ -255,8 +255,6 @@ function OwnerSummaryContent() {
       return;
     }
 
-    if (companyDashboardInFlightRef.current) return;
-
     const dashboardKey = `${organizationIdForData}::${branchIdsKey}::${refreshTrigger}`;
     const showLoaders = companyDashboardHydratedKeyRef.current !== dashboardKey;
 
