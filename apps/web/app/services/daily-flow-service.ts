@@ -34,21 +34,20 @@ export interface DailyFlowCalculations {
 }
 
 /**
- * Estimate daily cost from revenue and branch setup
- * Formula: (revenue * variable_cost_ratio / 100) + (monthly_fixed_cost / 30)
+ * Fallback estimate when no daily metric history exists.
+ * Prefer real pipeline: `accommodation-economics` (additional_cost_today 30d sum + monthly_fixed_cost) / 30.
+ * Formula here: (revenue * variable_cost_ratio / 100) + (monthly_fixed_cost / 30); no phantom 60% default.
  */
 export function estimateDailyCost(
   revenue: number,
   setup: BranchSetup
 ): number {
-  const variableCost = setup.variableCostRatio
+  const variableCost = setup.variableCostRatio != null
     ? (revenue * setup.variableCostRatio) / 100
-    : revenue * 0.6; // Default 60% if not set
-  
-  const fixedCostDaily = setup.monthlyFixedCost
-    ? setup.monthlyFixedCost / 30
     : 0;
-  
+
+  const fixedCostDaily = setup.monthlyFixedCost ? setup.monthlyFixedCost / 30 : 0;
+
   return variableCost + fixedCostDaily;
 }
 

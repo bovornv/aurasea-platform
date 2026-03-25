@@ -45,12 +45,12 @@ import {
   getFnbOperatingStatus,
   getTodaySummary,
   getBranchTrendSeriesWithFallback,
-  getAccommodationProfitabilitySignal,
+  getAccommodationTodayMetricsUi,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
   type TodaySummaryRow,
   type BranchTrendSeries,
-  type AccommodationProfitabilitySignal,
+  type AccommodationTodayMetricsUiRow,
 } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
@@ -80,6 +80,7 @@ import {
   computeFnbMarginTrendFromDailyPair,
   getFnbCurrentAndPrevDailyMetric,
 } from '../../utils/fnb-daily-margin';
+import { occupancyPercentFromMetric } from '../../utils/accommodation-economics';
 
 export default function BranchOverviewPage() {
   // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONALS, NO EARLY RETURNS
@@ -124,7 +125,7 @@ export default function BranchOverviewPage() {
   const [branchWatchlistRows, setBranchWatchlistRows] = useState<string[]>([]);
   const [branchSectionLoading, setBranchSectionLoading] = useState(false);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
-  const [accProfitSignal, setAccProfitSignal] = useState<AccommodationProfitabilitySignal | null>(null);
+  const [accTodayUiRow, setAccTodayUiRow] = useState<AccommodationTodayMetricsUiRow | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -394,7 +395,7 @@ export default function BranchOverviewPage() {
     if (!branch?.id) return;
     setBranchPrioritiesLoading(true);
     setFreshnessLoaded(false);
-    if (branch.moduleType !== 'accommodation') setAccProfitSignal(null);
+    if (branch.moduleType !== 'accommodation') setAccTodayUiRow(null);
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
@@ -405,7 +406,7 @@ export default function BranchOverviewPage() {
         getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
         getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
         getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
-        getAccommodationProfitabilitySignal(branch.id).then(setAccProfitSignal);
+        getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
       }
     }
     getBranchLearningStatus(branch.id).then(setLearningStatus);
@@ -433,7 +434,7 @@ export default function BranchOverviewPage() {
       setBranchPrioritiesLoading(false);
       setFreshnessDatesFromRaw([]);
       setFreshnessLoaded(false);
-      setAccProfitSignal(null);
+      setAccTodayUiRow(null);
       return;
     }
     refreshOperatingStatus();
@@ -453,7 +454,7 @@ export default function BranchOverviewPage() {
           getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
           getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
           getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
-          getAccommodationProfitabilitySignal(branch.id).then(setAccProfitSignal);
+          getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
         }
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
@@ -1100,6 +1101,46 @@ export default function BranchOverviewPage() {
         : null;
 
     if (isAccommodation) {
+      const ui = accTodayUiRow;
+      const hasUi =
+        ui != null &&
+        (ui.metric_date != null ||
+          ui.revenue != null ||
+          ui.rooms_sold != null ||
+          ui.rooms_available != null ||
+          ui.health_score != null);
+
+      if (hasUi) {
+        const rev = ui!.revenue != null ? Number(ui!.revenue) : null;
+        const occ = occupancyPercentFromMetric(ui!.occupancy);
+        const roomsSold = ui!.rooms_sold != null ? Number(ui!.rooms_sold) : null;
+        const totalRooms = ui!.rooms_available != null ? Number(ui!.rooms_available) : null;
+        const adr = ui!.adr != null ? Number(ui!.adr) : null;
+        const revpar = ui!.revpar != null ? Number(ui!.revpar) : null;
+        const revenueDeltaPct =
+          ui!.revenue_delta != null && Number.isFinite(Number(ui!.revenue_delta))
+            ? Number(ui!.revenue_delta)
+            : null;
+        const healthForSummary =
+          ui!.health_score != null && Number.isFinite(Number(ui!.health_score))
+            ? Number(ui!.health_score)
+            : null;
+        return {
+          accommodation: {
+            occupancyRate: occ,
+            occupancyDeltaPct: null,
+            roomsSold,
+            totalRooms,
+            revenue: rev,
+            revenueDeltaPct,
+            adr,
+            revpar,
+            healthScore: healthForSummary,
+          },
+          fnb: null,
+        };
+      }
+
       const rev = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? latestDailyMetric?.revenue ?? todaySummaryRow?.total_revenue ?? null;
       const roomsSold = operatingStatusData?.rooms_sold ?? latestDailyMetric?.roomsSold ?? null;
       const totalRooms = branch?.totalRooms ?? latestDailyMetric?.roomsAvailable ?? null;
@@ -1109,7 +1150,6 @@ export default function BranchOverviewPage() {
           : totalRooms != null && totalRooms > 0 && roomsSold != null
             ? (roomsSold / totalRooms) * 100
             : null;
-      const prevRevWeek = prevMetricWeek?.revenue ?? null;
       const prevRooms = prevMetricWeek?.roomsSold ?? null;
       const prevTotal = prevMetricWeek?.roomsAvailable ?? totalRooms;
       const prevOcc =
@@ -1117,9 +1157,6 @@ export default function BranchOverviewPage() {
           ? ((prevRooms ?? 0) / prevTotal) * 100
           : null;
       const prevRevDay = prevDayMetricExact?.revenue ?? null;
-      const revenueDeltaPctWeek =
-        rev != null && prevRevWeek != null && prevRevWeek > 0 ? ((rev - prevRevWeek) / prevRevWeek) * 100 : null;
-      // Prefer today_summary view deltas; fallback to client-side (with fallback prev row so deltas show with 2+/8+ days)
       const revenueDeltaPctDay =
         todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
           ? todaySummaryRow.revenue_delta_day
@@ -1134,8 +1171,7 @@ export default function BranchOverviewPage() {
             : null;
       const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
       const revpar = totalRooms != null && totalRooms > 0 && rev != null ? rev / totalRooms : null;
-      // Health: prefer Supabase; then today_summary; else show 70 so we don't show "—"
-      const healthForSummary = healthScore ?? todaySummaryRow?.health_score ?? 70;
+      const healthForSummary = healthScore ?? todaySummaryRow?.health_score ?? null;
       return {
         accommodation: {
           occupancyRate: occ,
@@ -1144,7 +1180,6 @@ export default function BranchOverviewPage() {
           totalRooms: totalRooms ?? null,
           revenue: rev,
           revenueDeltaPct: revenueDeltaPctDay,
-          revenueDeltaPctWeek,
           adr,
           revpar,
           healthScore: healthForSummary,
@@ -1188,6 +1223,7 @@ export default function BranchOverviewPage() {
     latestDailyMetric,
     dailyMetricsForTrends,
     todaySummaryRow,
+    accTodayUiRow,
   ]);
 
   // Data freshness: MAX(metric_date) from raw tables only (fnb_daily_metrics / accommodation_daily_metrics). No *_today_summary, *_latest_metrics, created_at.
@@ -1341,20 +1377,17 @@ export default function BranchOverviewPage() {
             branchType={branch.moduleType}
             locale={locale === 'th' ? 'th' : 'en'}
             lastUpdatedDate={
-              (branch.moduleType === 'fnb' ? fnbOperatingStatus?.metric_date : operatingStatusData?.metric_date) ??
+              (branch.moduleType === 'accommodation'
+                ? accTodayUiRow?.metric_date
+                : branch.moduleType === 'fnb'
+                  ? fnbOperatingStatus?.metric_date
+                  : null) ??
+              operatingStatusData?.metric_date ??
               latestDailyMetric?.date ??
               (lastUpdated ? new Date(lastUpdated).toISOString().slice(0, 10) : null)
             }
             accommodation={todaySummary.accommodation}
             fnb={todaySummary.fnb}
-            accommodationProfitability={
-              branch.moduleType === 'accommodation'
-                ? {
-                    trend: accProfitSignal?.trend ?? null,
-                    explanation: accProfitSignal?.explanation ?? '',
-                  }
-                : null
-            }
             fnbProfitability={
               branch.moduleType === 'fnb'
                 ? {

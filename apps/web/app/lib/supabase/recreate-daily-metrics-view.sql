@@ -7,16 +7,55 @@
 --
 -- BEFORE RUNNING:
 --   1) Verify: SELECT * FROM daily_metrics LIMIT 5;
---   2) If daily_metrics is a TABLE (legacy), rename it — do NOT drop data:
---        ALTER TABLE public.daily_metrics RENAME TO daily_metrics_legacy;
---      Then run this script. Migrate legacy rows into split tables if needed.
+--   2) If daily_metrics is a legacy TABLE, this script renames it to
+--      daily_metrics_legacy (data preserved) then creates the view.
+--      Migrate legacy rows into accommodation_daily_metrics / fnb_daily_metrics if needed.
 --
 -- After run:
 --   - Test: GET /rest/v1/daily_metrics?select=*&limit=1
 --   - Re-apply RLS on daily_metrics if you use view policies (see rbac-schema.sql).
 -- =============================================================================
 
-DROP VIEW IF EXISTS public.daily_metrics CASCADE;
+-- Remove existing object by kind (DROP VIEW on a TABLE raises 42809).
+DO $prep_daily_metrics$
+DECLARE
+  k "char";
+BEGIN
+  SELECT c.relkind
+  INTO k
+  FROM pg_catalog.pg_class c
+  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relname = 'daily_metrics';
+
+  IF k IS NULL THEN
+    RETURN;
+  END IF;
+
+  IF k IN ('r', 'p') THEN
+    IF EXISTS (
+      SELECT 1
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname = 'daily_metrics_legacy'
+    ) THEN
+      RAISE EXCEPTION
+        'public.daily_metrics is a TABLE but public.daily_metrics_legacy already exists. Rename or drop daily_metrics_legacy, then re-run.';
+    END IF;
+    ALTER TABLE public.daily_metrics RENAME TO daily_metrics_legacy;
+    RAISE NOTICE 'Renamed legacy TABLE public.daily_metrics → public.daily_metrics_legacy (data preserved).';
+  ELSIF k = 'v' THEN
+    EXECUTE 'DROP VIEW public.daily_metrics CASCADE';
+  ELSIF k = 'm' THEN
+    EXECUTE 'DROP MATERIALIZED VIEW public.daily_metrics CASCADE';
+  ELSE
+    RAISE EXCEPTION
+      'public.daily_metrics exists with unexpected relkind % — drop or rename it manually, then re-run.',
+      k;
+  END IF;
+END
+$prep_daily_metrics$;
 
 DO $$
 DECLARE
@@ -35,6 +74,7 @@ DECLARE
   fnb_promo text := 'NULL::numeric';
   fnb_avg_ticket text := 'NULL::numeric';
   fnb_customers text := 'f.total_customers';
+  acc_adr_sql text;
   ddl text;
 BEGIN
   IF to_regclass('public.accommodation_daily_metrics') IS NULL THEN
@@ -88,6 +128,12 @@ BEGIN
   ) THEN
     acc_rooms_avail := 'a.rooms_available';
   END IF;
+
+  acc_adr_sql := format(
+    'CASE WHEN COALESCE(%1$s, 0) > 0 THEN (%2$s) / NULLIF((%1$s)::numeric, 0) ELSE NULL::numeric END',
+    acc_rooms_sold,
+    acc_rev_sql
+  );
 
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
@@ -180,7 +226,7 @@ SELECT
   NULL::numeric AS cash_balance,
   %11$s AS rooms_sold,
   %12$s AS rooms_available,
-  NULL::numeric AS adr,
+  %16$s AS adr,
   %13$s AS staff_count,
   %14$s AS monthly_fixed_cost,
   NULL::integer AS customers,
@@ -226,7 +272,8 @@ $v$,
     acc_rooms_avail,
     acc_staff,
     acc_mfc,
-    fnb_customers
+    fnb_customers,
+    acc_adr_sql
   );
 
   EXECUTE ddl;

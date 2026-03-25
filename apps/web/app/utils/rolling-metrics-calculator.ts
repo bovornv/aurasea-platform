@@ -7,6 +7,12 @@
 
 import type { DailyMetric } from '../models/daily-metrics';
 import { calculateDailyRevenue } from '../models/daily-metrics';
+import {
+  accommodationBlendedDailyCostThb,
+  inferAccommodationDailyMetrics,
+  latestMonthlyFixedCostThb,
+  sumAdditionalCostToday,
+} from './accommodation-economics';
 
 export interface RollingMetrics {
   // Revenue metrics
@@ -96,24 +102,32 @@ export function calculateRollingMetrics(
   const revenue_7d = last7Days.reduce((sum, m) => sum + (m.revenue || calculateDailyRevenue(m)), 0);
   const revenue_30d = last30Days.reduce((sum, m) => sum + (m.revenue || calculateDailyRevenue(m)), 0);
   
-  // Calculate cost metrics: cost + additional_cost_today (backward compat: additionalCostToday ?? 0)
-  const dayCost = (m: DailyMetric) => (m.cost ?? 0) + (m.additionalCostToday ?? 0);
-  const cost_today = dayCost(todayMetric);
-  const cost_7d = last7Days.reduce((sum, m) => sum + dayCost(m), 0);
-  const cost_30d = last30Days.reduce((sum, m) => sum + dayCost(m), 0);
-  
+  const isAccommodation = inferAccommodationDailyMetrics(sorted);
+  const mfc = latestMonthlyFixedCostThb(sorted);
+  const additional30 = sumAdditionalCostToday(last30Days);
+  const blendedDaily = isAccommodation
+    ? accommodationBlendedDailyCostThb(additional30, mfc)
+    : 0;
+
+  const fnbDayCost = (m: DailyMetric) => (m.cost ?? 0) + (m.additionalCostToday ?? 0);
+  const cost_today = isAccommodation ? blendedDaily : fnbDayCost(todayMetric);
+  const cost_7d = isAccommodation ? 7 * blendedDaily : last7Days.reduce((sum, m) => sum + fnbDayCost(m), 0);
+  const cost_30d = isAccommodation ? 30 * blendedDaily : last30Days.reduce((sum, m) => sum + fnbDayCost(m), 0);
+
   // Calculate occupancy (if rooms_available is provided, use canonical 'roomsSold')
   const avg_occupancy_7d = roomsAvailable && roomsAvailable > 0
     ? (last7Days.reduce((sum, m) => sum + (m.roomsSold || 0), 0) / (last7Days.length * roomsAvailable)) * 100
     : 0;
-  
+
   const avg_occupancy_30d = roomsAvailable && roomsAvailable > 0
     ? (last30Days.reduce((sum, m) => sum + (m.roomsSold || 0), 0) / (last30Days.length * roomsAvailable)) * 100
     : 0;
-  
+
   // Calculate trends
   const revenue_trend_direction = calculateRevenueTrend(last7Days, last30Days);
-  const margin_trend = calculateMarginTrend(last7Days, last30Days);
+  const margin_trend = isAccommodation
+    ? calculateMarginTrendAccommodation(last7Days, last30Days, blendedDaily)
+    : calculateMarginTrendFnb(last7Days, last30Days);
   
   // Calculate weekend revenue ratio (last 7 days)
   const weekend_revenue_ratio = calculateWeekendRevenueRatio(last7Days);
@@ -121,8 +135,8 @@ export function calculateRollingMetrics(
   // Calculate cash runway
   const cash_runway_days = calculateCashRunway(
     todayMetric.cashBalance ?? 0,
-    cost_7d / 7, // Average daily burn rate
-    revenue_7d / 7 // Average daily revenue
+    cost_7d / 7,
+    revenue_7d / 7
   );
   
   // Calculate confidence
@@ -229,34 +243,53 @@ function calculateRevenueTrend(
   return 'stable';
 }
 
-/**
- * Calculate margin trend
- */
-function calculateMarginTrend(
+/** profit_margin vs cost: (avg_rev - d) / d */
+function calculateMarginTrendAccommodation(
+  last7Days: DailyMetric[],
+  last30Days: DailyMetric[],
+  blendedDaily: number
+): 'improving' | 'declining' | 'stable' {
+  if (last7Days.length < 7 || last30Days.length < 14 || !(blendedDaily > 0)) {
+    return 'stable';
+  }
+  const avgRev = (days: DailyMetric[]) =>
+    days.reduce((sum, m) => sum + (m.revenue || calculateDailyRevenue(m)), 0) / Math.max(1, days.length);
+  const last7Avg = avgRev(last7Days.slice(0, 7));
+  const prev7Avg = avgRev(last30Days.slice(7, 14));
+  const m = (avg: number) => (avg - blendedDaily) / blendedDaily;
+  const marginChange = m(last7Avg) - m(prev7Avg);
+  if (marginChange > 0.02) return 'improving';
+  if (marginChange < -0.02) return 'declining';
+  return 'stable';
+}
+
+function calculateMarginTrendFnb(
   last7Days: DailyMetric[],
   last30Days: DailyMetric[]
 ): 'improving' | 'declining' | 'stable' {
   if (last7Days.length < 7 || last30Days.length < 14) {
     return 'stable';
   }
-  
+
   const dayCost = (m: DailyMetric) => (m.cost ?? 0) + (m.additionalCostToday ?? 0);
-  const last7Revenue = last7Days.slice(0, 7).reduce((sum, m) => 
-    sum + (m.revenue || calculateDailyRevenue(m)), 0
+  const last7Revenue = last7Days.slice(0, 7).reduce(
+    (sum, m) => sum + (m.revenue || calculateDailyRevenue(m)),
+    0
   );
   const last7Cost = last7Days.slice(0, 7).reduce((sum, m) => sum + dayCost(m), 0);
   const last7Margin = last7Revenue > 0 ? (last7Revenue - last7Cost) / last7Revenue : 0;
-  
-  const previous7Revenue = last30Days.slice(7, 14).reduce((sum, m) => 
-    sum + (m.revenue || calculateDailyRevenue(m)), 0
+
+  const previous7Revenue = last30Days.slice(7, 14).reduce(
+    (sum, m) => sum + (m.revenue || calculateDailyRevenue(m)),
+    0
   );
   const previous7Cost = last30Days.slice(7, 14).reduce((sum, m) => sum + dayCost(m), 0);
   const previous7Margin = previous7Revenue > 0 ? (previous7Revenue - previous7Cost) / previous7Revenue : 0;
-  
+
   const marginChange = last7Margin - previous7Margin;
-  
-  if (marginChange > 0.02) return 'improving'; // 2% improvement
-  if (marginChange < -0.02) return 'declining'; // 2% decline
+
+  if (marginChange > 0.02) return 'improving';
+  if (marginChange < -0.02) return 'declining';
   return 'stable';
 }
 

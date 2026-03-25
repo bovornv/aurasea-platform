@@ -9,6 +9,12 @@
  */
 
 import type { DailyMetric } from '../models/daily-metrics';
+import {
+  accommodationBlendedDailyCostThb,
+  inferAccommodationDailyMetrics,
+  latestMonthlyFixedCostThb,
+  sumAdditionalCostToday,
+} from '../utils/accommodation-economics';
 import type { OperationalSignal } from './operational-signals-service';
 
 /**
@@ -59,24 +65,36 @@ export function convertDailyMetricsToSignals(
     
     // 7-day window (last 7 days up to this point)
     const last7Days = daysUpToNow.slice(-7);
-    const dayCost = (m: DailyMetric) => (m.cost ?? 0) + (m.additionalCostToday ?? 0);
-    const revenue7Days = last7Days.reduce((sum, m) => sum + m.revenue, 0);
-    const costs7Days = last7Days.reduce((sum, m) => sum + dayCost(m), 0);
-    
     const last30Days = daysUpToNow.slice(-30);
+    const sortedDesc = [...daysUpToNow].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    const isAcc = inferAccommodationDailyMetrics(sortedDesc);
+    const mfc = latestMonthlyFixedCostThb(sortedDesc);
+    const additional30 = sumAdditionalCostToday(last30Days);
+    const blendedDaily = isAcc ? accommodationBlendedDailyCostThb(additional30, mfc) : 0;
+    const fnbDayCost = (m: DailyMetric) => (m.cost ?? 0) + (m.additionalCostToday ?? 0);
+
+    const revenue7Days = last7Days.reduce((sum, m) => sum + m.revenue, 0);
+    const costs7Days = isAcc ? 7 * blendedDaily : last7Days.reduce((sum, m) => sum + fnbDayCost(m), 0);
+
     const revenue30Days = last30Days.reduce((sum, m) => sum + m.revenue, 0);
-    const costs30Days = last30Days.reduce((sum, m) => sum + dayCost(m), 0);
-    
-    // Calculate occupancy (if accommodation)
+    const costs30Days = isAcc ? 30 * blendedDaily : last30Days.reduce((sum, m) => sum + fnbDayCost(m), 0);
+
     let occupancyRate: number | undefined;
-    if (metric.roomsSold !== undefined && roomsAvailable && roomsAvailable > 0) {
-      occupancyRate = metric.roomsSold / roomsAvailable;
+    const roomsAvailDay =
+      metric.roomsAvailable != null && metric.roomsAvailable > 0
+        ? metric.roomsAvailable
+        : roomsAvailable && roomsAvailable > 0
+          ? roomsAvailable
+          : undefined;
+    if (metric.roomsSold !== undefined && roomsAvailDay != null && roomsAvailDay > 0) {
+      occupancyRate = metric.roomsSold / roomsAvailDay;
     }
-    
-    // Calculate ADR (if accommodation): stored or computed as revenue/rooms_sold
-    const averageDailyRate = (metric.revenue != null && metric.roomsSold != null && metric.roomsSold > 0)
-      ? metric.revenue / metric.roomsSold
-      : (metric.adr ?? 0);
+
+    const rev = metric.revenue ?? 0;
+    const averageDailyRate =
+      metric.roomsSold != null && metric.roomsSold > 0 ? rev / metric.roomsSold : metric.adr ?? 0;
     
     // Calculate customer volume (if F&B)
     const customerVolume = metric.customers;
@@ -85,7 +103,7 @@ export function convertDailyMetricsToSignals(
     const staffCount = accommodationStaff || fnbStaff || 10;
     
     const dailyRevenue = metric.revenue;
-    const dailyExpenses = (metric.cost ?? 0) + (metric.additionalCostToday ?? 0);
+    const dailyExpenses = isAcc ? blendedDaily : fnbDayCost(metric);
     const netCashFlow = dailyRevenue - dailyExpenses;
     
     const signal: OperationalSignal = {

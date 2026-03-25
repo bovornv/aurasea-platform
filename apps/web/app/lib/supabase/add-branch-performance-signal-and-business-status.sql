@@ -14,7 +14,7 @@
 -- Requires:
 --   public.branches (id, organization_id, name, module_type)
 --   public.today_summary_clean (latest metrics per branch/day; same shape semantics as former today_summary_clean_safe)
---   public.accommodation_profitability_signal
+--   public.accommodation_profitability_signal (run add-accommodation-profitability-signal-view.sql if missing)
 --   public.fnb_profitability_signal
 --
 -- Trend columns differ by deployment; we read optional keys via row_to_json so missing
@@ -50,6 +50,7 @@ FROM (
     NULLIF(
       TRIM(
         COALESCE(
+          NULLIF(TRIM(COALESCE(t.profitability_trend::text, '')), ''),
           (sig.j->>'profitability_trend'),
           (sig.j->>'profit_trend'),
           (sig.j->>'profit_margin_trend'),
@@ -59,7 +60,12 @@ FROM (
       ),
       ''
     ) AS profit_margin_trend,
-    NULL::numeric AS avg_daily_cost
+    COALESCE(
+      t.daily_cost,
+      NULLIF(TRIM((sig.j->>'daily_cost')), '')::numeric,
+      NULLIF(TRIM((sig.j->>'avg_daily_cost')), '')::numeric,
+      NULL::numeric
+    ) AS avg_daily_cost
   FROM accommodation_profitability_signal t
   CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS j) AS sig
   ORDER BY t.branch_id, t.metric_date DESC NULLS LAST
@@ -139,29 +145,124 @@ INNER JOIN (
   SELECT DISTINCT ON (t.branch_id)
     t.branch_id::text AS branch_id,
     t.metric_date::date AS metric_date,
-    COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
-    COALESCE(t.accommodation_revenue, t.total_revenue, 0)::numeric AS accommodation_revenue,
-    COALESCE(t.fnb_revenue, 0)::numeric AS fnb_revenue,
-    COALESCE(t.customers, 0)::numeric AS customers,
-    COALESCE(t.capacity, 0)::integer AS capacity,
-    COALESCE(t.utilized, 0)::integer AS utilized,
-    t.occupancy_rate::numeric AS occupancy_rate,
-    CASE
-      WHEN COALESCE(t.utilized, 0) > 0
-      THEN (COALESCE(t.total_revenue, 0)::numeric / NULLIF(t.utilized::numeric, 0))
-      ELSE NULL::numeric
-    END AS adr,
-    CASE
-      WHEN COALESCE(t.capacity, 0) > 0
-      THEN (COALESCE(t.total_revenue, 0)::numeric / NULLIF(t.capacity::numeric, 0))
-      ELSE NULL::numeric
-    END AS revpar,
-    CASE
-      WHEN t.revenue_delta_day IS NULL THEN 70::numeric
-      WHEN t.revenue_delta_day >= 0 THEN 76::numeric
-      ELSE 58::numeric
-    END AS health_score
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'total_revenue'), '')::numeric,
+      NULLIF(TRIM(jrow.jb->>'revenue'), '')::numeric,
+      NULLIF(TRIM(jrow.jb->>'total_revenue_thb'), '')::numeric,
+      0
+    ) AS total_revenue,
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'accommodation_revenue'), '')::numeric,
+      NULLIF(TRIM(jrow.jb->>'accommodation_revenue_thb'), '')::numeric,
+      0
+    ) AS accommodation_revenue,
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'fnb_revenue'), '')::numeric,
+      NULLIF(TRIM(jrow.jb->>'fnb_revenue_thb'), '')::numeric,
+      0
+    ) AS fnb_revenue,
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'customers'), '')::numeric,
+      NULLIF(TRIM(jrow.jb->>'total_customers'), '')::numeric,
+      0
+    ) AS customers,
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'capacity'), '')::numeric::integer,
+      NULLIF(TRIM(jrow.jb->>'rooms_available'), '')::numeric::integer,
+      0
+    ) AS capacity,
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'utilized'), '')::numeric::integer,
+      NULLIF(TRIM(jrow.jb->>'rooms_sold'), '')::numeric::integer,
+      0
+    ) AS utilized,
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'occupancy_rate'), '')::numeric,
+      CASE
+        WHEN COALESCE(
+          NULLIF(TRIM(jrow.jb->>'capacity'), '')::numeric,
+          NULLIF(TRIM(jrow.jb->>'rooms_available'), '')::numeric,
+          0
+        ) > 0
+        THEN (
+          COALESCE(
+            NULLIF(TRIM(jrow.jb->>'utilized'), '')::numeric,
+            NULLIF(TRIM(jrow.jb->>'rooms_sold'), '')::numeric,
+            0
+          )
+          / NULLIF(
+              COALESCE(
+                NULLIF(TRIM(jrow.jb->>'capacity'), '')::numeric,
+                NULLIF(TRIM(jrow.jb->>'rooms_available'), '')::numeric,
+                0
+              ),
+              0
+            )
+        ) * 100
+        ELSE NULL::numeric
+      END
+    ) AS occupancy_rate,
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'adr'), '')::numeric,
+      CASE
+        WHEN COALESCE(
+          NULLIF(TRIM(jrow.jb->>'utilized'), '')::numeric,
+          NULLIF(TRIM(jrow.jb->>'rooms_sold'), '')::numeric,
+          0
+        ) > 0
+        THEN
+          COALESCE(
+            NULLIF(TRIM(jrow.jb->>'total_revenue'), '')::numeric,
+            NULLIF(TRIM(jrow.jb->>'revenue'), '')::numeric,
+            0
+          )
+          / NULLIF(
+              COALESCE(
+                NULLIF(TRIM(jrow.jb->>'utilized'), '')::numeric,
+                NULLIF(TRIM(jrow.jb->>'rooms_sold'), '')::numeric,
+                0
+              ),
+              0
+            )
+        ELSE NULL::numeric
+      END
+    ) AS adr,
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'revpar'), '')::numeric,
+      CASE
+        WHEN COALESCE(
+          NULLIF(TRIM(jrow.jb->>'capacity'), '')::numeric,
+          NULLIF(TRIM(jrow.jb->>'rooms_available'), '')::numeric,
+          0
+        ) > 0
+        THEN
+          COALESCE(
+            NULLIF(TRIM(jrow.jb->>'total_revenue'), '')::numeric,
+            NULLIF(TRIM(jrow.jb->>'revenue'), '')::numeric,
+            0
+          )
+          / NULLIF(
+              COALESCE(
+                NULLIF(TRIM(jrow.jb->>'capacity'), '')::numeric,
+                NULLIF(TRIM(jrow.jb->>'rooms_available'), '')::numeric,
+                0
+              ),
+              0
+            )
+        ELSE NULL::numeric
+      END
+    ) AS revpar,
+    COALESCE(
+      NULLIF(TRIM(jrow.jb->>'health_score'), '')::numeric,
+      CASE
+        WHEN (jrow.jb->>'revenue_delta_day') IS NULL OR btrim(COALESCE(jrow.jb->>'revenue_delta_day', '')) = ''
+          THEN 70::numeric
+        WHEN NULLIF(TRIM(jrow.jb->>'revenue_delta_day'), '')::numeric >= 0 THEN 76::numeric
+        ELSE 58::numeric
+      END
+    ) AS health_score
   FROM today_summary_clean t
+  CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) AS jrow
   ORDER BY t.branch_id, t.metric_date DESC NULLS LAST
 ) l ON l.branch_id = b.id::text
 LEFT JOIN branch_performance_signal ps_acc

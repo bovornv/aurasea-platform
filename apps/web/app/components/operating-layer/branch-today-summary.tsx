@@ -2,7 +2,7 @@
 
 /**
  * BranchTodaySummary — Top Metrics only (premium, Stripe/Linear-style).
- * Accommodation: Occupancy | Rooms | Revenue | ADR | RevPAR | Profitability | Health.
+ * Accommodation: Revenue → Occupancy → Rooms → ADR → RevPAR → Health (from accommodation_today_metrics_ui).
  * F&B: Revenue | Customers | Avg Ticket | Avg Cost | Margin | Health.
  * Right-aligned data freshness chip: same status as Enter Data page (shared getDataFreshnessStatus).
  */
@@ -107,8 +107,6 @@ export interface BranchTodaySummaryProps {
   lastUpdatedDate?: string | null;
   accommodation?: BranchTodaySummaryAccommodation | null;
   fnb?: BranchTodaySummaryFnb | null;
-  /** Latest accommodation_profitability_signal row (branch Today). */
-  accommodationProfitability?: { trend: ProfitabilityTrend | null; explanation: string } | null;
   /** Avg cost: fnb_today_metrics_ui; margin trend: computed from fnb_daily_metrics (revenue − additional_cost_today). */
   fnbProfitability?: {
     avgDailyCost: number | null;
@@ -131,7 +129,6 @@ export function BranchTodaySummary({
   lastUpdatedDate,
   accommodation,
   fnb,
-  accommodationProfitability = null,
   fnbProfitability = null,
   collectingLabel = 'Collecting data...',
   freshness = null,
@@ -194,6 +191,16 @@ export function BranchTodaySummary({
         <div style={wrapperStyle}>
           <div style={rowStyle}>
             <span style={segmentStyle}>
+              <span style={labelStyle}>{labelRevenue}</span>
+              <span style={valueStyle}>{revStr}</span>
+              {revDelta != null && Number.isFinite(revDelta) && (
+                <span style={revDelta >= 0 ? deltaPos : deltaNeg}>
+                  {' '}({revDelta >= 0 ? '+' : ''}{revDelta.toFixed(0)}% {vsYesterday})
+                </span>
+              )}
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
               <span style={labelStyle}>{labelOccupancy}</span>
               <span style={valueStyle}>{occ != null ? `${occ}%` : '—'}</span>
               {occDelta != null && Number.isFinite(occDelta) && (
@@ -209,16 +216,6 @@ export function BranchTodaySummary({
             </span>
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>
-              <span style={labelStyle}>{labelRevenue}</span>
-              <span style={valueStyle}>{revStr}</span>
-              {revDelta != null && Number.isFinite(revDelta) && (
-                <span style={revDelta >= 0 ? deltaPos : deltaNeg}>
-                  {' '}({revDelta >= 0 ? '+' : ''}{revDelta.toFixed(0)}% {vsYesterday})
-                </span>
-              )}
-            </span>
-            <span style={sepStyle}>{sep}</span>
-            <span style={segmentStyle}>
               <span style={labelStyle}>ADR</span>
               <span style={valueStyle}>{adrStr}</span>
             </span>
@@ -227,14 +224,6 @@ export function BranchTodaySummary({
               <span style={labelStyle}>RevPAR</span>
               <span style={valueStyle}>{revparStr}</span>
             </span>
-            <span style={sepStyle}>{sep}</span>
-            <ProfitTrendMetric
-              label={labelProfitability}
-              trend={accommodationProfitability?.trend ?? null}
-              explanation={accommodationProfitability?.explanation ?? ''}
-              insufficientText={insufficientData}
-              segmentStyle={segmentStyle}
-            />
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelHealth}</span>

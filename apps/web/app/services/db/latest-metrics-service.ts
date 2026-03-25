@@ -111,6 +111,80 @@ export async function getFnbOperatingStatus(
   } as FnbOperatingStatusRow;
 }
 
+/** Row from `accommodation_today_metrics_ui` — accommodation Today top metrics row. */
+export interface AccommodationTodayMetricsUiRow {
+  branch_id: string;
+  metric_date?: string | null;
+  revenue?: number | null;
+  revenue_delta?: number | null;
+  occupancy?: number | null;
+  rooms_sold?: number | null;
+  rooms_available?: number | null;
+  adr?: number | null;
+  revpar?: number | null;
+  health_score?: number | null;
+}
+
+const ACCOMMODATION_TODAY_UI_SELECT =
+  'branch_id,metric_date,revenue,revenue_delta,occupancy,rooms_sold,rooms_available,adr,revpar,health_score';
+
+const accommodationTodayUiInFlight = new Map<string, Promise<AccommodationTodayMetricsUiRow | null>>();
+
+/**
+ * Accommodation Today metrics: `accommodation_today_metrics_ui`
+ * — filter branch_id, order metric_date desc, limit 1.
+ */
+export async function getAccommodationTodayMetricsUi(
+  branchId: string
+): Promise<AccommodationTodayMetricsUiRow | null> {
+  if (branchId == null || branchId === '') return null;
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return null;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const inflight = accommodationTodayUiInFlight.get(branchId);
+  if (inflight) return inflight;
+
+  const promise = (async (): Promise<AccommodationTodayMetricsUiRow | null> => {
+    const { data, error } = await supabase
+      .from('accommodation_today_metrics_ui')
+      .select(ACCOMMODATION_TODAY_UI_SELECT)
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[LatestMetricsService] accommodation_today_metrics_ui:', error.message);
+      }
+      return null;
+    }
+    if (data == null) return null;
+
+    const row = data as Record<string, unknown>;
+    return {
+      branch_id: branchId,
+      metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
+      revenue: row.revenue != null ? Number(row.revenue) : null,
+      revenue_delta: row.revenue_delta != null ? Number(row.revenue_delta) : null,
+      occupancy: row.occupancy != null ? Number(row.occupancy) : null,
+      rooms_sold: row.rooms_sold != null ? Number(row.rooms_sold) : null,
+      rooms_available: row.rooms_available != null ? Number(row.rooms_available) : null,
+      adr: row.adr != null ? Number(row.adr) : null,
+      revpar: row.revpar != null ? Number(row.revpar) : null,
+      health_score: row.health_score != null ? Number(row.health_score) : null,
+    };
+  })().finally(() => {
+    accommodationTodayUiInFlight.delete(branchId);
+  });
+
+  accommodationTodayUiInFlight.set(branchId, promise);
+  return promise;
+}
+
 /** Accommodation view row (accommodation_latest_metrics). Uses revenue column. */
 export interface AccommodationLatestMetricRow {
   branch_id: string;
