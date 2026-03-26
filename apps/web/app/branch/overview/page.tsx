@@ -870,6 +870,34 @@ export default function BranchOverviewPage() {
     };
   }, [dedupeInlineSegments]);
 
+  type WatchlistDisplayItem = { title: string; detail: string };
+
+  const isWeakWatchlistText = useCallback((s: string | null | undefined): boolean => {
+    const n = normalizePanelLine(s);
+    if (!n) return true;
+    return (
+      n.includes('no early warning signals detected') ||
+      n.includes('business stable today') ||
+      n.includes('operations stable today') ||
+      n.includes('no urgent priority issues detected')
+    );
+  }, [normalizePanelLine]);
+
+  const parseWatchlistLine = useCallback((line: string): WatchlistDisplayItem => {
+    const t = dedupeInlineSegments(line.trim());
+    if (!t) return { title: '', detail: '' };
+    const idx = t.indexOf(' - ');
+    if (idx === -1) return { title: t, detail: '' };
+    const title = t.slice(0, idx).trim();
+    const detail = dedupeInlineSegments(t.slice(idx + 3).trim());
+    const nTitle = normalizePanelLine(title);
+    const nDetail = normalizePanelLine(detail);
+    if (nTitle && nDetail && (nDetail === nTitle || nDetail.includes(nTitle))) {
+      return { title, detail: '' };
+    }
+    return { title, detail };
+  }, [dedupeInlineSegments, normalizePanelLine]);
+
   const generatedMetricOpportunity = useMemo<OpportunityDisplayItem | null>(() => {
     if (!branch?.id) return null;
     if (branch.moduleType === 'accommodation') {
@@ -960,17 +988,34 @@ export default function BranchOverviewPage() {
   const opportunityRowsForDisplay = opportunityFallbackDebug.rows;
   const opportunityDisplayItems = opportunityFallbackDebug.displayItems as OpportunityDisplayItem[];
 
-  const watchlistRowsForDisplay = useMemo(() => {
+  const watchlistDebug = useMemo(() => {
     const direct = cleanSectionText(branchWatchlistRows);
-    if (direct.length > 0) return direct;
-    const fromAlerts = mergedBranchAlerts
-      .filter((a) => a.severity === 'critical' || a.severity === 'warning')
-      .map((a) => ((a as ExtendedAlertContract).revenueImpactTitle || a.message || '').trim())
-      .filter((x) => x.length >= 12)
-      .slice(0, 3);
-    if (fromAlerts.length > 0) return fromAlerts;
-    return [locale === 'th' ? 'ยังไม่พบสัญญาณเตือนเฉพาะสาขาในวันนี้' : 'No branch-specific early warning signals detected today'];
-  }, [branchWatchlistRows, mergedBranchAlerts, cleanSectionText, locale]);
+    const meaningful = direct.filter((x) => !isWeakWatchlistText(x));
+    const weakCount = Math.max(0, direct.length - meaningful.length);
+    if (meaningful.length > 0) {
+      return {
+        sourcePath: 'watchlist_today_v_next',
+        totalRows: direct.length,
+        meaningfulCount: meaningful.length,
+        weakCount,
+        fallbackUsed: false,
+        displayItems: meaningful.map(parseWatchlistLine).filter((x) => x.title.length > 0).slice(0, 3),
+      };
+    }
+    return {
+      sourcePath: 'watchlist_today_v_next',
+      totalRows: direct.length,
+      meaningfulCount: 0,
+      weakCount,
+      fallbackUsed: true,
+      displayItems: [{
+        title: locale === 'th' ? 'ยังไม่พบสัญญาณเตือนที่มีนัยสำคัญในวันนี้' : 'No meaningful watchlist signals detected today',
+        detail: '',
+      }],
+    };
+  }, [branchWatchlistRows, cleanSectionText, isWeakWatchlistText, parseWatchlistLine, locale]);
+
+  const watchlistRowsForDisplay = watchlistDebug.displayItems.map((x) => `${x.title}${x.detail ? ` - ${x.detail}` : ''}`);
 
   const whatsWorkingRowsForDisplay = useMemo(() => {
     const direct = cleanSectionText(branchWhatsWorkingRows);
@@ -1562,6 +1607,21 @@ export default function BranchOverviewPage() {
     });
   }, [branch?.id, opportunityFallbackDebug.sourcePath, opportunityDisplayItems]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
+    console.log('[watchlist-source]', {
+      page_context: 'branch',
+      branch_id: branch.id,
+      source_used: watchlistDebug.sourcePath,
+      total_rows_returned: watchlistDebug.totalRows,
+      meaningful_rows_count: watchlistDebug.meaningfulCount,
+      weak_rows_count: watchlistDebug.weakCount,
+      fallback_used: watchlistDebug.fallbackUsed,
+      final_title_shown: watchlistDebug.displayItems.map((x) => x.title).filter(Boolean).slice(0, 3),
+      final_detail_shown: watchlistDebug.displayItems.map((x) => x.detail).filter(Boolean).slice(0, 3),
+    });
+  }, [branch?.id, watchlistDebug]);
+
   // Data freshness: MAX(metric_date) from raw tables only (fnb_daily_metrics / accommodation_daily_metrics). No *_today_summary, *_latest_metrics, created_at.
   const isAccommodationOrFnb =
     branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb';
@@ -2061,10 +2121,25 @@ export default function BranchOverviewPage() {
           {branchSectionLoading ? (
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
           ) : (
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {watchlistRowsForDisplay.slice(0, 3).map((text, idx) => (
-                <li key={`bwk-${idx}`} style={{ color: '#92400e', fontSize: 14, lineHeight: 1.5 }}>
-                  • {text}
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {watchlistDebug.displayItems.slice(0, 3).map((item, idx) => (
+                <li key={`bwk-${idx}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 14, lineHeight: 1.5 }}>
+                  <span
+                    aria-hidden
+                    style={{
+                      flexShrink: 0,
+                      width: '8px',
+                      height: '8px',
+                      marginTop: '6px',
+                      borderRadius: '9999px',
+                      background: '#f59e0b',
+                      boxShadow: '0 0 0 2px rgba(245, 158, 11, 0.25)',
+                    }}
+                  />
+                  <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ color: '#78350f', fontWeight: 700 }}>{item.title}</span>
+                    {item.detail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{item.detail}</span> : null}
+                  </span>
                 </li>
               ))}
             </ul>

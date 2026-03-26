@@ -747,6 +747,7 @@ function OwnerSummaryContent() {
               rows={watchlistRows}
               loading={companyTodayLoading}
               locale={locale}
+              organizationId={organizationIdForData}
             />
           </MonitoringErrorBoundary>
         </OperatingSection>
