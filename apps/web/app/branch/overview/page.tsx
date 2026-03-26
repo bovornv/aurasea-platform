@@ -89,7 +89,10 @@ import {
   computeFnbMarginTrendFromDailyPair,
   getFnbCurrentAndPrevDailyMetric,
 } from '../../utils/fnb-daily-margin';
-import { occupancyPercentFromMetric } from '../../utils/accommodation-economics';
+import {
+  fetchCompanyStatusCurrentByBranchId,
+  type CompanyLatestBusinessStatusV3Row,
+} from '../../services/db/company-latest-business-status-v3-service';
 
 function BranchTodayPriorityCard({ row, locale }: { row: TodayBranchPriorityRow; locale: string }) {
   const th = locale === 'th';
@@ -155,6 +158,8 @@ export default function BranchOverviewPage() {
   const [accTodayUiRow, setAccTodayUiRow] = useState<AccommodationTodayMetricsUiRow | null>(null);
   const [accommodationProfitSignal, setAccommodationProfitSignal] =
     useState<AccommodationProfitabilitySignal | null>(null);
+  const [companyStatusCurrentRow, setCompanyStatusCurrentRow] =
+    useState<CompanyLatestBusinessStatusV3Row | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -432,6 +437,7 @@ export default function BranchOverviewPage() {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
       getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
+      fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
     } else {
       setFnbOperatingStatus(null);
       getOperatingStatusData(branch.id, 'accommodation').then(setOperatingStatusData);
@@ -441,6 +447,7 @@ export default function BranchOverviewPage() {
         getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
         getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
         getAccommodationProfitabilitySignal(branch.id).then(setAccommodationProfitSignal);
+        fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
       }
     }
     getBranchLearningStatus(branch.id).then(setLearningStatus);
@@ -475,6 +482,7 @@ export default function BranchOverviewPage() {
       setFreshnessLoaded(false);
       setAccTodayUiRow(null);
       setAccommodationProfitSignal(null);
+      setCompanyStatusCurrentRow(null);
       return;
     }
     refreshOperatingStatus();
@@ -495,10 +503,12 @@ export default function BranchOverviewPage() {
           getHealthScoreFromAccommodationHealthToday(branch.id).then(setHealthScore);
           getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
           getAccommodationProfitabilitySignal(branch.id).then(setAccommodationProfitSignal);
+          fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
         }
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
           getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
+          fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
         }
       }
     };
@@ -1131,10 +1141,22 @@ export default function BranchOverviewPage() {
     });
   }, [branch?.moduleType, dailyMetricsForTrends, fnbOperatingStatus?.metric_date, latestDailyMetric?.date, locale]);
 
+  const mapCompanySymbolToTrend = useCallback((symbol: string | null | undefined): 'up' | 'down' | 'stable' | null => {
+    if (!symbol) return null;
+    const s = String(symbol).trim().toLowerCase();
+    if (!s) return null;
+    if (s.includes('up') || s.includes('increase') || s.includes('+') || s.includes('↑')) return 'up';
+    if (s.includes('down') || s.includes('decrease') || s.includes('-') || s.includes('↓')) return 'down';
+    if (s.includes('stable') || s.includes('flat') || s.includes('neutral') || s.includes('→') || s.includes('='))
+      return 'stable';
+    return null;
+  }, []);
+
   // Today summary for compact one-line (accommodation: revenue vs yesterday; no occupancy WoW; F&B: vs yesterday)
   const todaySummary = useMemo(() => {
     const isFnb = branch?.moduleType === 'fnb';
     const isAccommodation = branch?.moduleType === 'accommodation';
+    const canonical = companyStatusCurrentRow;
     const latestDateRaw =
       (isFnb ? fnbOperatingStatus?.metric_date : operatingStatusData?.metric_date) ??
       latestDailyMetric?.date ??
@@ -1184,12 +1206,12 @@ export default function BranchOverviewPage() {
           ui.health_score != null);
 
       if (hasUi) {
-        const rev = ui!.revenue != null ? Number(ui!.revenue) : null;
-        const occ = occupancyPercentFromMetric(ui!.occupancy);
+        const rev = canonical?.revenue_thb ?? null;
+        const occ = canonical?.occupancy_pct ?? null;
         const roomsSold = ui!.rooms_sold != null ? Number(ui!.rooms_sold) : null;
         const totalRooms = ui!.rooms_available != null ? Number(ui!.rooms_available) : null;
-        const adr = ui!.adr != null ? Number(ui!.adr) : null;
-        const revpar = ui!.revpar != null ? Number(ui!.revpar) : null;
+        const adr = canonical?.adr_thb ?? null;
+        const revpar = canonical?.revpar_thb ?? null;
         const revenueDeltaPct =
           ui!.revenue_delta != null && Number.isFinite(Number(ui!.revenue_delta))
             ? Number(ui!.revenue_delta)
@@ -1199,7 +1221,7 @@ export default function BranchOverviewPage() {
                 ? ((rev - prevRevDay) / prevRevDay) * 100
                 : null;
         // Canonical rule: branch top-bar health comes only from branch_status_current.health_score.
-        const healthForSummary = healthScore ?? null;
+        const healthForSummary = canonical?.health_score ?? healthScore ?? null;
         return {
           accommodation: {
             occupancyRate: occ,
@@ -1215,25 +1237,20 @@ export default function BranchOverviewPage() {
         };
       }
 
-      const rev = operatingStatusData?.revenue ?? operatingStatusData?.total_revenue_thb ?? latestDailyMetric?.revenue ?? todaySummaryRow?.total_revenue ?? null;
+      const rev = canonical?.revenue_thb ?? null;
       const roomsSold = operatingStatusData?.rooms_sold ?? latestDailyMetric?.roomsSold ?? null;
       const totalRooms = branch?.totalRooms ?? latestDailyMetric?.roomsAvailable ?? null;
-      const occ =
-        operatingStatusData?.occupancy_rate != null
-          ? Number(operatingStatusData.occupancy_rate)
-          : totalRooms != null && totalRooms > 0 && roomsSold != null
-            ? (roomsSold / totalRooms) * 100
-            : null;
+      const occ = canonical?.occupancy_pct ?? null;
       const revenueDeltaPctDay =
         todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
           ? todaySummaryRow.revenue_delta_day
           : rev != null && prevRevDay != null && prevRevDay > 0
             ? ((rev - prevRevDay) / prevRevDay) * 100
             : null;
-      const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
-      const revpar = totalRooms != null && totalRooms > 0 && rev != null ? rev / totalRooms : null;
+      const adr = canonical?.adr_thb ?? null;
+      const revpar = canonical?.revpar_thb ?? null;
       // Canonical rule: branch top-bar health comes only from branch_status_current.health_score.
-      const healthForSummary = healthScore ?? null;
+      const healthForSummary = canonical?.health_score ?? healthScore ?? null;
       return {
         accommodation: {
           occupancyRate: occ,
@@ -1250,9 +1267,9 @@ export default function BranchOverviewPage() {
     }
 
     if (isFnb) {
-      const rev = fnbOperatingStatus?.revenue ?? null;
-      const customers = fnbOperatingStatus?.customers ?? null;
-      const avgTicket = fnbOperatingStatus?.avg_ticket ?? null;
+      const rev = canonical?.revenue_thb ?? null;
+      const customers = canonical?.customers ?? null;
+      const avgTicket = canonical?.avg_ticket_thb ?? null;
       const prevRev = prevMetric?.revenue ?? null;
       const prevCust = prevMetric?.customers ?? null;
       const revenueDeltaPct =
@@ -1270,7 +1287,7 @@ export default function BranchOverviewPage() {
           customersDeltaPct,
           avgTicket,
           // Canonical rule: branch top-bar health comes only from branch_status_current.health_score.
-          healthScore: healthScore ?? null,
+          healthScore: canonical?.health_score ?? healthScore ?? null,
         },
       };
     }
@@ -1286,6 +1303,105 @@ export default function BranchOverviewPage() {
     dailyMetricsForTrends,
     todaySummaryRow,
     accTodayUiRow,
+    companyStatusCurrentRow,
+  ]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !branch?.id || !companyStatusCurrentRow) return;
+    const logs: Array<{
+      metric: string;
+      oldSource: string;
+      oldValue: number | string | null;
+      canonicalValue: number | string | null;
+      finalRenderedValue: number | string | null;
+    }> = [];
+
+    if (branch.moduleType === 'accommodation') {
+      const finalAcc = todaySummary.accommodation;
+      const canonical = companyStatusCurrentRow;
+      const check = (
+        metric: string,
+        oldSource: string,
+        oldValue: number | string | null,
+        canonicalValue: number | string | null,
+        finalRenderedValue: number | string | null
+      ) => {
+        if (canonicalValue == null) return;
+        if (oldValue === canonicalValue && finalRenderedValue === canonicalValue) return;
+        logs.push({ metric, oldSource, oldValue, canonicalValue, finalRenderedValue });
+      };
+      check('health_score', 'branch_status_current', healthScore ?? null, canonical.health_score, finalAcc?.healthScore ?? null);
+      check('revenue_thb', 'accommodation_today_metrics_ui.revenue', accTodayUiRow?.revenue ?? null, canonical.revenue_thb, finalAcc?.revenue ?? null);
+      check('occupancy_pct', 'accommodation_latest_metrics.occupancy_rate', operatingStatusData?.occupancy_rate ?? null, canonical.occupancy_pct, finalAcc?.occupancyRate ?? null);
+      check('adr_thb', 'accommodation_today_metrics_ui.adr', accTodayUiRow?.adr ?? null, canonical.adr_thb, finalAcc?.adr ?? null);
+      check('revpar_thb', 'accommodation_today_metrics_ui.revpar', accTodayUiRow?.revpar ?? null, canonical.revpar_thb, finalAcc?.revpar ?? null);
+      check(
+        'profitability_symbol',
+        'accommodation_profitability_signal.trend',
+        accommodationProfitSignal?.trend ?? null,
+        canonical.profitability_symbol,
+        mapCompanySymbolToTrend(companyStatusCurrentRow?.profitability_symbol)
+      );
+    }
+
+    if (branch.moduleType === 'fnb') {
+      const finalFnb = todaySummary.fnb;
+      const canonical = companyStatusCurrentRow;
+      const check = (
+        metric: string,
+        oldSource: string,
+        oldValue: number | string | null,
+        canonicalValue: number | string | null,
+        finalRenderedValue: number | string | null
+      ) => {
+        if (canonicalValue == null) return;
+        if (oldValue === canonicalValue && finalRenderedValue === canonicalValue) return;
+        logs.push({ metric, oldSource, oldValue, canonicalValue, finalRenderedValue });
+      };
+      check('health_score', 'branch_status_current', healthScore ?? null, canonical.health_score, finalFnb?.healthScore ?? null);
+      check('revenue_thb', 'fnb_operating_status.revenue', fnbOperatingStatus?.revenue ?? null, canonical.revenue_thb, finalFnb?.revenue ?? null);
+      check('customers', 'fnb_operating_status.customers', fnbOperatingStatus?.customers ?? null, canonical.customers, finalFnb?.customers ?? null);
+      check('avg_ticket_thb', 'fnb_operating_status.avg_ticket', fnbOperatingStatus?.avg_ticket ?? null, canonical.avg_ticket_thb, finalFnb?.avgTicket ?? null);
+      check('avg_cost_thb', 'fnb_operating_status.avg_cost', fnbOperatingStatus?.avg_cost ?? null, canonical.avg_cost_thb, companyStatusCurrentRow?.avg_cost_thb ?? null);
+      check(
+        'margin_symbol',
+        'fnb_daily_margin.marginTrend',
+        fnbMarginFromDaily.marginTrend ?? null,
+        canonical.margin_symbol,
+        mapCompanySymbolToTrend(companyStatusCurrentRow?.margin_symbol)
+      );
+    }
+
+    if (logs.length === 0) return;
+    logs.forEach((entry) => {
+      console.log('[branch-shared-metric-canonical-mismatch]', {
+        branch_id: branch.id,
+        business_type: branch.moduleType ?? 'unknown',
+        metric_name: entry.metric,
+        old_source_name: entry.oldSource,
+        old_value: entry.oldValue,
+        canonical_value: entry.canonicalValue,
+        final_rendered_value: entry.finalRenderedValue,
+      });
+    });
+  }, [
+    branch?.id,
+    branch?.moduleType,
+    companyStatusCurrentRow,
+    todaySummary.accommodation,
+    todaySummary.fnb,
+    healthScore,
+    accTodayUiRow?.revenue,
+    accTodayUiRow?.adr,
+    accTodayUiRow?.revpar,
+    operatingStatusData?.occupancy_rate,
+    accommodationProfitSignal?.trend,
+    fnbOperatingStatus?.revenue,
+    fnbOperatingStatus?.customers,
+    fnbOperatingStatus?.avg_ticket,
+    fnbOperatingStatus?.avg_cost,
+    fnbMarginFromDaily.marginTrend,
+    mapCompanySymbolToTrend,
   ]);
 
   // Temporary branch-page trace: canonical health vs competing candidates vs final rendered value.
@@ -1499,8 +1615,10 @@ export default function BranchOverviewPage() {
             fnbProfitability={
               branch.moduleType === 'fnb'
                 ? {
-                    avgDailyCost: fnbOperatingStatus?.avg_cost ?? null,
-                    marginTrend: fnbMarginFromDaily.marginTrend,
+                    avgDailyCost: companyStatusCurrentRow?.avg_cost_thb ?? null,
+                    marginTrend:
+                      mapCompanySymbolToTrend(companyStatusCurrentRow?.margin_symbol) ??
+                      fnbMarginFromDaily.marginTrend,
                     marginExplanation: fnbMarginFromDaily.marginExplanation,
                   }
                 : null
@@ -1508,7 +1626,10 @@ export default function BranchOverviewPage() {
             accommodationProfitability={
               branch.moduleType === 'accommodation'
                 ? {
-                    profitTrend: accommodationProfitSignal?.trend ?? null,
+                    profitTrend:
+                      mapCompanySymbolToTrend(companyStatusCurrentRow?.profitability_symbol) ??
+                      accommodationProfitSignal?.trend ??
+                      null,
                     profitExplanation: accommodationProfitSignal?.explanation ?? '',
                   }
                 : null

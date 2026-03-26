@@ -118,3 +118,29 @@ export async function fetchCompanyLatestBusinessStatusV3(
     .filter((x): x is CompanyLatestBusinessStatusV3Row => x != null);
 }
 
+export async function fetchCompanyStatusCurrentByBranchId(
+  branchId: string | null
+): Promise<CompanyLatestBusinessStatusV3Row | null> {
+  const bid = branchId?.trim();
+  if (!bid || !isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('company_status_current')
+    .select(SELECT_CURRENT)
+    .eq('branch_id', bid)
+    .order('metric_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('[company_status_current by branch]', error.message);
+    }
+    return null;
+  }
+  if (!data) return null;
+  return mapRow(data as Record<string, unknown>);
+}
+
