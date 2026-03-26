@@ -831,21 +831,93 @@ export default function BranchOverviewPage() {
       .slice(0, 3);
   }, []);
 
-  const opportunityRowsForDisplay = useMemo(() => {
+  const normalizePanelLine = useCallback((s: string | null | undefined): string => {
+    return (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }, []);
+
+  const dedupeInlineSegments = useCallback((s: string): string => {
+    const parts = s
+      .split(/\s-\s|•|\u2022/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (parts.length <= 1) return s.trim();
+    const kept: string[] = [];
+    parts.forEach((part) => {
+      const nPart = normalizePanelLine(part);
+      const existingIdx = kept.findIndex((k) => {
+        const nK = normalizePanelLine(k);
+        return nK === nPart || nK.includes(nPart) || nPart.includes(nK);
+      });
+      if (existingIdx === -1) {
+        kept.push(part);
+      } else if (part.length > kept[existingIdx].length) {
+        kept[existingIdx] = part;
+      }
+    });
+    return kept.join(' - ');
+  }, [normalizePanelLine]);
+
+  const composeOpportunityPriorityFallback = useCallback((row: TodayBranchPriorityRow) => {
+    const title = (row.title ?? '').trim();
+    const generatedDetail = (row.description ?? '').trim();
+    const fallbackDetail = (row.action_text ?? '').trim();
+    const nGenerated = normalizePanelLine(generatedDetail);
+    const nFallback = normalizePanelLine(fallbackDetail);
+
+    let detail = '';
+    if (nGenerated && nFallback) {
+      // Keep one detail only when substantially the same.
+      if (nGenerated === nFallback || nGenerated.includes(nFallback) || nFallback.includes(nGenerated)) {
+        detail = generatedDetail.length >= fallbackDetail.length ? generatedDetail : fallbackDetail;
+      } else {
+        // Prefer generated metric-based detail; do not append generic fallback detail.
+        detail = generatedDetail;
+      }
+    } else {
+      detail = generatedDetail || fallbackDetail;
+    }
+
+    detail = dedupeInlineSegments(detail);
+    const finalText = title && detail ? `${title} - ${detail}` : title || detail;
+    return {
+      title,
+      generatedDetail,
+      fallbackDetail,
+      finalText: dedupeInlineSegments(finalText),
+    };
+  }, [dedupeInlineSegments, normalizePanelLine]);
+
+  const opportunityFallbackDebug = useMemo(() => {
     const direct = cleanSectionText(branchOpportunitiesRows);
-    if (direct.length > 0) return direct;
+    if (direct.length > 0) {
+      return { sourcePath: 'opportunities_today_v_next', rows: direct, details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }> };
+    }
     const fromPriorities = branchPrioritiesForUi
-      .map((r) => [r.title, r.description, r.action_text].filter(Boolean).join(' - ').trim())
-      .filter((x) => x.length >= 12)
+      .map((r) => composeOpportunityPriorityFallback(r))
+      .filter((x) => x.finalText.length >= 12)
       .slice(0, 3);
-    if (fromPriorities.length > 0) return fromPriorities;
+    if (fromPriorities.length > 0) {
+      return {
+        sourcePath: 'today_priorities_view_v_next_fallback',
+        rows: fromPriorities.map((x) => x.finalText),
+        details: fromPriorities,
+      };
+    }
     const fromAlerts = topRevenueLeaks
       .map((a) => ((a as ExtendedAlertContract).revenueImpactTitle || a.message || '').trim())
       .filter((x) => x.length >= 12)
       .slice(0, 3);
-    if (fromAlerts.length > 0) return fromAlerts;
-    return [locale === 'th' ? 'ยังไม่พบโอกาสที่ชัดเจนสำหรับสาขานี้วันนี้' : 'No branch-specific opportunities detected yet for today'];
-  }, [branchOpportunitiesRows, branchPrioritiesForUi, topRevenueLeaks, cleanSectionText, locale]);
+    if (fromAlerts.length > 0) {
+      return { sourcePath: 'branch_alerts_fallback', rows: fromAlerts, details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }> };
+    }
+    return {
+      sourcePath: 'generic_empty_fallback',
+      rows: [locale === 'th' ? 'ยังไม่พบโอกาสที่ชัดเจนสำหรับสาขานี้วันนี้' : 'No branch-specific opportunities detected yet for today'],
+      details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }>,
+    };
+  }, [branchOpportunitiesRows, branchPrioritiesForUi, topRevenueLeaks, cleanSectionText, composeOpportunityPriorityFallback, locale]);
+
+  const opportunityRowsForDisplay = opportunityFallbackDebug.rows;
 
   const watchlistRowsForDisplay = useMemo(() => {
     const direct = cleanSectionText(branchWatchlistRows);
@@ -1423,6 +1495,21 @@ export default function BranchOverviewPage() {
     opportunityRowsForDisplay,
     watchlistRowsForDisplay,
   ]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
+    if (opportunityFallbackDebug.sourcePath !== 'today_priorities_view_v_next_fallback') return;
+    opportunityFallbackDebug.details.slice(0, 3).forEach((item) => {
+      console.log('[branch-opportunities-fallback-used]', {
+        branch_id: branch.id,
+        source_path_used: opportunityFallbackDebug.sourcePath,
+        generated_title: item.title || null,
+        generated_detail: item.generatedDetail || null,
+        fallback_detail: item.fallbackDetail || null,
+        final_rendered_text: item.finalText || null,
+      });
+    });
+  }, [branch?.id, opportunityFallbackDebug]);
 
   // Data freshness: MAX(metric_date) from raw tables only (fnb_daily_metrics / accommodation_daily_metrics). No *_today_summary, *_latest_metrics, created_at.
   const isAccommodationOrFnb =
