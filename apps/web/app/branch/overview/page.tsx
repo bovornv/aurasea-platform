@@ -857,50 +857,80 @@ export default function BranchOverviewPage() {
     return kept.join(' - ');
   }, [normalizePanelLine]);
 
-  const composeOpportunityPriorityFallback = useCallback((row: TodayBranchPriorityRow) => {
-    const title = (row.title ?? '').trim();
-    const generatedDetail = (row.description ?? '').trim();
-    const fallbackDetail = (row.action_text ?? '').trim();
-    const nGenerated = normalizePanelLine(generatedDetail);
-    const nFallback = normalizePanelLine(fallbackDetail);
+  type OpportunityDisplayItem = { title: string; detail: string };
 
-    let detail = '';
-    if (nGenerated && nFallback) {
-      // Keep one detail only when substantially the same.
-      if (nGenerated === nFallback || nGenerated.includes(nFallback) || nFallback.includes(nGenerated)) {
-        detail = generatedDetail.length >= fallbackDetail.length ? generatedDetail : fallbackDetail;
-      } else {
-        // Prefer generated metric-based detail; do not append generic fallback detail.
-        detail = generatedDetail;
-      }
-    } else {
-      detail = generatedDetail || fallbackDetail;
-    }
-
-    detail = dedupeInlineSegments(detail);
-    const finalText = title && detail ? `${title} - ${detail}` : title || detail;
+  const parseOpportunityLine = useCallback((line: string): OpportunityDisplayItem => {
+    const t = line.trim();
+    if (!t) return { title: '', detail: '' };
+    const idx = t.indexOf(' - ');
+    if (idx === -1) return { title: t, detail: '' };
     return {
-      title,
-      generatedDetail,
-      fallbackDetail,
-      finalText: dedupeInlineSegments(finalText),
+      title: t.slice(0, idx).trim(),
+      detail: dedupeInlineSegments(t.slice(idx + 3).trim()),
     };
-  }, [dedupeInlineSegments, normalizePanelLine]);
+  }, [dedupeInlineSegments]);
+
+  const generatedMetricOpportunity = useMemo<OpportunityDisplayItem | null>(() => {
+    if (!branch?.id) return null;
+    if (branch.moduleType === 'accommodation') {
+      const occ = companyStatusCurrentRow?.occupancy_pct;
+      const branchName = branch.branchName ?? 'This branch';
+      if (occ != null && occ < 60) {
+        return {
+          title: `Occupancy low — ${branchName}`,
+          detail: 'Occupancy level is low today. Consider OTA boosts, last-minute packages, and pricing fences.',
+        };
+      }
+      const revpar = companyStatusCurrentRow?.revpar_thb;
+      if (revpar != null && revpar > 0) {
+        return {
+          title: `Lift RevPAR — ${branchName}`,
+          detail: 'Test a higher-rate fenced package on stronger demand nights to lift RevPAR without broad discounting.',
+        };
+      }
+      return {
+        title: `Protect margin — ${branchName}`,
+        detail: 'Keep base pricing steady and push value-added bundles to convert demand without rate erosion.',
+      };
+    }
+    const branchName = branch.branchName ?? 'This branch';
+    const avgTicket = companyStatusCurrentRow?.avg_ticket_thb;
+    if (avgTicket != null && avgTicket > 0) {
+      return {
+        title: `Increase avg ticket — ${branchName}`,
+        detail: 'Bundle top add-ons and suggest premium upgrades at checkout to lift average ticket.',
+      };
+    }
+    return {
+      title: `Strengthen conversion — ${branchName}`,
+      detail: 'Prioritize high-intent demand windows with targeted offers to improve conversion quality.',
+    };
+  }, [branch?.id, branch?.moduleType, branch?.branchName, companyStatusCurrentRow?.occupancy_pct, companyStatusCurrentRow?.revpar_thb, companyStatusCurrentRow?.avg_ticket_thb]);
 
   const opportunityFallbackDebug = useMemo(() => {
     const direct = cleanSectionText(branchOpportunitiesRows);
     if (direct.length > 0) {
-      return { sourcePath: 'opportunities_today_v_next', rows: direct, details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }> };
-    }
-    const fromPriorities = branchPrioritiesForUi
-      .map((r) => composeOpportunityPriorityFallback(r))
-      .filter((x) => x.finalText.length >= 12)
-      .slice(0, 3);
-    if (fromPriorities.length > 0) {
       return {
-        sourcePath: 'today_priorities_view_v_next_fallback',
-        rows: fromPriorities.map((x) => x.finalText),
-        details: fromPriorities,
+        sourcePath: 'opportunities_today_v_next',
+        rows: direct,
+        details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }>,
+        displayItems: direct.map(parseOpportunityLine).filter((x) => x.title.length > 0),
+      };
+    }
+    if (generatedMetricOpportunity) {
+      const finalText = generatedMetricOpportunity.detail
+        ? `${generatedMetricOpportunity.title} - ${generatedMetricOpportunity.detail}`
+        : generatedMetricOpportunity.title;
+      return {
+        sourcePath: 'generated_metric_fallback',
+        rows: [finalText],
+        details: [{
+          title: generatedMetricOpportunity.title,
+          generatedDetail: generatedMetricOpportunity.detail,
+          fallbackDetail: '',
+          finalText,
+        }],
+        displayItems: [generatedMetricOpportunity],
       };
     }
     const fromAlerts = topRevenueLeaks
@@ -908,16 +938,27 @@ export default function BranchOverviewPage() {
       .filter((x) => x.length >= 12)
       .slice(0, 3);
     if (fromAlerts.length > 0) {
-      return { sourcePath: 'branch_alerts_fallback', rows: fromAlerts, details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }> };
+      const parsed = fromAlerts.map(parseOpportunityLine).filter((x) => x.title.length > 0);
+      return {
+        sourcePath: 'branch_alerts_fallback',
+        rows: fromAlerts,
+        details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }>,
+        displayItems: parsed,
+      };
     }
     return {
       sourcePath: 'generic_empty_fallback',
       rows: [locale === 'th' ? 'ยังไม่พบโอกาสที่ชัดเจนสำหรับสาขานี้วันนี้' : 'No branch-specific opportunities detected yet for today'],
       details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }>,
+      displayItems: [{
+        title: locale === 'th' ? 'ยังไม่พบโอกาสที่ชัดเจนสำหรับสาขานี้วันนี้' : 'No branch-specific opportunities detected yet for today',
+        detail: '',
+      }],
     };
-  }, [branchOpportunitiesRows, branchPrioritiesForUi, topRevenueLeaks, cleanSectionText, composeOpportunityPriorityFallback, locale]);
+  }, [branchOpportunitiesRows, generatedMetricOpportunity, topRevenueLeaks, cleanSectionText, parseOpportunityLine, locale]);
 
   const opportunityRowsForDisplay = opportunityFallbackDebug.rows;
+  const opportunityDisplayItems = opportunityFallbackDebug.displayItems as OpportunityDisplayItem[];
 
   const watchlistRowsForDisplay = useMemo(() => {
     const direct = cleanSectionText(branchWatchlistRows);
@@ -1498,18 +1539,28 @@ export default function BranchOverviewPage() {
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
-    if (opportunityFallbackDebug.sourcePath !== 'today_priorities_view_v_next_fallback') return;
-    opportunityFallbackDebug.details.slice(0, 3).forEach((item) => {
-      console.log('[branch-opportunities-fallback-used]', {
+    if (opportunityFallbackDebug.sourcePath === 'opportunities_today_v_next') {
+      console.log('[opportunities-source]', {
+        page_context: 'branch',
         branch_id: branch.id,
-        source_path_used: opportunityFallbackDebug.sourcePath,
-        generated_title: item.title || null,
-        generated_detail: item.generatedDetail || null,
-        fallback_detail: item.fallbackDetail || null,
-        final_rendered_text: item.finalText || null,
+        source_used: 'opportunities_today_v_next',
+        fallback_used: false,
+        title_shown: opportunityDisplayItems.map((x) => x.title).filter(Boolean).slice(0, 3),
+        detail_shown: opportunityDisplayItems.map((x) => x.detail).filter(Boolean).slice(0, 3),
       });
+      return;
+    }
+    const first = opportunityDisplayItems[0] ?? null;
+    console.log('[opportunities-source]', {
+      page_context: 'branch',
+      branch_id: branch.id,
+      source_used: opportunityFallbackDebug.sourcePath,
+      fallback_used: true,
+      title_shown: first?.title ?? null,
+      detail_shown: first?.detail ?? null,
+      final_rendered_text: first ? `${first.title}${first.detail ? ` - ${first.detail}` : ''}` : null,
     });
-  }, [branch?.id, opportunityFallbackDebug]);
+  }, [branch?.id, opportunityFallbackDebug.sourcePath, opportunityDisplayItems]);
 
   // Data freshness: MAX(metric_date) from raw tables only (fnb_daily_metrics / accommodation_daily_metrics). No *_today_summary, *_latest_metrics, created_at.
   const isAccommodationOrFnb =
@@ -1980,10 +2031,25 @@ export default function BranchOverviewPage() {
           {branchSectionLoading ? (
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
           ) : (
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {opportunityRowsForDisplay.slice(0, 3).map((text, idx) => (
-                <li key={`bo-${idx}`} style={{ color: '#065f46', fontSize: 14, lineHeight: 1.5 }}>
-                  • {text}
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {opportunityDisplayItems.slice(0, 3).map((item, idx) => (
+                <li key={`bo-${idx}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 14, lineHeight: 1.5 }}>
+                  <span
+                    aria-hidden
+                    style={{
+                      flexShrink: 0,
+                      width: '8px',
+                      height: '8px',
+                      marginTop: '6px',
+                      borderRadius: '9999px',
+                      background: 'linear-gradient(135deg, #22c55e 0%, #3b82f6 100%)',
+                      boxShadow: '0 0 0 2px rgba(59, 130, 246, 0.2)',
+                    }}
+                  />
+                  <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ color: '#0c4a6e', fontWeight: 700 }}>{item.title}</span>
+                    {item.detail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{item.detail}</span> : null}
+                  </span>
                 </li>
               ))}
             </ul>
