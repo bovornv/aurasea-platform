@@ -96,40 +96,91 @@ function normalizePanelText(input: string): string {
   return input.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+function dedupeRepeatedSegments(input: string): string {
+  const raw = input
+    .split(/\s-\s|•|\u2022/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (raw.length <= 1) return input.trim();
+
+  const kept: string[] = [];
+  for (const seg of raw) {
+    const nSeg = normalizePanelText(seg);
+    const duplicateIdx = kept.findIndex((k) => {
+      const nK = normalizePanelText(k);
+      return nK === nSeg || nK.includes(nSeg) || nSeg.includes(nK);
+    });
+    if (duplicateIdx === -1) {
+      kept.push(seg);
+      continue;
+    }
+    if (seg.length > kept[duplicateIdx].length) {
+      kept[duplicateIdx] = seg;
+    }
+  }
+  return kept.join(' - ');
+}
+
+function composeDedupedPanelLine(parts: {
+  title: string;
+  description: string;
+  primary: string;
+}): string {
+  const title = parts.title.trim();
+  const description = parts.description.trim();
+  const primary = parts.primary.trim();
+
+  const nDesc = normalizePanelText(description);
+  const nPrimary = normalizePanelText(primary);
+
+  let secondary = '';
+  if (nPrimary && nDesc) {
+    if (nPrimary === nDesc) {
+      secondary = primary.length >= description.length ? primary : description;
+    } else if (nPrimary.includes(nDesc)) {
+      secondary = primary;
+    } else if (nDesc.includes(nPrimary)) {
+      secondary = description;
+    } else {
+      secondary = primary;
+    }
+  } else {
+    secondary = primary || description;
+  }
+
+  secondary = dedupeRepeatedSegments(secondary);
+  const nTitle = normalizePanelText(title);
+  const nSecondary = normalizePanelText(secondary);
+  if (nTitle && nSecondary && (nSecondary === nTitle || nSecondary.startsWith(`${nTitle} -`) || nSecondary.includes(nTitle))) {
+    secondary = dedupeRepeatedSegments(
+      secondary
+        .replace(new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*-\\s*`, 'i'), '')
+        .trim()
+    );
+  }
+
+  return title && secondary ? `${title} - ${secondary}` : title || secondary;
+}
+
 function dedupeOpportunityLine(parts: {
   branchId: string;
   title: string;
   description: string;
   opportunityText: string;
 }): string {
-  const title = parts.title.trim();
-  const description = parts.description.trim();
-  const opportunityText = parts.opportunityText.trim();
-  const nDesc = normalizePanelText(description);
-  const nOpp = normalizePanelText(opportunityText);
-
-  let secondary = '';
-  if (nOpp && nDesc) {
-    if (nOpp === nDesc) {
-      secondary = opportunityText.length >= description.length ? opportunityText : description;
-    } else if (nOpp.includes(nDesc)) {
-      secondary = opportunityText;
-    } else if (nDesc.includes(nOpp)) {
-      secondary = description;
-    } else {
-      secondary = opportunityText;
-    }
-  } else {
-    secondary = opportunityText || description;
-  }
-
-  const finalText = title && secondary ? `${title} - ${secondary}` : title || secondary;
+  const finalText = composeDedupedPanelLine({
+    title: parts.title,
+    description: parts.description,
+    primary: parts.opportunityText,
+  });
+  const nDesc = normalizePanelText(parts.description);
+  const nOpp = normalizePanelText(parts.opportunityText);
   if (process.env.NODE_ENV === 'development' && nOpp && nDesc && (nOpp === nDesc || nOpp.includes(nDesc) || nDesc.includes(nOpp))) {
     console.log('[branch-opportunity-text-dedup]', {
       branch_id: parts.branchId,
-      title: title || null,
-      description: description || null,
-      opportunity_text: opportunityText || null,
+      title: parts.title || null,
+      description: parts.description || null,
+      opportunity_text: parts.opportunityText || null,
       final_rendered_text: finalText || null,
     });
   }
@@ -515,11 +566,15 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
       }
       if (!Array.isArray(data)) return [];
       const lines = data
-        .map((row) =>
-          applyWorkingSubstitutions(
-            resolveTodayPanelDisplay(row as Record<string, unknown>, ['highlight_text', 'highlightText'])
-          )
-        )
+        .map((row) => {
+          const r = row as Record<string, unknown>;
+          const line = composeDedupedPanelLine({
+            title: pickStr(r, 'title'),
+            description: pickStr(r, 'description'),
+            primary: pickStr(r, 'highlight_text', 'highlightText'),
+          });
+          return applyWorkingSubstitutions(line);
+        })
         .filter(Boolean);
       return dedupeWhatsWorkingHighlightLines(lines).slice(0, 3);
     })(),
@@ -584,9 +639,14 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
       }
       if (!Array.isArray(data)) return [];
       return data
-        .map((row) =>
-          resolveTodayPanelDisplay(row as Record<string, unknown>, ['warning_text', 'warningText'])
-        )
+        .map((row) => {
+          const r = row as Record<string, unknown>;
+          return composeDedupedPanelLine({
+            title: pickStr(r, 'title'),
+            description: pickStr(r, 'description'),
+            primary: pickStr(r, 'warning_text', 'warningText'),
+          });
+        })
         .filter(Boolean)
         .slice(0, 3);
     })(),
