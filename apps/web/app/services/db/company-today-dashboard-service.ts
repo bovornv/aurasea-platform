@@ -92,6 +92,50 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
   return null;
 }
 
+function normalizePanelText(input: string): string {
+  return input.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function dedupeOpportunityLine(parts: {
+  branchId: string;
+  title: string;
+  description: string;
+  opportunityText: string;
+}): string {
+  const title = parts.title.trim();
+  const description = parts.description.trim();
+  const opportunityText = parts.opportunityText.trim();
+  const nDesc = normalizePanelText(description);
+  const nOpp = normalizePanelText(opportunityText);
+
+  let secondary = '';
+  if (nOpp && nDesc) {
+    if (nOpp === nDesc) {
+      secondary = opportunityText.length >= description.length ? opportunityText : description;
+    } else if (nOpp.includes(nDesc)) {
+      secondary = opportunityText;
+    } else if (nDesc.includes(nOpp)) {
+      secondary = description;
+    } else {
+      secondary = opportunityText;
+    }
+  } else {
+    secondary = opportunityText || description;
+  }
+
+  const finalText = title && secondary ? `${title} - ${secondary}` : title || secondary;
+  if (process.env.NODE_ENV === 'development' && nOpp && nDesc && (nOpp === nDesc || nOpp.includes(nDesc) || nDesc.includes(nOpp))) {
+    console.log('[branch-opportunity-text-dedup]', {
+      branch_id: parts.branchId,
+      title: title || null,
+      description: description || null,
+      opportunity_text: opportunityText || null,
+      final_rendered_text: finalText || null,
+    });
+  }
+  return finalText;
+}
+
 function withCompanyRankAndSegment(rows: TodayPrioritiesRow[], limit: number): TodayPrioritiesRow[] {
   return rows.slice(0, limit).map((r, i) => {
     const rank = i + 1;
@@ -502,9 +546,18 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
       }
       if (!Array.isArray(data)) return [];
       return data
-        .map((row) =>
-          resolveTodayPanelDisplay(row as Record<string, unknown>, ['opportunity_text', 'opportunityText'])
-        )
+        .map((row) => {
+          const r = row as Record<string, unknown>;
+          const title = pickStr(r, 'title');
+          const description = pickStr(r, 'description');
+          const opportunityText = pickStr(r, 'opportunity_text', 'opportunityText');
+          return dedupeOpportunityLine({
+            branchId: bid,
+            title,
+            description,
+            opportunityText,
+          });
+        })
         .filter(Boolean)
         .slice(0, 3);
     })(),
