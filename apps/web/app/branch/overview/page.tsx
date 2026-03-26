@@ -1141,14 +1141,14 @@ export default function BranchOverviewPage() {
     });
   }, [branch?.moduleType, dailyMetricsForTrends, fnbOperatingStatus?.metric_date, latestDailyMetric?.date, locale]);
 
-  const mapCompanySymbolToTrend = useCallback((symbol: string | null | undefined): 'up' | 'down' | 'stable' | null => {
+  const mapCompanySymbolToTrend = useCallback((symbol: string | null | undefined): 'up' | 'down' | 'flat' | null => {
     if (!symbol) return null;
     const s = String(symbol).trim().toLowerCase();
     if (!s) return null;
     if (s.includes('up') || s.includes('increase') || s.includes('+') || s.includes('↑')) return 'up';
     if (s.includes('down') || s.includes('decrease') || s.includes('-') || s.includes('↓')) return 'down';
     if (s.includes('stable') || s.includes('flat') || s.includes('neutral') || s.includes('→') || s.includes('='))
-      return 'stable';
+      return 'flat';
     return null;
   }, []);
 
