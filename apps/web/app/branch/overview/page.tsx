@@ -1198,10 +1198,8 @@ export default function BranchOverviewPage() {
               : rev != null && prevRevDay != null && prevRevDay > 0
                 ? ((rev - prevRevDay) / prevRevDay) * 100
                 : null;
-        const healthForSummary =
-          ui!.health_score != null && Number.isFinite(Number(ui!.health_score))
-            ? Number(ui!.health_score)
-            : healthScore ?? todaySummaryRow?.health_score ?? null;
+        // Canonical rule: branch top-bar health comes only from branch_status_current.health_score.
+        const healthForSummary = healthScore ?? null;
         return {
           accommodation: {
             occupancyRate: occ,
@@ -1234,7 +1232,8 @@ export default function BranchOverviewPage() {
             : null;
       const adr = roomsSold != null && roomsSold > 0 && rev != null ? rev / roomsSold : null;
       const revpar = totalRooms != null && totalRooms > 0 && rev != null ? rev / totalRooms : null;
-      const healthForSummary = healthScore ?? todaySummaryRow?.health_score ?? null;
+      // Canonical rule: branch top-bar health comes only from branch_status_current.health_score.
+      const healthForSummary = healthScore ?? null;
       return {
         accommodation: {
           occupancyRate: occ,
@@ -1270,7 +1269,8 @@ export default function BranchOverviewPage() {
           customers,
           customersDeltaPct,
           avgTicket,
-          healthScore: fnbOperatingStatus?.health_score ?? healthScore ?? 70,
+          // Canonical rule: branch top-bar health comes only from branch_status_current.health_score.
+          healthScore: healthScore ?? null,
         },
       };
     }
@@ -1286,6 +1286,52 @@ export default function BranchOverviewPage() {
     dailyMetricsForTrends,
     todaySummaryRow,
     accTodayUiRow,
+  ]);
+
+  // Temporary branch-page trace: canonical health vs competing candidates vs final rendered value.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
+    const canonicalHealth =
+      healthScore != null && Number.isFinite(Number(healthScore)) ? Number(healthScore) : null;
+    const candidateAccTodayUiHealth =
+      accTodayUiRow?.health_score != null && Number.isFinite(Number(accTodayUiRow.health_score))
+        ? Number(accTodayUiRow.health_score)
+        : null;
+    const candidateTodaySummaryHealth =
+      todaySummaryRow?.health_score != null && Number.isFinite(Number(todaySummaryRow.health_score))
+        ? Number(todaySummaryRow.health_score)
+        : null;
+    const candidateFnbStatusHealth =
+      fnbOperatingStatus?.health_score != null && Number.isFinite(Number(fnbOperatingStatus.health_score))
+        ? Number(fnbOperatingStatus.health_score)
+        : null;
+    const finalRenderedHealth =
+      branch.moduleType === 'accommodation'
+        ? todaySummaryData.accommodation?.healthScore ?? null
+        : branch.moduleType === 'fnb'
+          ? todaySummaryData.fnb?.healthScore ?? null
+          : null;
+
+    if (canonicalHealth == null || finalRenderedHealth == null || canonicalHealth === finalRenderedHealth) return;
+    console.log('[branch-health-final-mismatch]', {
+      page_context: 'branch_today',
+      branch_id: branch.id,
+      business_type: branch.moduleType ?? 'unknown',
+      canonical_health_from_branch_status_current: canonicalHealth,
+      candidate_acc_today_ui_health: candidateAccTodayUiHealth,
+      candidate_today_summary_health: candidateTodaySummaryHealth,
+      candidate_fnb_operating_status_health: candidateFnbStatusHealth,
+      final_rendered_health: finalRenderedHealth,
+    });
+  }, [
+    branch?.id,
+    branch?.moduleType,
+    healthScore,
+    accTodayUiRow?.health_score,
+    todaySummaryRow?.health_score,
+    fnbOperatingStatus?.health_score,
+    todaySummaryData.accommodation?.healthScore,
+    todaySummaryData.fnb?.healthScore,
   ]);
 
   // Data freshness: MAX(metric_date) from raw tables only (fnb_daily_metrics / accommodation_daily_metrics). No *_today_summary, *_latest_metrics, created_at.
