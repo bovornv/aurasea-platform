@@ -391,6 +391,7 @@ export async function fetchCompanyTodayDashboard(
         if (branchHealth != null && companyNum !== branchHealth) {
           console.log('[company_latest_business_status_v3][health-mismatch-resolved]', {
             branch_id: row.branch_id,
+            business_type: row.business_type,
             health_score_company_source: companyNum,
             health_score_branch_source: branchHealth,
             health_score_final_rendered: finalHealth,
