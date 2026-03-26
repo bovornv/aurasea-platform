@@ -541,10 +541,8 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
 
   return {
     workingLines: workingRes,
-    opportunityLines:
-      oppRes.length > 0 ? oppRes : ['No clear opportunities today'],
-    watchlistLines:
-      watchRes.length > 0 ? watchRes : ['No early warning signals detected'],
+    opportunityLines: oppRes,
+    watchlistLines: watchRes,
   };
 }
 
@@ -556,8 +554,8 @@ export async function fetchBranchTodayPanels(branchId: string, branchLabel: stri
   if (!bid) {
     return {
       workingLines: [],
-      opportunityLines: ['No clear opportunities today'],
-      watchlistLines: ['No early warning signals detected'],
+      opportunityLines: [],
+      watchlistLines: [],
     };
   }
   const inflight = branchPanelsInFlight.get(bid);

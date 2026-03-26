@@ -820,6 +820,77 @@ export default function BranchOverviewPage() {
     return rows.slice(0, 3);
   }, [customersNow, roomsSoldNow, revenueNow]);
 
+  const cleanSectionText = useCallback((rows: Array<string | null | undefined>): string[] => {
+    const banned = new Set([
+      'No clear opportunities today',
+      'No early warning signals detected',
+    ]);
+    return rows
+      .map((x) => (x ?? '').trim())
+      .filter((x) => x.length >= 12 && !banned.has(x))
+      .slice(0, 3);
+  }, []);
+
+  const opportunityRowsForDisplay = useMemo(() => {
+    const direct = cleanSectionText(branchOpportunitiesRows);
+    if (direct.length > 0) return direct;
+    const fromPriorities = branchPrioritiesForUi
+      .map((r) => [r.title, r.description, r.action_text].filter(Boolean).join(' - ').trim())
+      .filter((x) => x.length >= 12)
+      .slice(0, 3);
+    if (fromPriorities.length > 0) return fromPriorities;
+    const fromAlerts = topRevenueLeaks
+      .map((a) => ((a as ExtendedAlertContract).revenueImpactTitle || a.message || '').trim())
+      .filter((x) => x.length >= 12)
+      .slice(0, 3);
+    if (fromAlerts.length > 0) return fromAlerts;
+    return [locale === 'th' ? 'ยังไม่พบโอกาสที่ชัดเจนสำหรับสาขานี้วันนี้' : 'No branch-specific opportunities detected yet for today'];
+  }, [branchOpportunitiesRows, branchPrioritiesForUi, topRevenueLeaks, cleanSectionText, locale]);
+
+  const watchlistRowsForDisplay = useMemo(() => {
+    const direct = cleanSectionText(branchWatchlistRows);
+    if (direct.length > 0) return direct;
+    const fromAlerts = mergedBranchAlerts
+      .filter((a) => a.severity === 'critical' || a.severity === 'warning')
+      .map((a) => ((a as ExtendedAlertContract).revenueImpactTitle || a.message || '').trim())
+      .filter((x) => x.length >= 12)
+      .slice(0, 3);
+    if (fromAlerts.length > 0) return fromAlerts;
+    return [locale === 'th' ? 'ยังไม่พบสัญญาณเตือนเฉพาะสาขาในวันนี้' : 'No branch-specific early warning signals detected today'];
+  }, [branchWatchlistRows, mergedBranchAlerts, cleanSectionText, locale]);
+
+  const whatsWorkingRowsForDisplay = useMemo(() => {
+    const direct = cleanSectionText(branchWhatsWorkingRows);
+    if (direct.length > 0) return direct;
+    if (branchWorkingFallbackRows.length > 0) return branchWorkingFallbackRows;
+    return [locale === 'th' ? 'สาขาดำเนินงานตามปกติ' : 'Branch operations are stable'];
+  }, [branchWhatsWorkingRows, branchWorkingFallbackRows, cleanSectionText, locale]);
+
+  const businessTrendsText = useMemo(() => {
+    if (branch?.moduleType !== 'accommodation') return null;
+    const rev = companyStatusCurrentRow?.revenue_thb;
+    const occ = companyStatusCurrentRow?.occupancy_pct;
+    const adr = companyStatusCurrentRow?.adr_thb;
+    const revpar = companyStatusCurrentRow?.revpar_thb;
+    const revDelta = todaySummaryRow?.revenue_delta_day;
+    if (rev == null && occ == null && adr == null && revpar == null && revDelta == null) return null;
+    const line1 = locale === 'th'
+      ? `รายได้ ฿${Math.round(rev ?? 0).toLocaleString('en-US')} (${revDelta != null ? `${revDelta >= 0 ? '+' : ''}${revDelta.toFixed(1)}% เทียบเมื่อวาน` : 'เทียบเมื่อวานไม่มีข้อมูล'})`
+      : `Revenue ฿${Math.round(rev ?? 0).toLocaleString('en-US')} (${revDelta != null ? `${revDelta >= 0 ? '+' : ''}${revDelta.toFixed(1)}% vs yesterday` : 'no yesterday delta'})`;
+    const line2 = locale === 'th'
+      ? `เข้าพัก ${occ != null ? `${occ.toFixed(1)}%` : '—'} | ADR ${adr != null ? `฿${Math.round(adr).toLocaleString('en-US')}` : '—'} | RevPAR ${revpar != null ? `฿${Math.round(revpar).toLocaleString('en-US')}` : '—'}`
+      : `Occupancy ${occ != null ? `${occ.toFixed(1)}%` : '—'} | ADR ${adr != null ? `฿${Math.round(adr).toLocaleString('en-US')}` : '—'} | RevPAR ${revpar != null ? `฿${Math.round(revpar).toLocaleString('en-US')}` : '—'}`;
+    return { line1, line2 };
+  }, [
+    branch?.moduleType,
+    companyStatusCurrentRow?.revenue_thb,
+    companyStatusCurrentRow?.occupancy_pct,
+    companyStatusCurrentRow?.adr_thb,
+    companyStatusCurrentRow?.revpar_thb,
+    todaySummaryRow?.revenue_delta_day,
+    locale,
+  ]);
+
   useEffect(() => {
     if (!branch?.id) {
       setBranchWhatsWorkingRows([]);
@@ -830,8 +901,8 @@ export default function BranchOverviewPage() {
     }
     if (!isSupabaseAvailable()) {
       setBranchWhatsWorkingRows([]);
-      setBranchOpportunitiesRows(['No clear opportunities today']);
-      setBranchWatchlistRows(['No early warning signals detected']);
+      setBranchOpportunitiesRows([]);
+      setBranchWatchlistRows([]);
       setBranchSectionLoading(false);
       return;
     }
@@ -848,8 +919,8 @@ export default function BranchOverviewPage() {
               () =>
                 resolve({
                   workingLines: [],
-                  opportunityLines: ['No clear opportunities today'],
-                  watchlistLines: ['No early warning signals detected'],
+                  opportunityLines: [],
+                  watchlistLines: [],
                 }),
               12000
             )
@@ -1325,6 +1396,34 @@ export default function BranchOverviewPage() {
     fnbMarginFromDaily.marginTrend,
   ]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
+    const logSection = (section: string, source: string, sourceRows: string[], usedFallback: boolean, finalRows: string[]) => {
+      console.log('[branch-today-section-quality]', {
+        branch_id: branch.id,
+        section_name: section,
+        source_relation_used: source,
+        returned_row_count: sourceRows.length,
+        fallback_used: usedFallback,
+        final_text_shown: finalRows.slice(0, 3),
+      });
+    };
+
+    logSection('business_trends', 'company_status_current + today_summary (delta)', businessTrendsText ? [businessTrendsText.line1, businessTrendsText.line2] : [], !businessTrendsText, businessTrendsText ? [businessTrendsText.line1, businessTrendsText.line2] : []);
+    logSection('whats_working', 'whats_working_today_v_next', branchWhatsWorkingRows, branchWhatsWorkingRows.length === 0, whatsWorkingRowsForDisplay);
+    logSection('opportunities', 'opportunities_today_v_next (alerts track)', branchOpportunitiesRows, branchOpportunitiesRows.length === 0, opportunityRowsForDisplay);
+    logSection('watchlist', 'watchlist_today_v_next', branchWatchlistRows, branchWatchlistRows.length === 0, watchlistRowsForDisplay);
+  }, [
+    branch?.id,
+    businessTrendsText,
+    branchWhatsWorkingRows,
+    branchOpportunitiesRows,
+    branchWatchlistRows,
+    whatsWorkingRowsForDisplay,
+    opportunityRowsForDisplay,
+    watchlistRowsForDisplay,
+  ]);
+
   // Data freshness: MAX(metric_date) from raw tables only (fnb_daily_metrics / accommodation_daily_metrics). No *_today_summary, *_latest_metrics, created_at.
   const isAccommodationOrFnb =
     branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb';
@@ -1757,34 +1856,16 @@ export default function BranchOverviewPage() {
 
         {/* 5. Business Trends */}
         <OperatingSection title={locale === 'th' ? 'แนวโน้มธุรกิจ' : 'Business Trends'}>
-          {performanceTrends ? (
+          {businessTrendsText ? (
             <div style={{ fontSize: 14, lineHeight: 1.6, color: '#334155', fontWeight: 500 }}>
-              <div>
-                {locale === 'th'
-                  ? performanceTrends.revenueTrend > 2
-                    ? 'รายได้กำลังปรับตัวดีขึ้น'
-                    : performanceTrends.revenueTrend < -2
-                      ? 'รายได้เริ่มอ่อนตัวลง'
-                      : 'รายได้ค่อนข้างทรงตัว'
-                  : performanceTrends.revenueTrend > 2
-                    ? 'Revenue is improving'
-                    : performanceTrends.revenueTrend < -2
-                      ? 'Revenue is declining'
-                      : 'Revenue is stable'}
-              </div>
-              <div style={{ color: '#64748b', fontSize: 13 }}>
-                {locale === 'th' ? 'ข้อมูลเริ่มก่อตัว แนวโน้มกำลังก่อตัว' : 'Early data, trend forming'}
-              </div>
+              <div>{businessTrendsText.line1}</div>
+              <div style={{ color: '#64748b', fontSize: 13 }}>{businessTrendsText.line2}</div>
             </div>
-          ) : hasRevenueActivity ? (
-            <p style={{ margin: 0, color: '#475569', fontSize: 14, fontWeight: 600 }}>
-              {locale === 'th' ? 'ข้อมูลเริ่มก่อตัว แนวโน้มกำลังก่อตัว' : 'Early data, trend forming'}
-            </p>
           ) : (
-            <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>
+            <p style={{ margin: 0, color: '#475569', fontSize: 14, fontWeight: 600 }}>
               {locale === 'th'
-                ? 'ผลการดำเนินงานค่อนข้างทรงตัว — ต้องการข้อมูลเพิ่ม'
-                : 'Performance is stable — more data needed'}
+                ? 'ยังไม่มีข้อมูลแนวโน้มเฉพาะสาขาที่เพียงพอ'
+                : 'No branch-specific trend signal available yet'}
             </p>
           )}
         </OperatingSection>
@@ -1795,7 +1876,7 @@ export default function BranchOverviewPage() {
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
           ) : (
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {(branchWhatsWorkingRows.length > 0 ? branchWhatsWorkingRows.slice(0, 3) : branchWorkingFallbackRows).map((text, idx) => (
+              {whatsWorkingRowsForDisplay.slice(0, 3).map((text, idx) => (
                 <li
                   key={`bw-${branch?.id ?? 'b'}-${normalizeWhatsWorkingTitle(text)}-${idx}`}
                   style={{ color: '#166534', fontSize: 14, lineHeight: 1.5 }}
@@ -1813,7 +1894,7 @@ export default function BranchOverviewPage() {
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
           ) : (
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {branchOpportunitiesRows.slice(0, 3).map((text, idx) => (
+              {opportunityRowsForDisplay.slice(0, 3).map((text, idx) => (
                 <li key={`bo-${idx}`} style={{ color: '#065f46', fontSize: 14, lineHeight: 1.5 }}>
                   • {text}
                 </li>
@@ -1828,7 +1909,7 @@ export default function BranchOverviewPage() {
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
           ) : (
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {branchWatchlistRows.slice(0, 3).map((text, idx) => (
+              {watchlistRowsForDisplay.slice(0, 3).map((text, idx) => (
                 <li key={`bwk-${idx}`} style={{ color: '#92400e', fontSize: 14, lineHeight: 1.5 }}>
                   • {text}
                 </li>
