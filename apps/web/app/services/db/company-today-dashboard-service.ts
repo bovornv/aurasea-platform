@@ -377,18 +377,29 @@ export async function fetchCompanyTodayDashboard(
       latestStatusPromise,
     ]);
 
-    if (process.env.NODE_ENV === 'development') {
-      const healthByBranch = new Map(bundle.businessStatus.map((r) => [r.branchId, r.healthScore] as const));
-      latestBusinessStatus.forEach((row) => {
-        console.log('[company_latest_business_status_v3][health-compare]', {
-          branch_id: row.branch_id,
-          business_type: row.business_type,
-          company_row_payload: row,
-          health_score_company_source: row.health_score,
-          health_score_branch_page_source: healthByBranch.get(row.branch_id) ?? null,
-        });
-      });
-    }
+    // Company status table keeps its existing source for non-health fields.
+    // Health is always overridden from branch-status API path (same source branch page uses).
+    const healthByBranch = new Map(bundle.businessStatus.map((r) => [r.branchId, r.healthScore] as const));
+    const latestBusinessStatusWithBranchHealth = latestBusinessStatus.map((row) => {
+      const companyHealth = row.health_score ?? null;
+      const branchHealthRaw = healthByBranch.get(row.branch_id);
+      const branchHealth = branchHealthRaw == null ? null : Number(branchHealthRaw);
+      const finalHealth = branchHealth != null && !Number.isNaN(branchHealth) ? branchHealth : companyHealth;
+
+      if (process.env.NODE_ENV === 'development') {
+        const companyNum = companyHealth == null ? null : Number(companyHealth);
+        if (branchHealth != null && companyNum !== branchHealth) {
+          console.log('[company_latest_business_status_v3][health-mismatch-resolved]', {
+            branch_id: row.branch_id,
+            health_score_company_source: companyNum,
+            health_score_branch_source: branchHealth,
+            health_score_final_rendered: finalHealth,
+          });
+        }
+      }
+
+      return { ...row, health_score: finalHealth };
+    });
 
     let priorities = panels.priorities;
     if (orgId && priorities.length === 0 && branchIds.length > 0) {
@@ -406,7 +417,7 @@ export async function fetchCompanyTodayDashboard(
       opportunities: panels.opportunities,
       watchlist: panels.watchlist,
       dataConfidence: panels.dataConfidence,
-      latestBusinessStatus,
+      latestBusinessStatus: latestBusinessStatusWithBranchHealth,
     };
   })().finally(() => {
     dashboardInFlight.delete(key);
