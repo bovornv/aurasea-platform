@@ -517,7 +517,7 @@ export default function BranchOverviewPage() {
     }).catch(() => setKpiRecommendations([]));
   }, [branch?.id]);
 
-  // Health source of truth: fnb_health_live / accommodation_health_live via health-score service.
+  // Health source of truth: branch_health_current via health-score service.
   useEffect(() => {
     if (!branch?.id) return;
     if (branch.moduleType !== 'accommodation' && branch.moduleType !== 'fnb') {
@@ -525,7 +525,7 @@ export default function BranchOverviewPage() {
     }
   }, [branch?.id, branch?.moduleType]);
 
-  // Dev-only: log when old UI source health differs from new source-of-truth health.
+  // Dev-only: log when legacy UI health differs from canonical current-view health.
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
     const newHealth = healthScore;
@@ -535,13 +535,12 @@ export default function BranchOverviewPage() {
         : (todaySummaryRow?.health_score != null ? Number(todaySummaryRow.health_score) : null);
     if (newHealth == null || oldHealth == null || Number.isNaN(newHealth) || Number.isNaN(oldHealth)) return;
     if (newHealth === oldHealth) return;
-    console.log('[branch-health-source-mismatch]', {
+    console.log('[health-canonical-mismatch]', {
+      page_context: 'branch_today',
       branch_id: branch.id,
       business_type: branch.moduleType ?? 'unknown',
-      old_source_name: branch.moduleType === 'fnb' ? 'fnb_operating_status' : 'branch_business_status_api',
-      old_health: oldHealth,
-      new_source_name: branch.moduleType === 'fnb' ? 'fnb_health_live' : 'accommodation_health_live',
-      new_health: newHealth,
+      old_rendered_health: oldHealth,
+      canonical_health: newHealth,
     });
   }, [branch?.id, branch?.moduleType, fnbOperatingStatus?.health_score, todaySummaryRow?.health_score, healthScore]);
 

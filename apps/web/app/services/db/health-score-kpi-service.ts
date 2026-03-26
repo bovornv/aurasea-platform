@@ -6,7 +6,6 @@
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
-import { getBranchBusinessStatusApiTable } from './branch-business-status-api-columns';
 
 function getTodayDateString(): string {
   const d = new Date();
@@ -230,73 +229,50 @@ export async function getHealthScoreFromBranchHealthMetrics(
   }
 }
 
-const healthScoreFromLiveInFlight = new Map<string, Promise<number | null>>();
+const healthScoreFromCanonicalInFlight = new Map<string, Promise<number | null>>();
 
-async function getHealthScoreFromLiveTable(
+async function getHealthScoreFromBranchStatusCurrent(
   branchId: string,
-  table: 'accommodation_health_live' | 'fnb_health_live',
-  oldSourceTable: string
+  businessType: 'accommodation' | 'fnb'
 ): Promise<number | null> {
   if (branchId == null || branchId === '') return null;
   if (!isSupabaseAvailable()) return null;
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
-  const inflightKey = `${table}:${branchId}`;
-  const inflight = healthScoreFromLiveInFlight.get(inflightKey);
+  const inflightKey = `${businessType}:${branchId}`;
+  const inflight = healthScoreFromCanonicalInFlight.get(inflightKey);
   if (inflight) {
     if (process.env.NODE_ENV === 'development') {
-      console.log('[health_live] deduped health_score fetch', { branchId, table });
+      console.log('[branch_status_current] deduped health_score fetch', { branchId, businessType });
     }
     return inflight;
   }
 
   const promise = (async (): Promise<number | null> => {
     try {
-      // Prefer metric_date desc when available; fallback to health_score-only for older schemas.
       let data: unknown = null;
       let error: { message?: string; code?: string } | null = null;
       const withDate = await supabase
-        .from(table)
-        .select('health_score,metric_date')
+        .from('branch_status_current')
+        .select('health_score,metric_date,business_type')
         .eq('branch_id', branchId)
+        .eq('business_type', businessType)
         .order('metric_date', { ascending: false })
         .limit(1)
         .maybeSingle();
       if (withDate.error) {
         const fallback = await supabase
-          .from(table)
+          .from('branch_status_current')
           .select('health_score')
           .eq('branch_id', branchId)
+          .eq('business_type', businessType)
           .maybeSingle();
         data = fallback.data;
         error = fallback.error ? { message: fallback.error.message, code: String(fallback.error.code ?? '') } : null;
       } else {
         data = withDate.data;
         error = null;
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        const row = (data ?? null) as Record<string, unknown> | null;
-        const liveHealth = row && row.health_score != null ? Number(row.health_score) : null;
-        const old = await supabase
-          .from(oldSourceTable)
-          .select('health_score')
-          .eq('branch_id', branchId)
-          .maybeSingle();
-        const oldHealth =
-          old.data && typeof old.data === 'object' && (old.data as Record<string, unknown>).health_score != null
-            ? Number((old.data as Record<string, unknown>).health_score)
-            : null;
-        if (liveHealth != null && oldHealth != null && liveHealth !== oldHealth) {
-          console.log('[health-source-mismatch]', {
-            branch_id: branchId,
-            old_source_name: oldSourceTable,
-            old_health: oldHealth,
-            new_source_name: table,
-            new_health: liveHealth,
-          });
-        }
       }
 
       if (error) return null;
@@ -307,27 +283,29 @@ async function getHealthScoreFromLiveTable(
       return null;
     }
   })().finally(() => {
-    healthScoreFromLiveInFlight.delete(inflightKey);
+    healthScoreFromCanonicalInFlight.delete(inflightKey);
   });
 
-  healthScoreFromLiveInFlight.set(inflightKey, promise);
+  healthScoreFromCanonicalInFlight.set(inflightKey, promise);
   return promise;
 }
 
 /**
- * Accommodation source of truth: `accommodation_health_live.health_score`.
+ * Accommodation source of truth: `branch_status_current.health_score`
+ * (which is populated from branch_health_current in DB).
  */
 export async function getHealthScoreFromAccommodationHealthToday(
   branchId: string
 ): Promise<number | null> {
-  return getHealthScoreFromLiveTable(branchId, 'accommodation_health_live', getBranchBusinessStatusApiTable());
+  return getHealthScoreFromBranchStatusCurrent(branchId, 'accommodation');
 }
 
 /**
- * F&B source of truth: `fnb_health_live.health_score`.
+ * F&B source of truth: `branch_status_current.health_score`
+ * (which is populated from branch_health_current in DB).
  */
 export async function getHealthScoreFromFnbHealthToday(
   branchId: string
 ): Promise<number | null> {
-  return getHealthScoreFromLiveTable(branchId, 'fnb_health_live', getBranchBusinessStatusApiTable());
+  return getHealthScoreFromBranchStatusCurrent(branchId, 'fnb');
 }

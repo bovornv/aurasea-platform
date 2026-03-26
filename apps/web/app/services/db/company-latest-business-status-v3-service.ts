@@ -1,6 +1,6 @@
 /**
- * Company Today — Latest business status (single source v3).
- * GET /rest/v1/company_latest_business_status_v3
+ * Company Today — Latest business status (canonical current source).
+ * GET /rest/v1/company_status_current
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -10,7 +10,7 @@ import {
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
 
-const SELECT_V3 =
+const SELECT_CURRENT =
   'organization_id,branch_id,branch_name,business_type,metric_date,health_score,revenue_thb,occupancy_pct,adr_thb,revpar_thb,profitability_symbol,customers,avg_ticket_thb,avg_cost_thb,margin_symbol';
 
 export type CompanyBusinessTypeV3 = 'accommodation' | 'fnb';
@@ -92,8 +92,8 @@ export async function fetchCompanyLatestBusinessStatusV3(
   if (!supabase) return [];
 
   let query = supabase
-    .from('company_latest_business_status_v3')
-    .select(SELECT_V3)
+    .from('company_status_current')
+    .select(SELECT_CURRENT)
     .eq('organization_id', oid)
     .order('branch_name', { ascending: true });
 
@@ -107,7 +107,7 @@ export async function fetchCompanyLatestBusinessStatusV3(
     if (isPostgrestObjectMissingError(error)) {
       markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.company_latest_business_status_v3);
     } else if (process.env.NODE_ENV === 'development') {
-      console.warn('[company_latest_business_status_v3]', error.message);
+      console.warn('[company_status_current]', error.message);
     }
     return [];
   }

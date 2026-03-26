@@ -17,10 +17,6 @@ import {
   getFnbOperatingStatus,
   getTodaySummary,
 } from './latest-metrics-service';
-import {
-  getHealthScoreFromAccommodationHealthToday,
-  getHealthScoreFromFnbHealthToday,
-} from './health-score-kpi-service';
 import { fetchWhatsWorkingToday, type WhatsWorkingTodayRow } from './whats-working-today-service';
 import { fetchOpportunitiesToday, type OpportunitiesTodayRow } from './opportunities-today-service';
 import { fetchWatchlistToday, type WatchlistTodayRow } from './watchlist-today-service';
@@ -56,7 +52,7 @@ export interface CompanyTodayDashboardData {
   opportunities: OpportunitiesTodayRow[];
   watchlist: WatchlistTodayRow[];
   dataConfidence: CompanyDataConfidenceRow | null;
-  /** Latest business status table — `company_latest_business_status_v3` only. */
+  /** Latest business status table — canonical `company_status_current`. */
   latestBusinessStatus: CompanyLatestBusinessStatusV3Row[];
 }
 
@@ -383,41 +379,24 @@ export async function fetchCompanyTodayDashboard(
 
     // Company status table keeps its existing source for non-health fields.
     // Health is always overridden from branch page source-of-truth:
-    // - accommodation -> accommodation_health_live
-    // - fnb -> fnb_health_live
-    const liveHealthPairs = await Promise.all(
-      latestBusinessStatus.map(async (row) => {
-        const liveHealth =
-          row.business_type === 'fnb'
-            ? await getHealthScoreFromFnbHealthToday(row.branch_id)
-            : await getHealthScoreFromAccommodationHealthToday(row.branch_id);
-        return [row.branch_id, liveHealth] as const;
-      })
-    );
-    const healthByBranch = new Map(liveHealthPairs);
-    const latestBusinessStatusWithBranchHealth = latestBusinessStatus.map((row) => {
-      const companyHealth = row.health_score ?? null;
-      const branchHealthRaw = healthByBranch.get(row.branch_id);
-      const branchHealth = branchHealthRaw == null ? null : Number(branchHealthRaw);
-      const finalHealth = branchHealth != null && !Number.isNaN(branchHealth) ? branchHealth : companyHealth;
-
-      if (process.env.NODE_ENV === 'development') {
-        const companyNum = companyHealth == null ? null : Number(companyHealth);
-        if (branchHealth != null && companyNum !== branchHealth) {
-          console.log('[company_latest_business_status_v3][health-mismatch-resolved]', {
+    // Canonical path: `company_status_current` already carries health from branch_health_current.
+    if (process.env.NODE_ENV === 'development') {
+      const oldRenderedHealthByBranch = new Map(bundle.businessStatus.map((r) => [r.branchId, r.healthScore] as const));
+      latestBusinessStatus.forEach((row) => {
+        const canonical = row.health_score == null ? null : Number(row.health_score);
+        const oldRendered = oldRenderedHealthByBranch.get(row.branch_id);
+        const oldNum = oldRendered == null ? null : Number(oldRendered);
+        if (canonical != null && oldNum != null && canonical !== oldNum) {
+          console.log('[health-canonical-mismatch]', {
+            page_context: 'company_today_latest_business_status',
             branch_id: row.branch_id,
             business_type: row.business_type,
-            old_source_name: 'company_latest_business_status_v3',
-            health_score_company_source: companyNum,
-            new_source_name: row.business_type === 'fnb' ? 'fnb_health_live' : 'accommodation_health_live',
-            health_score_branch_source: branchHealth,
-            health_score_final_rendered: finalHealth,
+            canonical_health: canonical,
+            old_rendered_health: oldNum,
           });
         }
-      }
-
-      return { ...row, health_score: finalHealth };
-    });
+      });
+    }
 
     let priorities = panels.priorities;
     if (orgId && priorities.length === 0 && branchIds.length > 0) {
@@ -435,7 +414,7 @@ export async function fetchCompanyTodayDashboard(
       opportunities: panels.opportunities,
       watchlist: panels.watchlist,
       dataConfidence: panels.dataConfidence,
-      latestBusinessStatus: latestBusinessStatusWithBranchHealth,
+      latestBusinessStatus,
     };
   })().finally(() => {
     dashboardInFlight.delete(key);

@@ -1,11 +1,13 @@
 /**
- * PostgREST reads for `public.branch_business_status_api` — explicit selects only (no *).
- * Physical relation: live `branch_business_status_api` or `branch_business_status_api_v_next` when phase 1 is on.
+ * Canonical branch status reads.
+ *
+ * Source of truth:
+ * - `public.branch_status_current` for branch status + health (health already derived from branch_health_current in DB).
+ *
+ * Keep function name for compatibility with existing call sites.
  */
-import { resolvePostgrestPhase1Table } from '../../lib/supabase/postgrest-phase1-cutover';
-
 export function getBranchBusinessStatusApiTable(): string {
-  return resolvePostgrestPhase1Table('branch_business_status_api');
+  return 'branch_status_current';
 }
 
 /** Company Today owner tables — all API columns needed for normalization + org filter. */
