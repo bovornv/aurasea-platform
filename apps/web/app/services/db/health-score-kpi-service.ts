@@ -231,7 +231,7 @@ export async function getHealthScoreFromBranchHealthMetrics(
 
 const healthScoreFromCanonicalInFlight = new Map<string, Promise<number | null>>();
 
-async function getHealthScoreFromBranchStatusCurrent(
+async function getHealthScoreFromBranchHealthCurrent(
   branchId: string,
   businessType: 'accommodation' | 'fnb'
 ): Promise<number | null> {
@@ -244,7 +244,7 @@ async function getHealthScoreFromBranchStatusCurrent(
   const inflight = healthScoreFromCanonicalInFlight.get(inflightKey);
   if (inflight) {
     if (process.env.NODE_ENV === 'development') {
-      console.log('[branch_status_current] deduped health_score fetch', { branchId, businessType });
+      console.log('[branch_health_current] deduped health_score fetch', { branchId, businessType });
     }
     return inflight;
   }
@@ -254,7 +254,7 @@ async function getHealthScoreFromBranchStatusCurrent(
       let data: unknown = null;
       let error: { message?: string; code?: string } | null = null;
       const withDate = await supabase
-        .from('branch_status_current')
+        .from('branch_health_current')
         .select('health_score,metric_date,business_type')
         .eq('branch_id', branchId)
         .eq('business_type', businessType)
@@ -263,7 +263,7 @@ async function getHealthScoreFromBranchStatusCurrent(
         .maybeSingle();
       if (withDate.error) {
         const fallback = await supabase
-          .from('branch_status_current')
+          .from('branch_health_current')
           .select('health_score')
           .eq('branch_id', branchId)
           .eq('business_type', businessType)
@@ -291,21 +291,19 @@ async function getHealthScoreFromBranchStatusCurrent(
 }
 
 /**
- * Accommodation source of truth: `branch_status_current.health_score`
- * (which is populated from branch_health_current in DB).
+ * Accommodation source of truth: `branch_health_current.health_score`.
  */
 export async function getHealthScoreFromAccommodationHealthToday(
   branchId: string
 ): Promise<number | null> {
-  return getHealthScoreFromBranchStatusCurrent(branchId, 'accommodation');
+  return getHealthScoreFromBranchHealthCurrent(branchId, 'accommodation');
 }
 
 /**
- * F&B source of truth: `branch_status_current.health_score`
- * (which is populated from branch_health_current in DB).
+ * F&B source of truth: `branch_health_current.health_score`.
  */
 export async function getHealthScoreFromFnbHealthToday(
   branchId: string
 ): Promise<number | null> {
-  return getHealthScoreFromBranchStatusCurrent(branchId, 'fnb');
+  return getHealthScoreFromBranchHealthCurrent(branchId, 'fnb');
 }
