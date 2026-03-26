@@ -6,18 +6,7 @@
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
-import {
-  isPostgrestObjectMissingError,
-  isPostgrestResourceKnownMissing,
-  markPostgrestResourceMissing,
-  POSTGREST_RESOURCE_KEYS,
-} from '../../lib/supabase/postgrest-missing-resource';
-import {
-  logBranchBusinessStatusApiDev,
-  SELECT_BRANCH_BUSINESS_STATUS_API_HEALTH_ONLY,
-  getBranchBusinessStatusApiTable,
-} from './branch-business-status-api-columns';
-import { logPostgrestPhase1Read } from '../../lib/supabase/postgrest-phase1-cutover';
+import { getBranchBusinessStatusApiTable } from './branch-business-status-api-columns';
 
 function getTodayDateString(): string {
   const d = new Date();
@@ -241,58 +230,76 @@ export async function getHealthScoreFromBranchHealthMetrics(
   }
 }
 
-const healthScoreFromApiInFlight = new Map<string, Promise<number | null>>();
+const healthScoreFromLiveInFlight = new Map<string, Promise<number | null>>();
 
-async function getHealthScoreFromBranchBusinessStatusApi(
+async function getHealthScoreFromLiveTable(
   branchId: string,
-  callSite: 'health_kpi_accommodation' | 'health_kpi_fnb'
+  table: 'accommodation_health_live' | 'fnb_health_live',
+  oldSourceTable: string
 ): Promise<number | null> {
   if (branchId == null || branchId === '') return null;
   if (!isSupabaseAvailable()) return null;
   const supabase = getSupabaseClient();
   if (!supabase) return null;
 
-  const inflight = healthScoreFromApiInFlight.get(branchId);
+  const inflightKey = `${table}:${branchId}`;
+  const inflight = healthScoreFromLiveInFlight.get(inflightKey);
   if (inflight) {
     if (process.env.NODE_ENV === 'development') {
-      console.log('[branch_business_status_api] deduped health_score fetch', { branchId, callSite });
+      console.log('[health_live] deduped health_score fetch', { branchId, table });
     }
     return inflight;
   }
 
   const promise = (async (): Promise<number | null> => {
-    if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api)) {
-      return null;
-    }
-
-    const select = SELECT_BRANCH_BUSINESS_STATUS_API_HEALTH_ONLY;
     try {
-      const table = getBranchBusinessStatusApiTable();
-      const { data, error } = await supabase
+      // Prefer metric_date desc when available; fallback to health_score-only for older schemas.
+      let data: unknown = null;
+      let error: { message?: string; code?: string } | null = null;
+      const withDate = await supabase
         .from(table)
-        .select(select)
+        .select('health_score,metric_date')
         .eq('branch_id', branchId)
+        .order('metric_date', { ascending: false })
+        .limit(1)
         .maybeSingle();
-
-      logBranchBusinessStatusApiDev(callSite, {
-        select,
-        branchIds: [branchId],
-        data,
-        error,
-        uiSurface: callSite === 'health_kpi_accommodation' ? 'accommodation' : 'fnb',
-      });
-      logPostgrestPhase1Read('branch_business_status_api', {
-        branchId,
-        rowCount: data != null ? 1 : 0,
-        error: error ? { message: error.message, code: String(error.code ?? '') } : null,
-      });
-
-      if (error) {
-        if (isPostgrestObjectMissingError(error)) {
-          markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api);
-        }
-        return null;
+      if (withDate.error) {
+        const fallback = await supabase
+          .from(table)
+          .select('health_score')
+          .eq('branch_id', branchId)
+          .maybeSingle();
+        data = fallback.data;
+        error = fallback.error ? { message: fallback.error.message, code: String(fallback.error.code ?? '') } : null;
+      } else {
+        data = withDate.data;
+        error = null;
       }
+
+      if (process.env.NODE_ENV === 'development') {
+        const row = (data ?? null) as Record<string, unknown> | null;
+        const liveHealth = row && row.health_score != null ? Number(row.health_score) : null;
+        const old = await supabase
+          .from(oldSourceTable)
+          .select('health_score')
+          .eq('branch_id', branchId)
+          .maybeSingle();
+        const oldHealth =
+          old.data && typeof old.data === 'object' && (old.data as Record<string, unknown>).health_score != null
+            ? Number((old.data as Record<string, unknown>).health_score)
+            : null;
+        if (liveHealth != null && oldHealth != null && liveHealth !== oldHealth) {
+          console.log('[health-source-mismatch]', {
+            branch_id: branchId,
+            old_source_name: oldSourceTable,
+            old_health: oldHealth,
+            new_source_name: table,
+            new_health: liveHealth,
+          });
+        }
+      }
+
+      if (error) return null;
       if (data == null) return null;
       const row = data as { health_score?: number | null };
       return row.health_score != null ? Number(row.health_score) : null;
@@ -300,27 +307,27 @@ async function getHealthScoreFromBranchBusinessStatusApi(
       return null;
     }
   })().finally(() => {
-    healthScoreFromApiInFlight.delete(branchId);
+    healthScoreFromLiveInFlight.delete(inflightKey);
   });
 
-  healthScoreFromApiInFlight.set(branchId, promise);
+  healthScoreFromLiveInFlight.set(inflightKey, promise);
   return promise;
 }
 
 /**
- * Get health_score from `branch_business_status_api` (Operating Status / Today page).
+ * Accommodation source of truth: `accommodation_health_live.health_score`.
  */
 export async function getHealthScoreFromAccommodationHealthToday(
   branchId: string
 ): Promise<number | null> {
-  return getHealthScoreFromBranchBusinessStatusApi(branchId, 'health_kpi_accommodation');
+  return getHealthScoreFromLiveTable(branchId, 'accommodation_health_live', getBranchBusinessStatusApiTable());
 }
 
 /**
- * F&B: same source as accommodation (`branch_business_status_api`).
+ * F&B source of truth: `fnb_health_live.health_score`.
  */
 export async function getHealthScoreFromFnbHealthToday(
   branchId: string
 ): Promise<number | null> {
-  return getHealthScoreFromBranchBusinessStatusApi(branchId, 'health_kpi_fnb');
+  return getHealthScoreFromLiveTable(branchId, 'fnb_health_live', getBranchBusinessStatusApiTable());
 }

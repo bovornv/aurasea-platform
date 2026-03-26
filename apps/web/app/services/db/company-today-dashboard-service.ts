@@ -17,6 +17,10 @@ import {
   getFnbOperatingStatus,
   getTodaySummary,
 } from './latest-metrics-service';
+import {
+  getHealthScoreFromAccommodationHealthToday,
+  getHealthScoreFromFnbHealthToday,
+} from './health-score-kpi-service';
 import { fetchWhatsWorkingToday, type WhatsWorkingTodayRow } from './whats-working-today-service';
 import { fetchOpportunitiesToday, type OpportunitiesTodayRow } from './opportunities-today-service';
 import { fetchWatchlistToday, type WatchlistTodayRow } from './watchlist-today-service';
@@ -378,8 +382,19 @@ export async function fetchCompanyTodayDashboard(
     ]);
 
     // Company status table keeps its existing source for non-health fields.
-    // Health is always overridden from branch-status API path (same source branch page uses).
-    const healthByBranch = new Map(bundle.businessStatus.map((r) => [r.branchId, r.healthScore] as const));
+    // Health is always overridden from branch page source-of-truth:
+    // - accommodation -> accommodation_health_live
+    // - fnb -> fnb_health_live
+    const liveHealthPairs = await Promise.all(
+      latestBusinessStatus.map(async (row) => {
+        const liveHealth =
+          row.business_type === 'fnb'
+            ? await getHealthScoreFromFnbHealthToday(row.branch_id)
+            : await getHealthScoreFromAccommodationHealthToday(row.branch_id);
+        return [row.branch_id, liveHealth] as const;
+      })
+    );
+    const healthByBranch = new Map(liveHealthPairs);
     const latestBusinessStatusWithBranchHealth = latestBusinessStatus.map((row) => {
       const companyHealth = row.health_score ?? null;
       const branchHealthRaw = healthByBranch.get(row.branch_id);
@@ -392,7 +407,9 @@ export async function fetchCompanyTodayDashboard(
           console.log('[company_latest_business_status_v3][health-mismatch-resolved]', {
             branch_id: row.branch_id,
             business_type: row.business_type,
+            old_source_name: 'company_latest_business_status_v3',
             health_score_company_source: companyNum,
+            new_source_name: row.business_type === 'fnb' ? 'fnb_health_live' : 'accommodation_health_live',
             health_score_branch_source: branchHealth,
             health_score_final_rendered: finalHealth,
           });

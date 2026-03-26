@@ -67,7 +67,10 @@ import {
   type BranchLearningStatusRow,
 } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
-import { getHealthScoreFromAccommodationHealthToday } from '../../services/db/health-score-kpi-service';
+import {
+  getHealthScoreFromAccommodationHealthToday,
+  getHealthScoreFromFnbHealthToday,
+} from '../../services/db/health-score-kpi-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
 import {
   defaultBranchPrioritiesFallback,
@@ -428,6 +431,7 @@ export default function BranchOverviewPage() {
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
+      getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
     } else {
       setFnbOperatingStatus(null);
       getOperatingStatusData(branch.id, 'accommodation').then(setOperatingStatusData);
@@ -494,6 +498,7 @@ export default function BranchOverviewPage() {
         }
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
+          getHealthScoreFromFnbHealthToday(branch.id).then(setHealthScore);
         }
       }
     };
@@ -512,15 +517,33 @@ export default function BranchOverviewPage() {
     }).catch(() => setKpiRecommendations([]));
   }, [branch?.id]);
 
-  // F&B summary bar: health mirrors fnb_operating_status. Accommodation health is set in refreshOperatingStatus (branch_business_status_api) only — avoids duplicate fetch vs StrictMode.
+  // Health source of truth: fnb_health_live / accommodation_health_live via health-score service.
   useEffect(() => {
     if (!branch?.id) return;
-    if (branch.moduleType === 'fnb') {
-      setHealthScore(fnbOperatingStatus?.health_score != null ? Number(fnbOperatingStatus.health_score) : null);
-    } else if (branch.moduleType !== 'accommodation') {
+    if (branch.moduleType !== 'accommodation' && branch.moduleType !== 'fnb') {
       setHealthScore(null);
     }
-  }, [branch?.id, branch?.moduleType, fnbOperatingStatus?.health_score]);
+  }, [branch?.id, branch?.moduleType]);
+
+  // Dev-only: log when old UI source health differs from new source-of-truth health.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
+    const newHealth = healthScore;
+    const oldHealth =
+      branch.moduleType === 'fnb'
+        ? (fnbOperatingStatus?.health_score != null ? Number(fnbOperatingStatus.health_score) : null)
+        : (todaySummaryRow?.health_score != null ? Number(todaySummaryRow.health_score) : null);
+    if (newHealth == null || oldHealth == null || Number.isNaN(newHealth) || Number.isNaN(oldHealth)) return;
+    if (newHealth === oldHealth) return;
+    console.log('[branch-health-source-mismatch]', {
+      branch_id: branch.id,
+      business_type: branch.moduleType ?? 'unknown',
+      old_source_name: branch.moduleType === 'fnb' ? 'fnb_operating_status' : 'branch_business_status_api',
+      old_health: oldHealth,
+      new_source_name: branch.moduleType === 'fnb' ? 'fnb_health_live' : 'accommodation_health_live',
+      new_health: newHealth,
+    });
+  }, [branch?.id, branch?.moduleType, fnbOperatingStatus?.health_score, todaySummaryRow?.health_score, healthScore]);
 
   // Confidence card: accommodation uses accommodation_data_coverage.confidence_level
   useEffect(() => {
