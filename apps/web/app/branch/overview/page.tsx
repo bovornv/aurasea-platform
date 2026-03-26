@@ -1305,14 +1305,16 @@ export default function BranchOverviewPage() {
       fnbOperatingStatus?.health_score != null && Number.isFinite(Number(fnbOperatingStatus.health_score))
         ? Number(fnbOperatingStatus.health_score)
         : null;
-    const finalRenderedHealth =
-      branch.moduleType === 'accommodation'
-        ? todaySummaryData.accommodation?.healthScore ?? null
-        : branch.moduleType === 'fnb'
-          ? todaySummaryData.fnb?.healthScore ?? null
-          : null;
-
-    if (canonicalHealth == null || finalRenderedHealth == null || canonicalHealth === finalRenderedHealth) return;
+    // Current render rule uses canonical branch_status_current health directly.
+    const finalRenderedHealth = canonicalHealth;
+    if (canonicalHealth == null) return;
+    const hasCompetingMismatch =
+      candidateAccTodayUiHealth === null && candidateTodaySummaryHealth === null && candidateFnbStatusHealth === null
+        ? false
+        : candidateAccTodayUiHealth !== canonicalHealth ||
+          candidateTodaySummaryHealth !== canonicalHealth ||
+          candidateFnbStatusHealth !== canonicalHealth;
+    if (!hasCompetingMismatch) return;
     console.log('[branch-health-final-mismatch]', {
       page_context: 'branch_today',
       branch_id: branch.id,
@@ -1330,8 +1332,6 @@ export default function BranchOverviewPage() {
     accTodayUiRow?.health_score,
     todaySummaryRow?.health_score,
     fnbOperatingStatus?.health_score,
-    todaySummaryData.accommodation?.healthScore,
-    todaySummaryData.fnb?.healthScore,
   ]);
 
   // Data freshness: MAX(metric_date) from raw tables only (fnb_daily_metrics / accommodation_daily_metrics). No *_today_summary, *_latest_metrics, created_at.
