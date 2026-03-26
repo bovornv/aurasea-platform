@@ -32,7 +32,9 @@ import {
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
 import {
+  logPostgrestAlertsRead,
   logPostgrestPhase1Read,
+  resolvePostgrestAlertsTable,
   resolvePostgrestPhase1Table,
 } from '../../lib/supabase/postgrest-phase1-cutover';
 import { dedupeWhatsWorkingHighlightLines } from './whats-working-today-service';
@@ -471,12 +473,19 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
     })(),
     (async () => {
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.opportunities_today)) return [];
+      const opTable = resolvePostgrestAlertsTable('opportunities_today');
       const { data, error } = await supabase
-        .from('opportunities_today')
+        .from(opTable)
         .select(SELECT_OPPORTUNITIES_TODAY_BRANCH)
         .eq('branch_id', bid)
         .order('sort_score', { ascending: false })
         .limit(3);
+      const opRaw = Array.isArray(data) ? data : [];
+      logPostgrestAlertsRead('opportunities_today', {
+        branchId: bid,
+        rowCount: opRaw.length,
+        error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+      });
       if (error) {
         if (isPostgrestObjectMissingError(error)) {
           markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.opportunities_today);

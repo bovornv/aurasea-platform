@@ -15,7 +15,11 @@ import {
   SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY,
   getBranchBusinessStatusApiTable,
 } from './branch-business-status-api-columns';
-import { logPostgrestPhase1Read } from '../../lib/supabase/postgrest-phase1-cutover';
+import {
+  logPostgrestAlertsRead,
+  logPostgrestPhase1Read,
+  resolvePostgrestAlertsRpc,
+} from '../../lib/supabase/postgrest-phase1-cutover';
 
 const companyTodayBundleInFlight = new Map<string, Promise<CompanyTodayBundle>>();
 
@@ -543,6 +547,7 @@ async function fetchCompanyTodayBundleCore(
   const skipToday = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.alerts_today);
 
   const bsTable = getBranchBusinessStatusApiTable();
+  const critRpc = resolvePostgrestAlertsRpc('get_alerts_critical');
   const [bsRes, branchesRes, critRes, todayRes] = await Promise.all([
     skipBs
       ? Promise.resolve({ data: null, error: null } as const)
@@ -553,7 +558,7 @@ async function fetchCompanyTodayBundleCore(
     supabase.from('branches').select('id,module_type,branch_name,name,organization_id').in('id', idFilter),
     skipCrit
       ? Promise.resolve({ data: null, error: null } as const)
-      : supabase.rpc('get_alerts_critical', getAlertsCriticalArgs),
+      : supabase.rpc(critRpc as never, getAlertsCriticalArgs),
     skipToday
       ? Promise.resolve({ data: null, error: null } as const)
       : supabase.from('alerts_today').select('*').in('branch_id', idFilter),
@@ -593,8 +598,13 @@ async function fetchCompanyTodayBundleCore(
   }
   if (!skipToday) logDev('alerts_today', todayRes);
   if (!skipCrit) {
+    logPostgrestAlertsRead('get_alerts_critical', {
+      organizationId,
+      rowCount: asRecordArray(critRes.data).length,
+      error: critRes.error ? { message: critRes.error.message, code: String((critRes.error as { code?: string }).code ?? '') } : null,
+    });
     if (process.env.NODE_ENV === 'development') {
-      console.log('[CompanyToday] get_alerts_critical RPC payload:', { branch_ids: idFilter });
+      console.log('[CompanyToday] get_alerts_critical RPC payload:', { rpc: critRpc, branch_ids: idFilter });
       console.log('[CompanyToday] get_alerts_critical RPC response:', {
         data: critRes.data,
         error: critRes.error

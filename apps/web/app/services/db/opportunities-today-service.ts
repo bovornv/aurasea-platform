@@ -13,6 +13,10 @@ import {
   resolveTodayPanelDisplay,
   SELECT_OPPORTUNITIES_TODAY,
 } from './today-panels-columns';
+import {
+  logPostgrestAlertsRead,
+  resolvePostgrestAlertsTable,
+} from '../../lib/supabase/postgrest-phase1-cutover';
 
 export interface OpportunitiesTodayRow {
   organization_id: string | null;
@@ -49,12 +53,20 @@ export async function fetchOpportunitiesToday(
   if (!supabase) return [];
 
   const cap = Math.min(10, Math.max(1, limit));
+  const table = resolvePostgrestAlertsTable('opportunities_today');
   const { data, error } = await supabase
-    .from('opportunities_today')
+    .from(table)
     .select(SELECT_OPPORTUNITIES_TODAY)
     .eq('organization_id', organizationId.trim())
     .order('sort_score', { ascending: false })
     .limit(cap);
+
+  const rawForLog = Array.isArray(data) ? data : [];
+  logPostgrestAlertsRead('opportunities_today', {
+    organizationId: organizationId.trim(),
+    rowCount: rawForLog.length,
+    error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+  });
 
   if (error) {
     if (isPostgrestObjectMissingError(error)) {
