@@ -515,13 +515,27 @@ export async function fetchCompanyTodayDashboard(
       }
     }
 
+    const branchNameById = new Map(
+      (bundle.businessStatus ?? [])
+        .map((r) => [r.branchId?.trim(), r.branchName?.trim()] as const)
+        .filter((x): x is readonly [string, string] => Boolean(x[0] && x[1]))
+    );
+    const canonicalWatchlistWithBranchNames = canonicalWatchlist.map((row) => {
+      const branchId = (row.branch_id ?? '').trim();
+      const fallbackBranchName = branchId ? branchNameById.get(branchId) ?? null : null;
+      return {
+        ...row,
+        branch_name: row.branch_name?.trim() || fallbackBranchName,
+      };
+    });
+
     return {
       bundle,
       priorities,
       whatsWorking: panels.whatsWorking,
       opportunities: panels.opportunities,
       // Canonical source for company Watchlist: watchlist_today_v_next directly.
-      watchlist: canonicalWatchlist,
+      watchlist: canonicalWatchlistWithBranchNames,
       dataConfidence: panels.dataConfidence,
       latestBusinessStatus,
     };

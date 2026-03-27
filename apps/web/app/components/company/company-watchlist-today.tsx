@@ -59,6 +59,17 @@ function toSortNum(n: number | null | undefined): number {
   return typeof n === 'number' && Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
 }
 
+function withBranchInHeadline(title: string, branchName: string): string {
+  const t = title.trim();
+  const b = branchName.trim();
+  if (!b) return t;
+  if (!t) return b;
+  const nt = normalize(t);
+  const nb = normalize(b);
+  if (nt.includes(nb)) return t;
+  return `${t} — ${b}`;
+}
+
 export function CompanyWatchlistToday({ rows, locale, loading, organizationId = null }: Props) {
   const th = locale === 'th';
   const meaningful = rows.filter((r) => !isWeakWatchlistText(r.title, r.description, r.warning_text));
@@ -127,7 +138,18 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
     >
       {selectedRows.map((row) => {
         const parts = toDisplay(row);
+        const branchName = (row.branch_name ?? '').trim();
+        const finalTitle = withBranchInHeadline(parts.title, branchName);
         const key = `wl-${row.branch_id || 'org'}-${row.metric_date ?? 'd'}-${normKey(row.warning_text || row.title)}`;
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[watchlist-company-row-render]', {
+            organization_id: organizationId,
+            branch_id: row.branch_id,
+            branch_name: branchName || null,
+            final_title_shown: finalTitle || null,
+            final_detail_shown: parts.detail || null,
+          });
+        }
         return (
           <li
             key={key}
@@ -153,7 +175,7 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
               }}
             />
             <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ color: '#78350f', fontWeight: 700 }}>{parts.title}</span>
+              <span style={{ color: '#78350f', fontWeight: 700 }}>{finalTitle}</span>
               {parts.detail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{parts.detail}</span> : null}
             </span>
           </li>
