@@ -19,15 +19,8 @@ import { getDailyMetrics } from '../../services/db/daily-metrics-service';
 import { getBranchTrendSeriesWithFallback } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
-import { AccommodationPricingBubbleChart } from '../../components/charts/accommodation-pricing-bubble-chart';
 import { DayOfWeekChart } from '../../components/charts/day-of-week-chart';
 import { trendInsightDual, trendInsightFromSeries } from '../../utils/trend-chart-insights';
-import {
-  fetchAccommodationPricingInsight,
-  fetchAccommodationPricingPosition,
-  type AccommodationPricingInsight,
-  type AccommodationPricingPoint,
-} from '../../services/db/accommodation-pricing-service';
 
 const PAGE_PADDING_TOP = 8;
 const PAGE_PADDING_SIDES = 24;
@@ -65,8 +58,6 @@ export default function BranchTrendsPage() {
   const [dailyMetrics, setDailyMetrics] = useState<Awaited<ReturnType<typeof getDailyMetrics>>>([]);
   const [dailyLoading, setDailyLoading] = useState(true);
   const [trendSeries, setTrendSeries] = useState<Awaited<ReturnType<typeof getBranchTrendSeriesWithFallback>>>(null);
-  const [pricingPoints, setPricingPoints] = useState<AccommodationPricingPoint[]>([]);
-  const [pricingInsight, setPricingInsight] = useState<AccommodationPricingInsight | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -81,15 +72,11 @@ export default function BranchTrendsPage() {
       getBranchKpiMetrics(branch.id, DEFAULT_DAYS),
       getDailyMetrics(branch.id, DEFAULT_DAYS),
       getBranchTrendSeriesWithFallback(branch.id, DEFAULT_DAYS),
-      fetchAccommodationPricingPosition(branch.id, DEFAULT_DAYS),
-      fetchAccommodationPricingInsight(branch.id),
     ])
-      .then(([rows, daily, series, pricing, insight]) => {
+      .then(([rows, daily, series]) => {
         setKpiRows(rows ?? []);
         setDailyMetrics(daily ?? []);
         setTrendSeries(series ?? null);
-        setPricingPoints(pricing ?? []);
-        setPricingInsight(insight ?? null);
         setKpiLoading(false);
         setDailyLoading(false);
       })
@@ -97,8 +84,6 @@ export default function BranchTrendsPage() {
         setKpiRows([]);
         setDailyMetrics([]);
         setTrendSeries(null);
-        setPricingPoints([]);
-        setPricingInsight(null);
         setKpiLoading(false);
         setDailyLoading(false);
       });
@@ -413,20 +398,32 @@ export default function BranchTrendsPage() {
             >
               {isAccommodation && (
                 <>
-                  {/* 1. Pricing position (Occupancy x ADR bubble) — Primary */}
+                  {/* 1. Occupancy + ADR (dual axis) — Primary */}
                   <TrendChartCard
                     legend={[
-                      { label: locale === 'th' ? 'ตำแหน่งราคา' : 'Pricing position', color: '#16a34a' },
+                      { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
+                      { label: locale === 'th' ? 'ราคาห้องเฉลี่ย' : 'ADR', color: '#7c3aed' },
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
                     problem={branchTrendInsights.accOccAdr?.problem ?? ''}
                     recommendation={branchTrendInsights.accOccAdr?.recommendation ?? ''}
                   >
-                    <AccommodationPricingBubbleChart
-                      points={pricingPoints}
-                      insight={pricingInsight}
+                    <DecisionTrendChart
+                      values={occupancyValues}
+                      valuesRight={adrValues.length === occupancyValues.length ? adrValues : undefined}
+                      dates={chartDates.length === occupancyValues.length ? chartDates : undefined}
+                      color="#2563eb"
+                      colorRight="#7c3aed"
+                      showBaseline={true}
+                      formatLeft={(v) => `${Math.round(v)}%`}
+                      formatRight={(v) => `฿${Math.round(v)}`}
+                      leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
+                      rightLabel={locale === 'th' ? 'ราคาห้องเฉลี่ย (฿)' : 'ADR (฿)'}
+                      emptyMessage={emptyMsg}
                       locale={chartLocale}
+                      insightRevenue={aligned(revenueValues, occupancyValues.length)}
+                      insightCustomers={aligned(customersValues, occupancyValues.length)}
                     />
                   </TrendChartCard>
 
