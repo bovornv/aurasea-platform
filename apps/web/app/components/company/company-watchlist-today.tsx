@@ -22,6 +22,7 @@ function isWeakWatchlistText(...parts: Array<string | null | undefined>): boolea
   if (!n) return true;
   return (
     n.includes('no early warning signals detected') ||
+    n.includes('no meaningful watchlist signals detected today') ||
     n.includes('business stable today') ||
     n.includes('operations stable today') ||
     n.includes('no urgent priority issues detected')

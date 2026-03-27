@@ -466,10 +466,11 @@ export async function fetchCompanyTodayDashboard(
           ? fetchCompanyLatestBusinessStatusV3(orgId, [])
           : Promise.resolve([] as CompanyLatestBusinessStatusV3Row[]);
 
-    const [bundle, panels, latestBusinessStatus] = await Promise.all([
+    const [bundle, panels, latestBusinessStatus, canonicalWatchlist] = await Promise.all([
       bundlePromise,
       panelsPromise,
       latestStatusPromise,
+      orgId ? fetchWatchlistToday(orgId, 20) : Promise.resolve([] as WatchlistTodayRow[]),
     ]);
 
     // Company status table keeps its existing source for non-health fields.
@@ -507,7 +508,8 @@ export async function fetchCompanyTodayDashboard(
       priorities,
       whatsWorking: panels.whatsWorking,
       opportunities: panels.opportunities,
-      watchlist: panels.watchlist,
+      // Canonical source for company Watchlist: watchlist_today_v_next directly.
+      watchlist: canonicalWatchlist,
       dataConfidence: panels.dataConfidence,
       latestBusinessStatus,
     };

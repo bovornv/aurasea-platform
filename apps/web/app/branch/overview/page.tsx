@@ -949,6 +949,7 @@ export default function BranchOverviewPage() {
     if (!n) return true;
     return (
       n.includes('no early warning signals detected') ||
+      n.includes('no meaningful watchlist signals detected today') ||
       n.includes('business stable today') ||
       n.includes('operations stable today') ||
       n.includes('no urgent priority issues detected')
@@ -1063,11 +1064,11 @@ export default function BranchOverviewPage() {
   const watchlistDebug = useMemo(() => {
     const direct = cleanSectionText(branchWatchlistRows);
     const meaningful = direct.filter((x) => !isWeakWatchlistText(x));
-    const weakCount = Math.max(0, direct.length - meaningful.length);
+    const weakCount = Math.max(0, branchWatchlistRows.length - meaningful.length);
     if (meaningful.length > 0) {
       return {
         sourcePath: 'watchlist_today_v_next',
-        totalRows: direct.length,
+        totalRows: branchWatchlistRows.length,
         meaningfulCount: meaningful.length,
         weakCount,
         fallbackUsed: false,
@@ -1076,7 +1077,7 @@ export default function BranchOverviewPage() {
     }
     return {
       sourcePath: 'watchlist_today_v_next',
-      totalRows: direct.length,
+      totalRows: branchWatchlistRows.length,
       meaningfulCount: 0,
       weakCount,
       fallbackUsed: true,
