@@ -59,6 +59,18 @@ function withBranchInHeadline(title: string, branchName: string): string {
   return `${t} — ${b}`;
 }
 
+function stripBranchNameFromDetail(detail: string, branchName: string): string {
+  const d = detail.trim();
+  const b = branchName.trim();
+  if (!d || !b) return d;
+  const esc = b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return d
+    .replace(new RegExp(`\\s*\\(${esc}\\)\\s*$`, 'i'), '')
+    .replace(new RegExp(`\\bbranch\\s*:\\s*${esc}\\b`, 'i'), '')
+    .replace(new RegExp(`\\s*[—-]\\s*${esc}\\s*$`, 'i'), '')
+    .trim();
+}
+
 export function CompanyOpportunitiesToday({ rows, locale, loading, organizationId = null }: Props) {
   const th = locale === 'th';
   const actionable = rows
@@ -78,12 +90,15 @@ export function CompanyOpportunitiesToday({ rows, locale, loading, organizationI
   if (process.env.NODE_ENV === 'development') {
     const selected = actionable.slice(0, 3).map((r) => {
       const parts = deriveOpportunityParts(r);
-      const finalTitle = withBranchInHeadline(parts.title, (r.branch_name ?? '').trim());
+      const branchName = (r.branch_name ?? '').trim();
+      const finalTitle = withBranchInHeadline(parts.title, branchName);
+      const cleanedDetail = stripBranchNameFromDetail(parts.detail, branchName);
       return {
         branch_id: r.branch_id,
-        branch_name: r.branch_name ?? null,
+        branch_name: branchName || null,
         final_title_shown: finalTitle || null,
-        final_detail_shown: parts.detail || null,
+        original_detail: parts.detail || null,
+        final_detail_shown: cleanedDetail || null,
       };
     });
     console.log('[opportunities-source]', {
@@ -110,15 +125,19 @@ export function CompanyOpportunitiesToday({ rows, locale, loading, organizationI
     >
       {actionable.map((row) => {
         const parts = deriveOpportunityParts(row);
-        const finalTitle = withBranchInHeadline(parts.title, (row.branch_name ?? '').trim());
+        const branchName = (row.branch_name ?? '').trim();
+        const finalTitle = withBranchInHeadline(parts.title, branchName);
+        const cleanedDetail = stripBranchNameFromDetail(parts.detail, branchName);
         const key = `o-${row.branch_id}-${row.metric_date ?? 'd'}-${normKey(row.opportunity_text || row.title)}`;
         if (process.env.NODE_ENV === 'development') {
           console.log('[opportunities-company-row-render]', {
             organization_id: organizationId,
             branch_id: row.branch_id,
-            branch_name: row.branch_name ?? null,
+            branch_name: branchName || null,
+            original_detail: parts.detail || null,
+            cleaned_detail: cleanedDetail || null,
             final_title_shown: finalTitle || null,
-            final_detail_shown: parts.detail || null,
+            final_detail_shown: cleanedDetail || null,
           });
         }
         return (
@@ -147,7 +166,7 @@ export function CompanyOpportunitiesToday({ rows, locale, loading, organizationI
             />
             <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
               <span style={{ color: '#0c4a6e', fontWeight: 700 }}>{finalTitle}</span>
-              {parts.detail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{parts.detail}</span> : null}
+              {cleanedDetail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{cleanedDetail}</span> : null}
             </span>
           </li>
         );
