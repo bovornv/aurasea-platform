@@ -667,18 +667,57 @@ export default function BranchOverviewPage() {
   const isAccommodation = branch?.moduleType === 'accommodation';
   const isFnb = branch?.moduleType === 'fnb';
   const driverChartData = useMemo(() => {
+    const pickRevpar = (params: {
+      canonicalRevpar: number | null;
+      adr: number | null;
+      occupancyPct: number | null;
+      revenue: number | null;
+      roomsAvailable: number | null;
+    }): number => {
+      const { canonicalRevpar, adr, occupancyPct, revenue, roomsAvailable } = params;
+      const occRatio =
+        occupancyPct != null && Number.isFinite(occupancyPct)
+          ? occupancyPct > 1
+            ? occupancyPct / 100
+            : occupancyPct
+          : null;
+      const expectedFromAdrOcc =
+        adr != null && Number.isFinite(adr) && occRatio != null && occRatio > 0 ? adr * occRatio : null;
+      if (canonicalRevpar != null && Number.isFinite(canonicalRevpar) && canonicalRevpar > 0) {
+        if (expectedFromAdrOcc != null && expectedFromAdrOcc > 0) {
+          const relDiff = Math.abs(canonicalRevpar - expectedFromAdrOcc) / expectedFromAdrOcc;
+          // Guard against wrong alias/unit binding. RevPAR should be close to ADR*occ.
+          if (relDiff <= 0.35) return canonicalRevpar;
+          return expectedFromAdrOcc;
+        }
+        return canonicalRevpar;
+      }
+      if (expectedFromAdrOcc != null && expectedFromAdrOcc > 0) return expectedFromAdrOcc;
+      if (roomsAvailable != null && roomsAvailable > 0 && revenue != null) return revenue / roomsAvailable;
+      return 0;
+    };
+
     if (driverTrendSeries && driverTrendSeries.revenue.length >= 2) {
       const avgTicket = driverTrendSeries.revenue.map((r, i) => {
         const c = driverTrendSeries.customers[i] ?? 0;
         return c > 0 ? r / c : 0;
       });
+      const revpar = driverTrendSeries.revenue.map((r, i) =>
+        pickRevpar({
+          canonicalRevpar: driverTrendSeries.revpar[i] ?? null,
+          adr: driverTrendSeries.adr[i] ?? null,
+          occupancyPct: driverTrendSeries.occupancy[i] ?? null,
+          revenue: r ?? null,
+          roomsAvailable: null,
+        })
+      );
       return {
         dates: driverTrendSeries.dates,
         revenue: driverTrendSeries.revenue,
         occupancy: driverTrendSeries.occupancy,
         customers: driverTrendSeries.customers,
         adr: driverTrendSeries.adr,
-        revpar: driverTrendSeries.revpar,
+        revpar,
         avgTicket,
       };
     }
@@ -706,16 +745,13 @@ export default function BranchOverviewPage() {
           : raw.revpar != null && Number.isFinite(Number(raw.revpar))
             ? Number(raw.revpar)
             : null;
-      if (canonicalRevpar != null) return canonicalRevpar;
-      const adrValue = adr[i] ?? 0;
-      const avail = m.roomsAvailable ?? 0;
-      const sold = m.roomsSold ?? 0;
-      const occupancyRatePercent = avail > 0 ? (sold / avail) * 100 : 0;
-      if (adrValue > 0 && occupancyRatePercent > 0) {
-        // occupancy is percent in this path, so divide by 100.
-        return adrValue * (occupancyRatePercent / 100);
-      }
-      return avail > 0 ? (m.revenue ?? 0) / avail : 0;
+      return pickRevpar({
+        canonicalRevpar,
+        adr: adr[i] ?? null,
+        occupancyPct: occupancy[i] ?? null,
+        revenue: m.revenue ?? null,
+        roomsAvailable: m.roomsAvailable ?? null,
+      });
     });
     const avgTicket = sorted.map((m, i) => {
       const c = customers[i] ?? 0;

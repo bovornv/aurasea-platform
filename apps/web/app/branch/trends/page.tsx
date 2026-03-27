@@ -122,7 +122,46 @@ export default function BranchTrendsPage() {
   const totalRooms = branchMetrics?.modules?.accommodation?.totalRoomsAvailable ?? 0;
 
   const revparValues = useMemo(() => {
-    if (trendSeries && trendSeries.revpar.length >= 2) return trendSeries.revpar;
+    const pickRevpar = (params: {
+      canonicalRevpar: number | null;
+      adr: number | null;
+      occupancyPct: number | null;
+      revenue: number | null;
+      roomsAvailable: number | null;
+    }): number => {
+      const { canonicalRevpar, adr, occupancyPct, revenue, roomsAvailable } = params;
+      const occRatio =
+        occupancyPct != null && Number.isFinite(occupancyPct)
+          ? occupancyPct > 1
+            ? occupancyPct / 100
+            : occupancyPct
+          : null;
+      const expectedFromAdrOcc =
+        adr != null && Number.isFinite(adr) && occRatio != null && occRatio > 0 ? adr * occRatio : null;
+      if (canonicalRevpar != null && Number.isFinite(canonicalRevpar) && canonicalRevpar > 0) {
+        if (expectedFromAdrOcc != null && expectedFromAdrOcc > 0) {
+          const relDiff = Math.abs(canonicalRevpar - expectedFromAdrOcc) / expectedFromAdrOcc;
+          if (relDiff <= 0.35) return canonicalRevpar;
+          return expectedFromAdrOcc;
+        }
+        return canonicalRevpar;
+      }
+      if (expectedFromAdrOcc != null && expectedFromAdrOcc > 0) return expectedFromAdrOcc;
+      if (roomsAvailable != null && roomsAvailable > 0 && revenue != null) return revenue / roomsAvailable;
+      return 0;
+    };
+
+    if (trendSeries && trendSeries.revpar.length >= 2) {
+      return trendSeries.revpar.map((v, i) =>
+        pickRevpar({
+          canonicalRevpar: v ?? null,
+          adr: trendSeries.adr[i] ?? null,
+          occupancyPct: trendSeries.occupancy[i] ?? null,
+          revenue: trendSeries.revenue[i] ?? null,
+          roomsAvailable: null,
+        })
+      );
+    }
     if (dailyMetrics.length >= 2) {
       return dailyMetrics.map((m) => {
         const raw = m as unknown as Record<string, unknown>;
@@ -148,10 +187,21 @@ export default function BranchTrendsPage() {
         if (adrRaw != null && occRaw != null) {
           // occupancy may be percent (51) or fraction (0.51); normalize safely.
           const occRatio = occRaw > 1 ? occRaw / 100 : occRaw;
-          return occRatio > 0 ? adrRaw * occRatio : 0;
+          return pickRevpar({
+            canonicalRevpar,
+            adr: adrRaw,
+            occupancyPct: occRaw > 1 ? occRaw : occRaw * 100,
+            revenue: m.revenue ?? null,
+            roomsAvailable: m.roomsAvailable ?? null,
+          }) || (occRatio > 0 ? adrRaw * occRatio : 0);
         }
-        const avail = m.roomsAvailable ?? 0;
-        return avail > 0 ? m.revenue / avail : 0;
+        return pickRevpar({
+          canonicalRevpar,
+          adr: null,
+          occupancyPct: null,
+          revenue: m.revenue ?? null,
+          roomsAvailable: m.roomsAvailable ?? null,
+        });
       });
     }
     if (revenueValues.length >= 2 && isAccommodation && totalRooms > 0) {
