@@ -211,38 +211,46 @@ function mergeCompanyOpportunities(
     });
   }
 
-  const generatedFallback: OpportunitiesTodayRow[] = (bundle.businessStatus ?? [])
-    .map((row) => {
-      const branchId = (row.branchId ?? '').trim();
-      if (!branchId) return null;
-      if (row.branchType === 'accommodation') {
-        const shouldShow = (row.healthScore != null && row.healthScore < 85) || (row.occupancyPct != null && row.occupancyPct < 60) || row.profitabilityTrend === 'down';
-        if (!shouldShow) return null;
-        return {
-          organization_id: organizationId,
-          branch_id: branchId,
-          branch_name: row.branchName ?? branchNameById.get(branchId) ?? null,
-          metric_date: row.metricDate,
-          title: 'Lift occupancy',
-          description: 'Launch demand-capture packages and fenced OTA promos to recover occupancy without broad discounting.',
-          opportunity_text: 'Capture shoulder-night demand with value-added offers and targeted channel pushes.',
-          sort_score: row.occupancyPct != null ? Math.max(0, 100 - row.occupancyPct) : 40,
-        } satisfies OpportunitiesTodayRow;
-      }
-      const shouldShow = (row.healthScore != null && row.healthScore < 85) || row.marginTrend === 'down' || (row.avgTicketThb != null && row.avgTicketThb < 220);
-      if (!shouldShow) return null;
-      return {
+  const generatedFallback: OpportunitiesTodayRow[] = [];
+  for (const row of bundle.businessStatus ?? []) {
+    const branchId = (row.branchId ?? '').trim();
+    if (!branchId) continue;
+
+    if (row.branchType === 'accommodation') {
+      const shouldShow =
+        (row.healthScore != null && row.healthScore < 85) ||
+        (row.occupancyPct != null && row.occupancyPct < 60) ||
+        row.profitabilityTrend === 'down';
+      if (!shouldShow) continue;
+      generatedFallback.push({
         organization_id: organizationId,
         branch_id: branchId,
         branch_name: row.branchName ?? branchNameById.get(branchId) ?? null,
         metric_date: row.metricDate,
-        title: 'Increase avg ticket',
-        description: 'Push bundles and premium add-ons to raise basket size during active demand windows.',
-        opportunity_text: 'Use menu engineering and checkout prompts to lift average spend per customer.',
-        sort_score: row.avgTicketThb != null ? Math.max(0, 260 - row.avgTicketThb) : 35,
-      } satisfies OpportunitiesTodayRow;
-    })
-    .filter((r): r is OpportunitiesTodayRow => Boolean(r));
+        title: 'Lift occupancy',
+        description: 'Launch demand-capture packages and fenced OTA promos to recover occupancy without broad discounting.',
+        opportunity_text: 'Capture shoulder-night demand with value-added offers and targeted channel pushes.',
+        sort_score: row.occupancyPct != null ? Math.max(0, 100 - row.occupancyPct) : 40,
+      });
+      continue;
+    }
+
+    const shouldShow =
+      (row.healthScore != null && row.healthScore < 85) ||
+      row.marginTrend === 'down' ||
+      (row.avgTicketThb != null && row.avgTicketThb < 220);
+    if (!shouldShow) continue;
+    generatedFallback.push({
+      organization_id: organizationId,
+      branch_id: branchId,
+      branch_name: row.branchName ?? branchNameById.get(branchId) ?? null,
+      metric_date: row.metricDate,
+      title: 'Increase avg ticket',
+      description: 'Push bundles and premium add-ons to raise basket size during active demand windows.',
+      opportunity_text: 'Use menu engineering and checkout prompts to lift average spend per customer.',
+      sort_score: row.avgTicketThb != null ? Math.max(0, 260 - row.avgTicketThb) : 35,
+    });
+  }
 
   for (const row of generatedFallback) {
     const branchId = (row.branch_id ?? '').trim();
