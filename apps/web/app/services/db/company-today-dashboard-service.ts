@@ -187,7 +187,8 @@ function isGenericStableOpportunityText(...parts: Array<string | null | undefine
 
 function mergeCompanyOpportunities(
   opportunities: OpportunitiesTodayRow[],
-  priorities: TodayPrioritiesRow[],
+  bundle: CompanyTodayBundle,
+  organizationId: string | null,
   branchNameById: Map<string, string>
 ): {
   rows: OpportunitiesTodayRow[];
@@ -210,23 +211,50 @@ function mergeCompanyOpportunities(
     });
   }
 
-  const priorityFallback = priorities.filter(
-    (r) =>
-      !isGenericStableOpportunityText(r.title, r.description, r.action_text) &&
-      (r.branch_id ?? '').trim().length > 0
-  );
-  for (const row of priorityFallback) {
+  const generatedFallback: OpportunitiesTodayRow[] = (bundle.businessStatus ?? [])
+    .map((row) => {
+      const branchId = (row.branchId ?? '').trim();
+      if (!branchId) return null;
+      if (row.branchType === 'accommodation') {
+        const shouldShow = (row.healthScore != null && row.healthScore < 85) || (row.occupancyPct != null && row.occupancyPct < 60) || row.profitabilityTrend === 'down';
+        if (!shouldShow) return null;
+        return {
+          organization_id: organizationId,
+          branch_id: branchId,
+          branch_name: row.branchName ?? branchNameById.get(branchId) ?? null,
+          metric_date: row.metricDate,
+          title: 'Lift occupancy',
+          description: 'Launch demand-capture packages and fenced OTA promos to recover occupancy without broad discounting.',
+          opportunity_text: 'Capture shoulder-night demand with value-added offers and targeted channel pushes.',
+          sort_score: row.occupancyPct != null ? Math.max(0, 100 - row.occupancyPct) : 40,
+        } satisfies OpportunitiesTodayRow;
+      }
+      const shouldShow = (row.healthScore != null && row.healthScore < 85) || row.marginTrend === 'down' || (row.avgTicketThb != null && row.avgTicketThb < 220);
+      if (!shouldShow) return null;
+      return {
+        organization_id: organizationId,
+        branch_id: branchId,
+        branch_name: row.branchName ?? branchNameById.get(branchId) ?? null,
+        metric_date: row.metricDate,
+        title: 'Increase avg ticket',
+        description: 'Push bundles and premium add-ons to raise basket size during active demand windows.',
+        opportunity_text: 'Use menu engineering and checkout prompts to lift average spend per customer.',
+        sort_score: row.avgTicketThb != null ? Math.max(0, 260 - row.avgTicketThb) : 35,
+      } satisfies OpportunitiesTodayRow;
+    })
+    .filter((r): r is OpportunitiesTodayRow => Boolean(r));
+
+  for (const row of generatedFallback) {
     const branchId = (row.branch_id ?? '').trim();
     if (!branchId || byBranch.has(branchId)) continue;
-    const branchName = row.branch_name?.trim() || branchNameById.get(branchId) || null;
     byBranch.set(branchId, {
-      organization_id: row.organization_id,
+      organization_id: row.organization_id ?? organizationId,
       branch_id: branchId,
-      branch_name: branchName,
-      metric_date: null,
+      branch_name: row.branch_name?.trim() || branchNameById.get(branchId) || null,
+      metric_date: row.metric_date ?? null,
       title: row.title,
-      description: row.description || row.action_text,
-      opportunity_text: row.description || row.action_text,
+      description: row.description,
+      opportunity_text: row.opportunity_text || row.description,
       sort_score: row.sort_score,
     });
   }
@@ -238,12 +266,12 @@ function mergeCompanyOpportunities(
     rows: merged,
     sourceUsed:
       dbActionable.length > 0 && merged.length > dbActionable.length
-        ? 'opportunities_today_v_next+today_priorities_company_view_v_next'
+        ? 'opportunities_today_v_next+generated_opportunity_fallback'
         : dbActionable.length > 0
           ? 'opportunities_today_v_next'
-          : 'today_priorities_company_view_v_next',
+          : 'generated_opportunity_fallback',
     dbActionableCount: dbActionable.length,
-    fallbackActionableCount: priorityFallback.length,
+    fallbackActionableCount: generatedFallback.length,
   };
 }
 
@@ -588,41 +616,6 @@ export async function fetchCompanyTodayDashboard(
       }
     }
 
-    let opportunityMergePriorities = priorities;
-    if (orgId && branchIds.length > 0) {
-      const targetBranchCount = new Set(branchIds.map((x) => x.trim()).filter(Boolean)).size;
-      const actionablePriorityBranchIds = new Set(
-        priorities
-          .filter(
-            (r) =>
-              !isGenericStableOpportunityText(r.title, r.description, r.action_text) &&
-              (r.branch_id ?? '').trim().length > 0
-          )
-          .map((r) => (r.branch_id ?? '').trim())
-          .filter(Boolean)
-      );
-      if (actionablePriorityBranchIds.size < targetBranchCount) {
-        try {
-          const backfillPriorities = await fillCompanyPrioritiesFromBranchesAndUi(
-            orgId,
-            branchIds,
-            bundle,
-            locale,
-            Math.max(prioLim, targetBranchCount * 2)
-          );
-          const seen = new Set<string>();
-          opportunityMergePriorities = [...priorities, ...backfillPriorities].filter((r) => {
-            const k = `${(r.branch_id ?? '').trim()}|${(r.title ?? '').trim().toLowerCase()}|${(r.description ?? '').trim().toLowerCase()}`;
-            if (seen.has(k)) return false;
-            seen.add(k);
-            return true;
-          });
-        } catch {
-          opportunityMergePriorities = priorities;
-        }
-      }
-    }
-
     const branchNameById = new Map(
       (bundle.businessStatus ?? [])
         .map((r) => [r.branchId?.trim(), r.branchName?.trim()] as const)
@@ -630,7 +623,8 @@ export async function fetchCompanyTodayDashboard(
     );
     const mergedOpportunities = mergeCompanyOpportunities(
       panels.opportunities,
-      opportunityMergePriorities,
+      bundle,
+      orgId,
       branchNameById
     );
     const canonicalWatchlistWithBranchNames = canonicalWatchlist.map((row) => {

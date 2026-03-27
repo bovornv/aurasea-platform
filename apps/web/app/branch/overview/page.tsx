@@ -1013,16 +1013,15 @@ export default function BranchOverviewPage() {
         detail: 'Keep base pricing steady and push value-added bundles to convert demand without rate erosion.',
       };
     }
-    const branchName = branch.branchName ?? 'This branch';
     const avgTicket = companyStatusCurrentRow?.avg_ticket_thb;
     if (avgTicket != null && avgTicket > 0) {
       return {
-        title: `Increase avg ticket — ${branchName}`,
+        title: 'Increase avg ticket',
         detail: 'Bundle top add-ons and suggest premium upgrades at checkout to lift average ticket.',
       };
     }
     return {
-      title: `Strengthen conversion — ${branchName}`,
+      title: 'Strengthen conversion',
       detail: 'Prioritize high-intent demand windows with targeted offers to improve conversion quality.',
     };
   }, [branch?.id, branch?.moduleType, branch?.branchName, companyStatusCurrentRow?.occupancy_pct, companyStatusCurrentRow?.revpar_thb, companyStatusCurrentRow?.avg_ticket_thb]);
@@ -1053,19 +1052,6 @@ export default function BranchOverviewPage() {
         displayItems: [generatedMetricOpportunity],
       };
     }
-    const fromAlerts = topRevenueLeaks
-      .map((a) => ((a as ExtendedAlertContract).revenueImpactTitle || a.message || '').trim())
-      .filter((x) => x.length >= 12)
-      .slice(0, 3);
-    if (fromAlerts.length > 0) {
-      const parsed = fromAlerts.map(parseOpportunityLine).filter((x) => x.title.length > 0);
-      return {
-        sourcePath: 'branch_alerts_fallback',
-        rows: fromAlerts,
-        details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }>,
-        displayItems: parsed,
-      };
-    }
     return {
       sourcePath: 'generic_empty_fallback',
       rows: [locale === 'th' ? 'ยังไม่พบโอกาสที่ชัดเจนสำหรับสาขานี้วันนี้' : 'No branch-specific opportunities detected yet for today'],
@@ -1075,7 +1061,7 @@ export default function BranchOverviewPage() {
         detail: '',
       }],
     };
-  }, [branchOpportunitiesRows, generatedMetricOpportunity, topRevenueLeaks, cleanSectionText, parseOpportunityLine, locale]);
+  }, [branchOpportunitiesRows, generatedMetricOpportunity, cleanSectionText, parseOpportunityLine, locale]);
 
   const opportunityRowsForDisplay = opportunityFallbackDebug.rows;
   const opportunityDisplayItems = opportunityFallbackDebug.displayItems as OpportunityDisplayItem[];
