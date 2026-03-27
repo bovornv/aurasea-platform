@@ -1148,7 +1148,7 @@ export default function BranchOverviewPage() {
     const meaningful = direct.filter((x) => !isWeakWorkingText(x));
     if (meaningful.length > 0) {
       return {
-        sourcePath: 'whats_working_today_v_next',
+        sourcePath: 'whats_working_today',
         rowsReturned: branchWhatsWorkingRows.length,
         meaningfulCount: meaningful.length,
         fallbackUsed: false,
@@ -1158,7 +1158,7 @@ export default function BranchOverviewPage() {
     }
     if (direct.length > 0) {
       return {
-        sourcePath: 'whats_working_today_v_next',
+        sourcePath: 'whats_working_today',
         rowsReturned: branchWhatsWorkingRows.length,
         meaningfulCount: 0,
         fallbackUsed: true,
@@ -1715,7 +1715,7 @@ export default function BranchOverviewPage() {
     console.log('[whats-working-source]', {
       page_context: 'branch',
       branch_id: branch.id,
-      source_relation: 'whats_working_today_v_next',
+      source_relation: 'whats_working_today',
       source_used: whatsWorkingDebug.sourcePath,
       rows_returned: whatsWorkingDebug.rowsReturned,
       latest_row_title: whatsWorkingDebug.latestRowTitle,
@@ -1742,7 +1742,7 @@ export default function BranchOverviewPage() {
     };
 
     logSection('business_trends', 'company_status_current + today_summary (delta)', businessTrendsText ? [businessTrendsText.line1, businessTrendsText.line2] : [], !businessTrendsText, businessTrendsText ? [businessTrendsText.line1, businessTrendsText.line2] : []);
-    logSection('whats_working', 'whats_working_today_v_next', branchWhatsWorkingRows, branchWhatsWorkingRows.length === 0, whatsWorkingRowsForDisplay);
+    logSection('whats_working', 'whats_working_today', branchWhatsWorkingRows, branchWhatsWorkingRows.length === 0, whatsWorkingRowsForDisplay);
     logSection('opportunities', 'opportunities_today_v_next (alerts track)', branchOpportunitiesRows, branchOpportunitiesRows.length === 0, opportunityRowsForDisplay);
     logSection('watchlist', 'watchlist_today_v_next', branchWatchlistRows, branchWatchlistRows.length === 0, watchlistRowsForDisplay);
   }, [

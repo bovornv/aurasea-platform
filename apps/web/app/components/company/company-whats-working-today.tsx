@@ -61,7 +61,7 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading, organizationId
     console.log('[whats-working-source]', {
       page_context: 'company',
       organization_id: organizationId,
-      source_relation: 'whats_working_today_v_next',
+      source_relation: 'whats_working_today',
       rows_returned: rows.length,
       latest_row_title: latest?.title ?? null,
       meaningful_rows_count: deduped.filter((r) => !isWeakWhatsWorkingText(r.title, r.description)).length,

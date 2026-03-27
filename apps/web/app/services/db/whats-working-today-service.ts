@@ -130,7 +130,7 @@ export async function fetchWhatsWorkingToday(
   if (!supabase) return [];
 
   const cap = Math.min(50, Math.max(1, limit));
-  const table = 'whats_working_today_v_next';
+  const table = 'whats_working_today';
   const { data, error } = await supabase
     .from(table)
     .select(SELECT_WHATS_WORKING_TODAY)

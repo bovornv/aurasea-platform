@@ -744,7 +744,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
   const [workingRes, oppRes, watchRes] = await Promise.all([
     (async () => {
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.whats_working_today)) return [];
-      const wwTable = 'whats_working_today_v_next';
+      const wwTable = 'whats_working_today';
       const { data, error } = await supabase
         .from(wwTable)
         .select(SELECT_WHATS_WORKING_TODAY_BRANCH)

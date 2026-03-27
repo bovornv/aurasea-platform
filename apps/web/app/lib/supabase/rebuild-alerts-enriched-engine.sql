@@ -665,7 +665,7 @@ GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authentica
 --   public.whats_working_today              ← ONLY definition with business logic (this CREATE below)
 --   public.whats_working_today__candidate   ← thin alias: SELECT * FROM whats_working_today
 --   public.whats_working_today_v_next       ← thin alias: SELECT * FROM whats_working_today__candidate
--- Runtime may keep using whats_working_today_v_next; all three return identical rows/columns.
+-- App reads public.whats_working_today; candidate/v_next remain optional DB aliases (identical rows).
 --
 -- Contract: headline = title; grey detail = description (short explanation, not duplicate of title).
 -- Columns: organization_id, branch_id, branch_name, metric_date, title, description, sort_score.

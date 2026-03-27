@@ -3,7 +3,7 @@
 -- Architecture:
 --   public.whats_working_today              — sole logic-bearing view
 --   public.whats_working_today__candidate   — TEMP: SELECT * FROM public.whats_working_today
---   public.whats_working_today_v_next       — TEMP: SELECT * FROM whats_working_today__candidate (runtime default)
+--   public.whats_working_today_v_next       — TEMP DB alias only (app reads base view)
 --
 -- Contract (no highlight_text column):
 --   title       → headline
@@ -17,4 +17,4 @@
 --
 -- Verify (rows should match across all three):
 --   SELECT * FROM public.whats_working_today ORDER BY sort_score DESC LIMIT 3;
---   SELECT * FROM public.whats_working_today_v_next ORDER BY sort_score DESC LIMIT 3;
+--   SELECT * FROM public.whats_working_today ORDER BY sort_score DESC LIMIT 3;

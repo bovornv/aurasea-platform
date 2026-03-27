@@ -8,13 +8,13 @@
  * Rollback: unset or set to anything other than `true` / `1` → all reads use live names.
  *
  * Phase 1 logical → physical when enabled:
- * - whats_working_today → whats_working_today_v_next
+ * - whats_working_today → whats_working_today (base view; alias views not used by app)
  * - watchlist_today → watchlist_today_v_next
  * - branch_business_status_api → branch_business_status_api_v_next
  * - today_priorities_view → today_priorities_view_v_next
  * - today_priorities_company_view → today_priorities_company_view_v_next
  *
- * Wired in TS (services): whats-working-today-service, watchlist-today-service, today-priorities-service,
+ * Wired in TS (services): whats-working-today-service (base whats_working_today), watchlist-today-service, today-priorities-service,
  * today-branch-priorities-service, company-today-dashboard-service (branch panels), branch-business-status-api
  * via getBranchBusinessStatusApiTable() (latest-metrics, health-score-kpi, company-today-data, anomaly-signals).
  *
@@ -49,7 +49,7 @@ const LIVE: Record<PostgrestPhase1Logical, string> = {
 };
 
 const V_NEXT: Record<PostgrestPhase1Logical, string> = {
-  whats_working_today: 'whats_working_today_v_next',
+  whats_working_today: 'whats_working_today',
   watchlist_today: 'watchlist_today_v_next',
   branch_business_status_api: 'branch_business_status_api_v_next',
   today_priorities_view: 'today_priorities_view_v_next',
