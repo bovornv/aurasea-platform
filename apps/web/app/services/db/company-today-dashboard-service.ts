@@ -162,6 +162,18 @@ function composeDedupedPanelLine(parts: {
   return title && secondary ? `${title} - ${secondary}` : title || secondary;
 }
 
+function isWeakWatchlistText(...parts: Array<string | null | undefined>): boolean {
+  const n = normalizePanelText(parts.filter(Boolean).join(' | '));
+  if (!n) return true;
+  return (
+    n.includes('no early warning signals detected') ||
+    n.includes('no meaningful watchlist signals detected today') ||
+    n.includes('business stable today') ||
+    n.includes('operations stable today') ||
+    n.includes('no urgent priority issues detected')
+  );
+}
+
 function dedupeOpportunityLine(parts: {
   branchId: string;
   title: string;
@@ -686,23 +698,34 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
       const latestRows = latestMetricDate
         ? rows.filter((r) => String(r.metric_date ?? '').slice(0, 10) === latestMetricDate)
         : rows;
-      const lines = latestRows
+      const entries = latestRows
         .map((row) => {
           const r = row as Record<string, unknown>;
-          return composeDedupedPanelLine({
-            title: pickStr(r, 'title'),
-            description: pickStr(r, 'description'),
-            primary: pickStr(r, 'warning_text', 'warningText'),
+          const title = pickStr(r, 'title');
+          const description = pickStr(r, 'description');
+          const warningText = pickStr(r, 'warning_text', 'warningText');
+          // Watchlist detail rule: prefer description, fallback to warning_text.
+          const line = composeDedupedPanelLine({
+            title,
+            description: warningText,
+            primary: description,
           });
+          return {
+            line,
+            weak: isWeakWatchlistText(title, description, warningText),
+          };
         })
-        .filter(Boolean)
-        .slice(0, 3);
+        .filter((x) => Boolean(x.line));
+      const meaningful = entries.filter((x) => !x.weak);
+      const selected = meaningful.length > 0 ? meaningful : entries;
+      const lines = selected.map((x) => x.line).slice(0, 1);
       if (process.env.NODE_ENV === 'development') {
         console.log('[watchlist-trace-latest-date]', {
           branch_id: bid,
           latest_metric_date: latestMetricDate,
           latest_rows_count: latestRows.length,
-          selected_row: latestRows[0] ?? null,
+          meaningful_rows_count: meaningful.length,
+          selected_rows_after_latest_filter: selected.slice(0, 3).map((x) => x.line),
           selected_line: lines[0] ?? null,
         });
       }

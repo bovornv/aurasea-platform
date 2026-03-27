@@ -51,13 +51,14 @@ export async function fetchWatchlistToday(
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
-  const cap = Math.min(3, Math.max(1, limit));
+  const cap = Math.min(50, Math.max(1, limit));
   // Runtime lock: Watchlist must read from v_next in all active UI paths.
   const table = 'watchlist_today_v_next';
   const { data, error } = await supabase
     .from(table)
     .select(SELECT_WATCHLIST_TODAY)
     .eq('organization_id', organizationId.trim())
+    .order('metric_date', { ascending: false })
     .order('sort_score', { ascending: false })
     .limit(cap);
 

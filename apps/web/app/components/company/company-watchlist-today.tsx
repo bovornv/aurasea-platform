@@ -33,15 +33,15 @@ function toDisplay(row: WatchlistTodayRow): { title: string; detail: string } {
   const title = (row.title ?? '').trim();
   const warning = (row.warning_text ?? '').trim();
   const desc = (row.description ?? '').trim();
-  const nWarning = normalize(warning);
   const nDesc = normalize(desc);
+  const nWarning = normalize(warning);
   let detail = '';
-  if (nWarning && nDesc) {
-    if (nWarning === nDesc || nWarning.includes(nDesc)) detail = warning;
-    else if (nDesc.includes(nWarning)) detail = desc;
-    else detail = warning;
+  if (nDesc && nWarning) {
+    if (nDesc === nWarning || nDesc.includes(nWarning)) detail = desc;
+    else if (nWarning.includes(nDesc)) detail = warning;
+    else detail = desc;
   } else {
-    detail = warning || desc;
+    detail = desc || warning;
   }
   if (title && normalize(detail).startsWith(`${normalize(title)} -`)) {
     detail = detail.slice(title.length + 3).trim();
@@ -50,11 +50,30 @@ function toDisplay(row: WatchlistTodayRow): { title: string; detail: string } {
   return { title: title || (detail || '—'), detail };
 }
 
+function toDateKey(date: string | null | undefined): string {
+  const d = (date ?? '').trim();
+  return d.length > 0 ? d.slice(0, 10) : '';
+}
+
+function toSortNum(n: number | null | undefined): number {
+  return typeof n === 'number' && Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
+}
+
 export function CompanyWatchlistToday({ rows, locale, loading, organizationId = null }: Props) {
   const th = locale === 'th';
-  const meaningful = rows
-    .filter((r) => !isWeakWatchlistText(r.title, r.description, r.warning_text))
-    .slice(0, 3);
+  const meaningful = rows.filter((r) => !isWeakWatchlistText(r.title, r.description, r.warning_text));
+  const sortedMeaningful = [...meaningful].sort((a, b) => {
+    const dateCmp = toDateKey(b.metric_date).localeCompare(toDateKey(a.metric_date));
+    if (dateCmp !== 0) return dateCmp;
+    return toSortNum(b.sort_score) - toSortNum(a.sort_score);
+  });
+  const latestPerBranch = new Map<string, WatchlistTodayRow>();
+  for (const row of sortedMeaningful) {
+    const key = (row.branch_id ?? '').trim();
+    if (!key || latestPerBranch.has(key)) continue;
+    latestPerBranch.set(key, row);
+  }
+  const selectedRows = Array.from(latestPerBranch.values()).slice(0, 3);
   const weakCount = Math.max(0, rows.length - meaningful.length);
   const loadingMsg = th ? 'กำลังโหลด…' : 'Loading…';
   const fallback = th ? 'ยังไม่พบสัญญาณเตือนที่มีนัยสำคัญในวันนี้' : 'No meaningful watchlist signals detected today';
@@ -64,7 +83,7 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
   }
 
   if (process.env.NODE_ENV === 'development') {
-    const shown = meaningful.map(toDisplay);
+    const shown = selectedRows.map(toDisplay);
     const latestMetricDate =
       rows
         .map((r) => (r.metric_date ?? '').trim())
@@ -77,7 +96,13 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
       latest_metric_date: latestMetricDate,
       meaningful_rows_count: meaningful.length,
       weak_rows_count: weakCount,
-      fallback_used: meaningful.length === 0,
+      selected_rows_after_latest_per_branch_filter: selectedRows.map((r) => ({
+        branch_id: r.branch_id,
+        metric_date: r.metric_date,
+        title: r.title,
+        detail: r.description || r.warning_text || null,
+      })),
+      fallback_used: selectedRows.length === 0,
       final_title_shown: shown.map((x) => x.title).filter(Boolean).slice(0, 3),
       final_detail_shown: shown.map((x) => x.detail).filter(Boolean).slice(0, 3),
       selected_title: shown[0]?.title ?? null,
@@ -85,7 +110,7 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
     });
   }
 
-  if (meaningful.length === 0) {
+  if (selectedRows.length === 0) {
     return <p style={{ margin: 0, fontSize: '14px', color: '#64748b', lineHeight: 1.5 }}>{fallback}</p>;
   }
 
@@ -100,7 +125,7 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
         gap: '12px',
       }}
     >
-      {meaningful.map((row) => {
+      {selectedRows.map((row) => {
         const parts = toDisplay(row);
         const key = `wl-${row.branch_id || 'org'}-${row.metric_date ?? 'd'}-${normKey(row.warning_text || row.title)}`;
         return (

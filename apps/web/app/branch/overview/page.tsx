@@ -968,13 +968,8 @@ export default function BranchOverviewPage() {
     if (idx === -1) return { title: t, detail: '' };
     const title = t.slice(0, idx).trim();
     const detail = dedupeInlineSegments(t.slice(idx + 3).trim());
-    const nTitle = normalizePanelLine(title);
-    const nDetail = normalizePanelLine(detail);
-    if (nTitle && nDetail && (nDetail === nTitle || nDetail.includes(nTitle))) {
-      return { title, detail: '' };
-    }
     return { title, detail };
-  }, [dedupeInlineSegments, normalizePanelLine]);
+  }, [dedupeInlineSegments]);
 
   const generatedMetricOpportunity = useMemo<OpportunityDisplayItem | null>(() => {
     if (!branch?.id) return null;
@@ -1104,6 +1099,10 @@ export default function BranchOverviewPage() {
       latest_metric_date: branchWatchlistMeta?.latestMetricDate ?? null,
       meaningful_rows_count: watchlistDebug.meaningfulCount,
       weak_rows_count: watchlistDebug.weakCount,
+      selected_rows_after_latest_per_branch_filter: watchlistDebug.displayItems.slice(0, 3).map((x) => ({
+        title: x.title,
+        detail: x.detail,
+      })),
       selected_row: watchlistDebug.displayItems[0]
         ? {
             title: watchlistDebug.displayItems[0].title,
@@ -1709,6 +1708,10 @@ export default function BranchOverviewPage() {
       fallback_used: watchlistDebug.fallbackUsed,
       final_title_shown: watchlistDebug.displayItems.map((x) => x.title).filter(Boolean).slice(0, 3),
       final_detail_shown: watchlistDebug.displayItems.map((x) => x.detail).filter(Boolean).slice(0, 3),
+      selected_rows_after_latest_per_branch_filter: watchlistDebug.displayItems.slice(0, 3).map((x) => ({
+        title: x.title,
+        detail: x.detail,
+      })),
       selected_final_row: watchlistDebug.displayItems[0]
         ? {
             title: watchlistDebug.displayItems[0].title,
