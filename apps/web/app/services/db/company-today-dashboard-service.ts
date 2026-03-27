@@ -17,7 +17,12 @@ import {
   getFnbOperatingStatus,
   getTodaySummary,
 } from './latest-metrics-service';
-import { fetchWhatsWorkingToday, type WhatsWorkingTodayRow } from './whats-working-today-service';
+import {
+  dedupeWhatsWorkingHighlightLines,
+  fetchWhatsWorkingToday,
+  isWeakWhatsWorkingText,
+  type WhatsWorkingTodayRow,
+} from './whats-working-today-service';
 import { fetchOpportunitiesToday, type OpportunitiesTodayRow } from './opportunities-today-service';
 import { fetchWatchlistToday, type WatchlistTodayRow } from './watchlist-today-service';
 import {
@@ -37,7 +42,6 @@ import {
   resolvePostgrestAlertsTable,
   resolvePostgrestPhase1Table,
 } from '../../lib/supabase/postgrest-phase1-cutover';
-import { dedupeWhatsWorkingHighlightLines } from './whats-working-today-service';
 import {
   resolveTodayPanelDisplay,
   SELECT_OPPORTUNITIES_TODAY_BRANCH,
@@ -162,6 +166,18 @@ function composeDedupedPanelLine(parts: {
   return title && secondary ? `${title} - ${secondary}` : title || secondary;
 }
 
+/** Branch What's Working: headline = title, grey line = description (fallback highlight_text). No composeDedupedPanelLine — avoids stripping detail when fields overlap. */
+function buildWhatsWorkingBranchLine(title: string, description: string, highlight: string): string {
+  const t = title.trim();
+  const detail = (description || '').trim() || (highlight || '').trim();
+  if (!t) return detail;
+  if (!detail) return t;
+  const nT = normalizePanelText(t);
+  const nD = normalizePanelText(detail);
+  if (nD === nT) return t;
+  return `${t} - ${detail}`;
+}
+
 function isWeakWatchlistText(...parts: Array<string | null | undefined>): boolean {
   const n = normalizePanelText(parts.filter(Boolean).join(' | '));
   if (!n) return true;
@@ -172,12 +188,6 @@ function isWeakWatchlistText(...parts: Array<string | null | undefined>): boolea
     n.includes('operations stable today') ||
     n.includes('no urgent priority issues detected')
   );
-}
-
-function isWeakWhatsWorkingText(...parts: Array<string | null | undefined>): boolean {
-  const n = normalizePanelText(parts.filter(Boolean).join(' | '));
-  if (!n) return true;
-  return n.includes('business is stable today') || n.includes('all good');
 }
 
 function isGenericStableOpportunityText(...parts: Array<string | null | undefined>): boolean {
@@ -576,14 +586,20 @@ export async function fetchCompanyTodayDashboard(
       const fromDashboard = await fetchCompanyPanelsFromDashboardView(orgId, prioLim, panelLim);
       if (fromDashboard) return fromDashboard;
       // Fallback path until `today_company_dashboard` is deployed.
-      const [priorities, whatsWorking, opportunities, watchlist, dataConfidence] = await Promise.all([
+      // What's Working is loaded separately via `fetchWhatsWorkingToday` (v_next) in the outer bundle — not from panels here.
+      const [priorities, opportunities, watchlist, dataConfidence] = await Promise.all([
         fetchCompanyTodayPriorities(orgId, prioLim),
-        fetchWhatsWorkingToday(orgId, panelLim),
         fetchOpportunitiesToday(orgId, panelLim),
         fetchWatchlistToday(orgId, panelLim),
         fetchCompanyDataConfidence(orgId),
       ]);
-      return { priorities, whatsWorking, opportunities, watchlist, dataConfidence };
+      return {
+        priorities,
+        whatsWorking: [] as WhatsWorkingTodayRow[],
+        opportunities,
+        watchlist,
+        dataConfidence,
+      };
     })();
 
     const latestStatusPromise =
@@ -593,11 +609,12 @@ export async function fetchCompanyTodayDashboard(
           ? fetchCompanyLatestBusinessStatusV3(orgId, [])
           : Promise.resolve([] as CompanyLatestBusinessStatusV3Row[]);
 
-    const [bundle, panels, latestBusinessStatus, canonicalWatchlist] = await Promise.all([
+    const [bundle, panels, latestBusinessStatus, canonicalWatchlist, canonicalWhatsWorking] = await Promise.all([
       bundlePromise,
       panelsPromise,
       latestStatusPromise,
       orgId ? fetchWatchlistToday(orgId, 20) : Promise.resolve([] as WatchlistTodayRow[]),
+      orgId ? fetchWhatsWorkingToday(orgId, Math.max(panelLim, 20)) : Promise.resolve([] as WhatsWorkingTodayRow[]),
     ]);
 
     // Company status table keeps its existing source for non-health fields.
@@ -641,7 +658,7 @@ export async function fetchCompanyTodayDashboard(
       orgId,
       branchNameById
     );
-    const canonicalWhatsWorkingWithBranchNames = (panels.whatsWorking ?? []).map((row) => {
+    const canonicalWhatsWorkingWithBranchNames = (canonicalWhatsWorking ?? []).map((row) => {
       const branchId = (row.branch_id ?? '').trim();
       return {
         ...row,
@@ -735,7 +752,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         .eq('branch_id', bid)
         .order('metric_date', { ascending: false })
         .order('sort_score', { ascending: false })
-        .limit(20);
+        .limit(40);
       const wwRaw = Array.isArray(data) ? data : [];
       logPostgrestPhase1Read('whats_working_today', {
         branchId: bid,
@@ -750,44 +767,61 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
       }
       if (!Array.isArray(data)) return [];
       const rows = data as Array<Record<string, unknown>>;
-      const latestMetricDate =
-        rows.map((r) => (r.metric_date != null ? String(r.metric_date).slice(0, 10) : '')).find((d) => d.length > 0) || null;
-      const latestRows = latestMetricDate
-        ? rows.filter((r) => String(r.metric_date ?? '').slice(0, 10) === latestMetricDate)
-        : rows;
-      const entries = latestRows
+      type ParsedWw = {
+        title: string;
+        description: string;
+        highlight: string;
+        metric_date: string;
+        sort_score: number | null;
+        weak: boolean;
+      };
+      const parsed: ParsedWw[] = rows
         .map((row) => {
           const r = row as Record<string, unknown>;
           const title = pickStr(r, 'title');
           const description = pickStr(r, 'description');
           const highlight = pickStr(r, 'highlight_text', 'highlightText');
-          const line = composeDedupedPanelLine({
-            title,
-            // detail preference: description first, fallback to highlight_text
-            description: highlight,
-            primary: description,
-          });
+          const metric_date = r.metric_date != null ? String(r.metric_date).slice(0, 10) : '';
+          const sort_score = pickNum(r, 'sort_score');
           return {
-            line: applyWorkingSubstitutions(line),
+            title,
+            description,
+            highlight,
+            metric_date,
+            sort_score,
             weak: isWeakWhatsWorkingText(title, description, highlight),
           };
         })
-        .filter((x) => Boolean(x.line));
-      const meaningful = entries.filter((x) => !x.weak);
-      const selected = (meaningful.length > 0 ? meaningful : entries).slice(0, 1);
+        .filter((p) => Boolean(p.title || p.description || p.highlight));
+      parsed.sort((a, b) => {
+        const dc = b.metric_date.localeCompare(a.metric_date);
+        if (dc !== 0) return dc;
+        return (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY);
+      });
+      const meaningfulRows = parsed.filter((p) => !p.weak);
+      const picked = meaningfulRows.length > 0 ? meaningfulRows[0] : parsed[0];
+      if (!picked) return [];
+      const rawLine = buildWhatsWorkingBranchLine(picked.title, picked.description, picked.highlight);
+      const line = applyWorkingSubstitutions(rawLine);
       if (process.env.NODE_ENV === 'development') {
+        const parts = line.includes(' - ') ? line.split(' - ') : [line];
+        const head = parts[0]?.trim() ?? line;
+        const tail = parts.length > 1 ? parts.slice(1).join(' - ').trim() : '';
         console.log('[whats-working-source]', {
           page_context: 'branch',
           branch_id: bid,
           source_relation: wwTable,
           rows_returned: wwRaw.length,
-          latest_row_title: pickStr((latestRows[0] ?? {}) as Record<string, unknown>, 'title') || null,
-          meaningful_rows_count: meaningful.length,
-          selected_final_row: selected[0]?.line ?? null,
-          fallback_used: meaningful.length === 0,
+          meaningful_rows_count: meaningfulRows.length,
+          selected_title: picked.title || null,
+          selected_description: picked.description || null,
+          selected_highlight_text: picked.highlight || null,
+          final_title_shown: head || null,
+          final_detail_shown: tail || null,
+          fallback_used: picked.weak,
         });
       }
-      return dedupeWhatsWorkingHighlightLines(selected.map((x) => x.line)).slice(0, 1);
+      return dedupeWhatsWorkingHighlightLines([line]).slice(0, 1);
     })(),
     (async () => {
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.opportunities_today)) return [];

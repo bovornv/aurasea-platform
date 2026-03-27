@@ -69,10 +69,40 @@ function normalizePanelText(s: string | null | undefined): string {
   return (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-function isWeakWhatsWorkingText(...parts: Array<string | null | undefined>): boolean {
+/** Exported for branch/company selection parity. */
+export function isWeakWhatsWorkingText(...parts: Array<string | null | undefined>): boolean {
   const n = normalizePanelText(parts.filter(Boolean).join(' | '));
   if (!n) return true;
   return n.includes('business is stable today') || n.includes('all good');
+}
+
+function dateKey(d: string | null | undefined): string {
+  return (d ?? '').trim().slice(0, 10);
+}
+
+function sortWhatsWorkingNewestFirst(a: WhatsWorkingTodayRow, b: WhatsWorkingTodayRow): number {
+  const dc = dateKey(b.metric_date).localeCompare(dateKey(a.metric_date));
+  if (dc !== 0) return dc;
+  return (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY);
+}
+
+/** Latest meaningful row per branch; if none, latest weak row. Order: metric_date desc, sort_score desc. */
+export function selectLatestMeaningfulWhatsWorkingPerBranch(rows: WhatsWorkingTodayRow[]): WhatsWorkingTodayRow[] {
+  const byBranch = new Map<string, WhatsWorkingTodayRow[]>();
+  for (const row of rows) {
+    const id = (row.branch_id ?? '').trim();
+    if (!id) continue;
+    const bucket = byBranch.get(id) ?? [];
+    bucket.push(row);
+    byBranch.set(id, bucket);
+  }
+  const out: WhatsWorkingTodayRow[] = [];
+  for (const list of byBranch.values()) {
+    const sorted = [...list].sort(sortWhatsWorkingNewestFirst);
+    const meaningful = sorted.filter((r) => !isWeakWhatsWorkingText(r.title, r.description, r.highlight_text));
+    out.push((meaningful.length > 0 ? meaningful[0] : sorted[0]) as WhatsWorkingTodayRow);
+  }
+  return out.sort((a, b) => (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY));
 }
 
 function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
@@ -140,20 +170,6 @@ export async function fetchWhatsWorkingToday(
     };
   });
   const deduped = dedupeWhatsWorkingRows(mapped);
-  const byBranch = new Map<string, WhatsWorkingTodayRow[]>();
-  for (const row of deduped) {
-    const branchId = (row.branch_id ?? '').trim();
-    if (!branchId) continue;
-    const bucket = byBranch.get(branchId) ?? [];
-    bucket.push(row);
-    byBranch.set(branchId, bucket);
-  }
-  const selected: WhatsWorkingTodayRow[] = [];
-  for (const rows of byBranch.values()) {
-    const meaningful = rows.filter((r) => !isWeakWhatsWorkingText(r.title, r.description, r.highlight_text));
-    selected.push((meaningful[0] ?? rows[0]) as WhatsWorkingTodayRow);
-  }
-  return selected
-    .sort((a, b) => (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY))
-    .slice(0, Math.max(1, limit));
+  const selected = selectLatestMeaningfulWhatsWorkingPerBranch(deduped);
+  return selected.slice(0, Math.max(1, limit));
 }
