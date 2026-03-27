@@ -1,8 +1,9 @@
 -- What’s Working view-contract cleanup (no new tables/columns).
 --
 -- Dependency-safe order for a full alerts rebuild:
---   1. rebuild-alerts-enriched-engine.sql — STEP 1 drops today_company_dashboard + whats_working chain;
---      STEP 6d recreates public.whats_working_today (sole logic) + thin SELECT * aliases candidate + v_next.
+--   1. rebuild-alerts-enriched-engine.sql — STEP 1 drops today_company_dashboard + whats_working;
+--      STEP 6d recreates public.whats_working_today only (no candidate/v_next).
+--      Optional: drop-whats-working-alias-views.sql to remove legacy alias views in DB.
 --   2. restore-today-company-dashboard-after-rebuild.sql — recreates today_company_dashboard (whats_working JSON without highlight_text).
 --
 -- If priorities views are also out of date, run fix-today-priorities-stable-schema.sql instead of step 2

@@ -1,20 +1,11 @@
--- What’s Working: canonical definition lives in rebuild-alerts-enriched-engine.sql (STEP 6d).
+-- What’s Working: canonical definition in rebuild-alerts-enriched-engine.sql (STEP 6d).
 --
--- Architecture:
---   public.whats_working_today              — sole logic-bearing view
---   public.whats_working_today__candidate   — TEMP: SELECT * FROM public.whats_working_today
---   public.whats_working_today_v_next       — TEMP DB alias only (app reads base view)
+-- Exposed object: public.whats_working_today only.
+-- Legacy aliases whats_working_today__candidate / whats_working_today_v_next were removed from the
+-- rebuild script; drop any stragglers with drop-whats-working-alias-views.sql.
 --
--- Contract (no highlight_text column):
---   title       → headline
---   description → grey detail line
---   sort_score, organization_id, branch_id, branch_name, metric_date
+-- Contract: title = headline, description = grey line; columns:
+--   organization_id, branch_id, branch_name, metric_date, title, description, sort_score
 --
--- Deploy:
---   1) Run the full rebuild-alerts-enriched-engine.sql (STEP 1 drops/recreates base + aliases).
---   2) If STEP 1 dropped public.today_company_dashboard, run restore-today-company-dashboard-after-rebuild.sql
---      or the matching block in fix-today-priorities-stable-schema.sql.
---
--- Verify (rows should match across all three):
---   SELECT * FROM public.whats_working_today ORDER BY sort_score DESC LIMIT 3;
---   SELECT * FROM public.whats_working_today ORDER BY sort_score DESC LIMIT 3;
+-- Deploy: run rebuild STEP 6d (or full rebuild-alerts-enriched-engine.sql).
+-- Verify: SELECT branch_id, metric_date, title FROM public.whats_working_today ORDER BY branch_id;

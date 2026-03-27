@@ -47,7 +47,7 @@
 --     400 on API: fix-today-priorities-clean-400.sql (superseded by stable schema when possible).
 --     today_priorities_view keeps legacy column order and appends business_type at the end.
 --
--- 4d) whats_working_today — rebuild-alerts-enriched-engine.sql STEP 6d (+ __candidate / _v_next); see add-whats-working-today-view.sql
+-- 4d) whats_working_today — rebuild-alerts-enriched-engine.sql STEP 6d; see add-whats-working-today-view.sql
 --     title + description only (headline + grey line); no highlight_text.
 --
 -- 4e) opportunities_today — add-opportunities-today-view.sql or rebuild-alerts-enriched-engine.sql

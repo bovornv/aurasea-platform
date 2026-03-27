@@ -661,11 +661,7 @@ GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authentica
 
 -- STEP 6d — What’s Working (positive + fallback): always 1-3 rows per org
 --
--- View chain (single source of truth + temporary compatibility aliases — do not add logic here):
---   public.whats_working_today              ← ONLY definition with business logic (this CREATE below)
---   public.whats_working_today__candidate   ← thin alias: SELECT * FROM whats_working_today
---   public.whats_working_today_v_next       ← thin alias: SELECT * FROM whats_working_today__candidate
--- App reads public.whats_working_today; candidate/v_next remain optional DB aliases (identical rows).
+-- Single view: public.whats_working_today (no *_candidate / *_v_next in this script; drop legacy aliases separately).
 --
 -- Contract: headline = title; grey detail = description (short explanation, not duplicate of title).
 -- Columns: organization_id, branch_id, branch_name, metric_date, title, description, sort_score.
@@ -682,7 +678,7 @@ GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authentica
 CREATE OR REPLACE VIEW public.whats_working_today AS
 WITH base AS (
     SELECT
-        t.branch_id::uuid AS branch_id,
+        (NULLIF(TRIM(BOTH FROM t.branch_id::text), ''))::uuid AS branch_id,
         t.metric_date::date AS metric_date,
         COALESCE(
             NULLIF(TRIM(j.jb->>'total_revenue'), '')::numeric,
@@ -693,20 +689,40 @@ WITH base AS (
         ) AS total_revenue,
         NULLIF(TRIM(j.jb->>'revenue_delta_day'), '')::numeric AS revenue_delta_day,
         NULLIF(TRIM(j.jb->>'occupancy_delta_week'), '')::numeric AS occupancy_delta_week,
-        b.organization_id::uuid AS organization_id,
-        COALESCE(b.branch_name, b.name) AS branch_name,
+        COALESCE(
+            b.organization_id::uuid,
+            NULLIF(TRIM(j.jb->>'organization_id'), '')::uuid
+        ) AS organization_id,
+        COALESCE(
+            NULLIF(TRIM(BOTH FROM b.branch_name::text), ''),
+            NULLIF(TRIM(BOTH FROM b.name::text), ''),
+            NULLIF(TRIM(j.jb->>'branch_name'), '')
+        ) AS branch_name,
         CASE
-            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+            WHEN LOWER(COALESCE(
+                b.module_type::text,
+                TRIM(j.jb->>'module_type'),
+                TRIM(j.jb->>'business_type'),
+                ''
+            )) IN (
                 'accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'
             ) THEN 'accommodation'::text
-            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+            WHEN LOWER(COALESCE(
+                b.module_type::text,
+                TRIM(j.jb->>'module_type'),
+                TRIM(j.jb->>'business_type'),
+                ''
+            )) IN (
                 'fnb', 'restaurant', 'cafe', 'cafe_restaurant'
             ) THEN 'fnb'::text
-            ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
+            ELSE COALESCE(
+                NULLIF(LOWER(TRIM(COALESCE(b.module_type::text, TRIM(j.jb->>'module_type'), ''))), ''),
+                'unknown'
+            )::text
         END AS branch_type
     FROM today_summary_clean t
     CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
-    LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
+    LEFT JOIN branches b ON trim(both FROM b.id::text) = trim(both FROM t.branch_id::text)
 ),
 -- All summary days per branch that can drive a line (org required for branch-level output).
 branch_days AS (
@@ -972,20 +988,8 @@ COMMENT ON VIEW public.whats_working_today IS
 
 GRANT SELECT ON public.whats_working_today TO anon, authenticated;
 
--- Temporary compatibility aliases (no logic; identical rows to public.whats_working_today).
-CREATE OR REPLACE VIEW public.whats_working_today__candidate AS
-SELECT * FROM public.whats_working_today;
-
-CREATE OR REPLACE VIEW public.whats_working_today_v_next AS
-SELECT * FROM public.whats_working_today__candidate;
-
-COMMENT ON VIEW public.whats_working_today__candidate IS
-    'TEMP alias: SELECT * FROM public.whats_working_today. Safe to drop after dependents move to base or v_next.';
-COMMENT ON VIEW public.whats_working_today_v_next IS
-    'TEMP alias: SELECT * FROM whats_working_today__candidate. Runtime PostgREST target; title=headline, description=grey line.';
-
-GRANT SELECT ON public.whats_working_today__candidate TO anon, authenticated;
-GRANT SELECT ON public.whats_working_today_v_next TO anon, authenticated;
+-- Legacy aliases whats_working_today__candidate / whats_working_today_v_next: not recreated here.
+-- Drop with: apps/web/app/lib/supabase/drop-whats-working-alias-views.sql
 
 -- STEP 6e — Opportunities (advisor-style lines from opportunity alerts)
 CREATE OR REPLACE VIEW opportunities_today AS
