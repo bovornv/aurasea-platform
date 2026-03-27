@@ -56,6 +56,7 @@ import {
 } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
+import { AccommodationPricingBubbleChart } from '../../components/charts/accommodation-pricing-bubble-chart';
 import { trendInsightDual } from '../../utils/trend-chart-insights';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
@@ -89,6 +90,12 @@ import {
   fetchCompanyStatusCurrentByBranchId,
   type CompanyLatestBusinessStatusV3Row,
 } from '../../services/db/company-latest-business-status-v3-service';
+import {
+  fetchAccommodationPricingInsight,
+  fetchAccommodationPricingPosition,
+  type AccommodationPricingInsight,
+  type AccommodationPricingPoint,
+} from '../../services/db/accommodation-pricing-service';
 
 function BranchTodayPriorityCard({ row, locale }: { row: TodayBranchPriorityRow; locale: string }) {
   const th = locale === 'th';
@@ -154,6 +161,8 @@ export default function BranchOverviewPage() {
     useState<AccommodationProfitabilitySignal | null>(null);
   const [companyStatusCurrentRow, setCompanyStatusCurrentRow] =
     useState<CompanyLatestBusinessStatusV3Row | null>(null);
+  const [pricingPoints, setPricingPoints] = useState<AccommodationPricingPoint[]>([]);
+  const [pricingInsight, setPricingInsight] = useState<AccommodationPricingInsight | null>(null);
 
   // PART 1: System validation (development only)
   useSystemValidation({ enabled: process.env.NODE_ENV === 'development', interval: 60000 });
@@ -426,6 +435,8 @@ export default function BranchOverviewPage() {
     if (branch.moduleType !== 'accommodation') {
       setAccTodayUiRow(null);
       setAccommodationProfitSignal(null);
+      setPricingPoints([]);
+      setPricingInsight(null);
     }
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
@@ -440,6 +451,8 @@ export default function BranchOverviewPage() {
         getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
         getAccommodationProfitabilitySignal(branch.id).then(setAccommodationProfitSignal);
         fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
+        fetchAccommodationPricingPosition(branch.id, 30).then(setPricingPoints).catch(() => setPricingPoints([]));
+        fetchAccommodationPricingInsight(branch.id).then(setPricingInsight).catch(() => setPricingInsight(null));
       }
     }
     getBranchLearningStatus(branch.id).then(setLearningStatus);
@@ -495,6 +508,8 @@ export default function BranchOverviewPage() {
           getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
           getAccommodationProfitabilitySignal(branch.id).then(setAccommodationProfitSignal);
           fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
+          fetchAccommodationPricingPosition(branch.id, 30).then(setPricingPoints).catch(() => setPricingPoints([]));
+          fetchAccommodationPricingInsight(branch.id).then(setPricingInsight).catch(() => setPricingInsight(null));
         }
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
@@ -2004,29 +2019,17 @@ export default function BranchOverviewPage() {
                 <>
                   <TrendChartCard
                     legend={[
-                      { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
-                      { label: locale === 'th' ? 'ราคาห้องเฉลี่ย' : 'ADR', color: '#7c3aed' },
+                      { label: locale === 'th' ? 'ตำแหน่งราคา' : 'Pricing position', color: '#16a34a' },
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
                     problem={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occAdr.problem : ''}
                     recommendation={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occAdr.recommendation : ''}
                   >
-                    <DecisionTrendChart
-                      values={driverChartData.occupancy}
-                      valuesRight={driverChartData.adr.length === driverChartData.occupancy.length ? driverChartData.adr : undefined}
-                      dates={driverChartData.dates}
-                      color="#2563eb"
-                      colorRight="#7c3aed"
-                      showBaseline={true}
-                      formatLeft={(v) => `${Math.round(v)}%`}
-                      formatRight={(v) => `฿${Math.round(v)}`}
-                      leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
-                      rightLabel={locale === 'th' ? 'ราคาห้องเฉลี่ย (฿)' : 'ADR (฿)'}
-                      emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
+                    <AccommodationPricingBubbleChart
+                      points={pricingPoints}
+                      insight={pricingInsight}
                       locale={locale === 'th' ? 'th' : 'en'}
-                      insightRevenue={driverChartData.revenue}
-                      insightCustomers={driverChartData.customers}
                     />
                   </TrendChartCard>
                   <TrendChartCard
