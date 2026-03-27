@@ -1092,6 +1092,24 @@ export default function BranchOverviewPage() {
     };
   }, [branchWatchlistRows, branchWatchlistMeta, cleanSectionText, isWeakWatchlistText, parseWatchlistLine, locale]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
+    console.log('[watchlist-trace-after-filter]', {
+      branch_id: branch.id,
+      rows_returned: branchWatchlistMeta?.rowsReturned ?? branchWatchlistRows.length,
+      latest_metric_date: branchWatchlistMeta?.latestMetricDate ?? null,
+      meaningful_rows_count: watchlistDebug.meaningfulCount,
+      weak_rows_count: watchlistDebug.weakCount,
+      selected_row: watchlistDebug.displayItems[0]
+        ? {
+            title: watchlistDebug.displayItems[0].title,
+            detail: watchlistDebug.displayItems[0].detail,
+          }
+        : null,
+      fallback_used: watchlistDebug.fallbackUsed,
+    });
+  }, [branch?.id, branchWatchlistRows, branchWatchlistMeta, watchlistDebug]);
+
   const watchlistRowsForDisplay = watchlistDebug.displayItems.map((x) => `${x.title}${x.detail ? ` - ${x.detail}` : ''}`);
 
   const whatsWorkingRowsForDisplay = useMemo(() => {
@@ -1149,20 +1167,7 @@ export default function BranchOverviewPage() {
     const branchLabel = (branch?.branchName || '').trim() || 'This branch';
     (async () => {
       try {
-        const panels = await Promise.race([
-          fetchBranchTodayPanels(branch.id, branchLabel),
-          new Promise<Awaited<ReturnType<typeof fetchBranchTodayPanels>>>((resolve) =>
-            setTimeout(
-              () =>
-                resolve({
-                  workingLines: [],
-                  opportunityLines: [],
-                  watchlistLines: [],
-                }),
-              12000
-            )
-          ),
-        ]);
+        const panels = await fetchBranchTodayPanels(branch.id, branchLabel);
         if (cancelled) return;
         setBranchWhatsWorkingRows(panels.workingLines);
         setBranchOpportunitiesRows(panels.opportunityLines);
@@ -1706,6 +1711,8 @@ export default function BranchOverviewPage() {
             detail: watchlistDebug.displayItems[0].detail,
           }
         : null,
+      final_rendered_title: watchlistDebug.displayItems[0]?.title ?? null,
+      final_rendered_detail: watchlistDebug.displayItems[0]?.detail ?? null,
     });
   }, [branch?.id, watchlistDebug]);
 

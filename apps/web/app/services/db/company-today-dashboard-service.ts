@@ -649,6 +649,14 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         rowCount: wlRaw.length,
         error: error ? { message: error.message, code: String(error.code ?? '') } : null,
       });
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[watchlist-trace-db-fetch]', {
+          branch_id: bid,
+          source_relation_used: wlTable,
+          rows_returned: wlRaw.length,
+          first_row: wlRaw[0] ?? null,
+        });
+      }
       if (error) {
         if (isPostgrestObjectMissingError(error)) {
           markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.watchlist_today);
@@ -684,6 +692,15 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         })
         .filter(Boolean)
         .slice(0, 3);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[watchlist-trace-latest-date]', {
+          branch_id: bid,
+          latest_metric_date: latestMetricDate,
+          latest_rows_count: latestRows.length,
+          selected_row: latestRows[0] ?? null,
+          selected_line: lines[0] ?? null,
+        });
+      }
       return {
         lines,
         rowsReturned: rows.length,
