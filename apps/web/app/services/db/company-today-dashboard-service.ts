@@ -528,6 +528,7 @@ export interface BranchTodayPanels {
   watchlistMeta?: {
     rowsReturned: number;
     latestMetricDate: string | null;
+    relationName: string;
   };
 }
 
@@ -536,7 +537,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
     workingLines: [],
     opportunityLines: [],
     watchlistLines: [],
-    watchlistMeta: { rowsReturned: 0, latestMetricDate: null },
+    watchlistMeta: { rowsReturned: 0, latestMetricDate: null, relationName: 'watchlist_today_v_next' },
   };
   const bid = branchId?.trim();
   if (!bid || !isSupabaseAvailable()) return empty;
@@ -633,9 +634,11 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
           lines: [] as string[],
           rowsReturned: 0,
           latestMetricDate: null as string | null,
+          relationName: 'watchlist_today_v_next',
         };
       }
-      const wlTable = resolvePostgrestPhase1Table('watchlist_today');
+      // Runtime lock: Watchlist must read from v_next in all active UI paths.
+      const wlTable = 'watchlist_today_v_next';
       const { data, error } = await supabase
         .from(wlTable)
         .select(SELECT_WATCHLIST_TODAY_BRANCH)
@@ -665,6 +668,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
           lines: [] as string[],
           rowsReturned: wlRaw.length,
           latestMetricDate: null as string | null,
+          relationName: wlTable,
         };
       }
       if (!Array.isArray(data)) {
@@ -672,6 +676,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
           lines: [] as string[],
           rowsReturned: 0,
           latestMetricDate: null as string | null,
+          relationName: wlTable,
         };
       }
       const rows = data as Array<Record<string, unknown>>;
@@ -705,6 +710,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         lines,
         rowsReturned: rows.length,
         latestMetricDate,
+        relationName: wlTable,
       };
     })(),
   ]);
@@ -716,6 +722,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
     watchlistMeta: {
       rowsReturned: watchRes.rowsReturned,
       latestMetricDate: watchRes.latestMetricDate,
+      relationName: watchRes.relationName,
     },
   };
 }
@@ -730,7 +737,7 @@ export async function fetchBranchTodayPanels(branchId: string, branchLabel: stri
       workingLines: [],
       opportunityLines: [],
       watchlistLines: [],
-      watchlistMeta: { rowsReturned: 0, latestMetricDate: null },
+      watchlistMeta: { rowsReturned: 0, latestMetricDate: null, relationName: 'watchlist_today_v_next' },
     };
   }
   const inflight = branchPanelsInFlight.get(bid);

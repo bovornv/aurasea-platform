@@ -147,7 +147,11 @@ export default function BranchOverviewPage() {
   const [branchWhatsWorkingRows, setBranchWhatsWorkingRows] = useState<string[]>([]);
   const [branchOpportunitiesRows, setBranchOpportunitiesRows] = useState<string[]>([]);
   const [branchWatchlistRows, setBranchWatchlistRows] = useState<string[]>([]);
-  const [branchWatchlistMeta, setBranchWatchlistMeta] = useState<{ rowsReturned: number; latestMetricDate: string | null } | null>(null);
+  const [branchWatchlistMeta, setBranchWatchlistMeta] = useState<{
+    rowsReturned: number;
+    latestMetricDate: string | null;
+    relationName: string;
+  } | null>(null);
   const [branchSectionLoading, setBranchSectionLoading] = useState(false);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
   const [accTodayUiRow, setAccTodayUiRow] = useState<AccommodationTodayMetricsUiRow | null>(null);
@@ -1069,7 +1073,7 @@ export default function BranchOverviewPage() {
     const weakCount = Math.max(0, totalRows - meaningful.length);
     if (meaningful.length > 0) {
       return {
-        sourcePath: 'watchlist_today_v_next',
+        sourcePath: branchWatchlistMeta?.relationName ?? 'watchlist_today_v_next',
         totalRows,
         latestMetricDate: branchWatchlistMeta?.latestMetricDate ?? null,
         meaningfulCount: meaningful.length,
@@ -1079,7 +1083,7 @@ export default function BranchOverviewPage() {
       };
     }
     return {
-      sourcePath: 'watchlist_today_v_next',
+      sourcePath: branchWatchlistMeta?.relationName ?? 'watchlist_today_v_next',
       totalRows,
       latestMetricDate: branchWatchlistMeta?.latestMetricDate ?? null,
       meaningfulCount: 0,

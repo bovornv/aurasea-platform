@@ -10,7 +10,6 @@ import {
 } from '../../lib/supabase/postgrest-missing-resource';
 import {
   logPostgrestPhase1Read,
-  resolvePostgrestPhase1Table,
 } from '../../lib/supabase/postgrest-phase1-cutover';
 import {
   pickStr,
@@ -53,7 +52,8 @@ export async function fetchWatchlistToday(
   if (!supabase) return [];
 
   const cap = Math.min(3, Math.max(1, limit));
-  const table = resolvePostgrestPhase1Table('watchlist_today');
+  // Runtime lock: Watchlist must read from v_next in all active UI paths.
+  const table = 'watchlist_today_v_next';
   const { data, error } = await supabase
     .from(table)
     .select(SELECT_WATCHLIST_TODAY)

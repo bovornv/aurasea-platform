@@ -65,16 +65,23 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
 
   if (process.env.NODE_ENV === 'development') {
     const shown = meaningful.map(toDisplay);
+    const latestMetricDate =
+      rows
+        .map((r) => (r.metric_date ?? '').trim())
+        .find((d) => d.length > 0) ?? null;
     console.log('[watchlist-source]', {
       page_context: 'company',
       organization_id: organizationId,
-      source_used: 'watchlist_today_v_next',
+      relation_name_queried: 'watchlist_today_v_next',
       total_rows_returned: rows.length,
+      latest_metric_date: latestMetricDate,
       meaningful_rows_count: meaningful.length,
       weak_rows_count: weakCount,
       fallback_used: meaningful.length === 0,
       final_title_shown: shown.map((x) => x.title).filter(Boolean).slice(0, 3),
       final_detail_shown: shown.map((x) => x.detail).filter(Boolean).slice(0, 3),
+      selected_title: shown[0]?.title ?? null,
+      selected_detail: shown[0]?.detail ?? null,
     });
   }
 
