@@ -671,8 +671,9 @@ GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authentica
 -- Columns: organization_id, branch_id, branch_name, metric_date, title, description, sort_score.
 -- No highlight_text column.
 --
--- metric_date comes from latest row per branch in today_summary_clean (ORDER BY metric_date DESC per branch).
--- When upstream data’s latest day is e.g. 2026-03-27, outputs use that date — views do not inject dates.
+-- Per branch: scan all today_summary_clean rows (with org); pick the latest metric_date that yields a
+-- meaningful line (tight signal or per-day stable). Avoids locking to one global “latest” row when
+-- newer dates exist in the source chain.
 --
 -- Stale / outlier guard: unbounded revenue_delta_day (e.g. +786% from baseline noise) must NOT emit
 -- "Customer traffic up (+786%)" or dominate via sort_score. Only "tight" deltas (10–100%) produce
@@ -707,115 +708,142 @@ WITH base AS (
     CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
     LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
 ),
-latest AS (
-    SELECT DISTINCT ON (branch_id)
-        branch_id,
-        metric_date,
-        total_revenue,
-        revenue_delta_day,
-        occupancy_delta_week,
-        organization_id,
-        branch_name,
-        branch_type
+-- All summary days per branch that can drive a line (org required for branch-level output).
+branch_days AS (
+    SELECT *
     FROM base
-    ORDER BY branch_id, metric_date DESC NULLS LAST
+    WHERE organization_id IS NOT NULL
 ),
--- Bounded positive signals only (excludes absurd % spikes). sort_score capped so recency + tier stay meaningful.
-tight_signals AS (
+-- Tight positive signals per (branch, metric_date) — same bounds as before.
+tight_per_day AS (
     SELECT
-        l.organization_id::uuid AS organization_id,
-        l.branch_id::uuid AS branch_id,
-        l.branch_name::text AS branch_name,
-        l.metric_date::date AS metric_date,
-        ('Customer traffic up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%)')::text AS title,
+        b.organization_id::uuid AS organization_id,
+        b.branch_id::uuid AS branch_id,
+        b.branch_name::text AS branch_name,
+        b.metric_date::date AS metric_date,
+        ('Customer traffic up (+' || ROUND(ABS(b.revenue_delta_day))::text || '%)')::text AS title,
         'Revenue momentum is strong versus recent days.'::text AS description,
         LEAST(
             299999::numeric,
             250000::numeric
-                + LEAST(ABS(COALESCE(l.revenue_delta_day, 0)), 100::numeric) * 1000::numeric
-                + LEAST(COALESCE(l.total_revenue, 0), 50000::numeric)
+                + LEAST(ABS(COALESCE(b.revenue_delta_day, 0)), 100::numeric) * 1000::numeric
+                + LEAST(COALESCE(b.total_revenue, 0), 50000::numeric)
         ) AS sort_score
-    FROM latest l
-    WHERE l.branch_type = 'fnb'
-      AND l.organization_id IS NOT NULL
-      AND l.revenue_delta_day IS NOT NULL
-      AND l.revenue_delta_day >= 10::numeric
-      AND l.revenue_delta_day <= 100::numeric
+    FROM branch_days b
+    WHERE b.branch_type = 'fnb'
+      AND b.revenue_delta_day IS NOT NULL
+      AND b.revenue_delta_day >= 10::numeric
+      AND b.revenue_delta_day <= 100::numeric
     UNION ALL
     SELECT
-        l.organization_id::uuid,
-        l.branch_id::uuid,
-        l.branch_name::text,
-        l.metric_date::date,
-        ('Revenue trending up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%)')::text,
+        b.organization_id::uuid,
+        b.branch_id::uuid,
+        b.branch_name::text,
+        b.metric_date::date,
+        ('Revenue trending up (+' || ROUND(ABS(b.revenue_delta_day))::text || '%)')::text,
         'Revenue is tracking steadily versus recent days.'::text,
         LEAST(
             299999::numeric,
             250000::numeric
-                + LEAST(ABS(COALESCE(l.revenue_delta_day, 0)), 100::numeric) * 1000::numeric
-                + LEAST(COALESCE(l.total_revenue, 0), 50000::numeric)
+                + LEAST(ABS(COALESCE(b.revenue_delta_day, 0)), 100::numeric) * 1000::numeric
+                + LEAST(COALESCE(b.total_revenue, 0), 50000::numeric)
         )
-    FROM latest l
-    WHERE l.branch_type = 'accommodation'
-      AND l.organization_id IS NOT NULL
-      AND l.revenue_delta_day IS NOT NULL
-      AND l.revenue_delta_day >= 10::numeric
-      AND l.revenue_delta_day <= 100::numeric
+    FROM branch_days b
+    WHERE b.branch_type = 'accommodation'
+      AND b.revenue_delta_day IS NOT NULL
+      AND b.revenue_delta_day >= 10::numeric
+      AND b.revenue_delta_day <= 100::numeric
     UNION ALL
     SELECT
-        l.organization_id::uuid,
-        l.branch_id::uuid,
-        l.branch_name::text,
-        l.metric_date::date,
-        ('Occupancy improving (+' || ROUND(ABS(l.occupancy_delta_week))::text || '%)')::text,
+        b.organization_id::uuid,
+        b.branch_id::uuid,
+        b.branch_name::text,
+        b.metric_date::date,
+        ('Occupancy improving (+' || ROUND(ABS(b.occupancy_delta_week))::text || '%)')::text,
         'Recent booking demand is holding steady or improving.'::text,
         LEAST(
             299999::numeric,
             250000::numeric
-                + LEAST(ABS(COALESCE(l.occupancy_delta_week, 0)), 100::numeric) * 800::numeric
-                + LEAST(COALESCE(l.total_revenue, 0), 50000::numeric)
+                + LEAST(ABS(COALESCE(b.occupancy_delta_week, 0)), 100::numeric) * 800::numeric
+                + LEAST(COALESCE(b.total_revenue, 0), 50000::numeric)
         )
-    FROM latest l
-    WHERE l.branch_type = 'accommodation'
-      AND l.organization_id IS NOT NULL
-      AND l.occupancy_delta_week IS NOT NULL
-      AND l.occupancy_delta_week >= 10::numeric
-      AND l.occupancy_delta_week <= 100::numeric
+    FROM branch_days b
+    WHERE b.branch_type = 'accommodation'
+      AND b.occupancy_delta_week IS NOT NULL
+      AND b.occupancy_delta_week >= 10::numeric
+      AND b.occupancy_delta_week <= 100::numeric
 ),
--- Per-branch stable lines when no tight signal exists for that branch (e.g. outlier delta excluded).
-stable_only AS (
+-- Per (branch, day): stable copy when that day has no tight signal for that branch+date.
+stable_per_day AS (
     SELECT
-        l.organization_id::uuid AS organization_id,
-        l.branch_id::uuid AS branch_id,
-        l.branch_name::text AS branch_name,
-        l.metric_date::date AS metric_date,
+        b.organization_id::uuid AS organization_id,
+        b.branch_id::uuid AS branch_id,
+        b.branch_name::text AS branch_name,
+        b.metric_date::date AS metric_date,
         (
-            CASE l.branch_type
+            CASE b.branch_type
                 WHEN 'fnb' THEN 'Revenue flow is consistent'::text
                 WHEN 'accommodation' THEN 'Room demand is stable'::text
                 ELSE 'Business is stable today'::text
             END
         ) AS title,
         (
-            CASE l.branch_type
+            CASE b.branch_type
                 WHEN 'fnb' THEN 'Revenue is tracking steadily versus recent days.'::text
                 WHEN 'accommodation' THEN 'Recent booking demand is holding steady.'::text
                 ELSE 'Core performance is steady with no major positive disruptions.'::text
             END
         ) AS description,
-        (190000::numeric + (l.metric_date - DATE '1970-01-01')) AS sort_score
-    FROM latest l
-    WHERE l.organization_id IS NOT NULL
-      AND NOT EXISTS (
-          SELECT 1
-          FROM tight_signals t
-          WHERE t.branch_id = l.branch_id
-      )
+        (190000::numeric + (b.metric_date - DATE '1970-01-01')) AS sort_score
+    FROM branch_days b
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM tight_per_day t
+        WHERE t.branch_id = b.branch_id
+          AND t.metric_date = b.metric_date
+    )
+),
+daily_mixed AS (
+    SELECT * FROM tight_per_day
+    UNION ALL
+    SELECT * FROM stable_per_day
+),
+-- One best line per (branch, metric_date): meaningful first via sort_score (tight > stable tier).
+daily_best AS (
+    SELECT DISTINCT ON (branch_id, metric_date)
+        organization_id,
+        branch_id,
+        branch_name,
+        metric_date,
+        title,
+        description,
+        sort_score
+    FROM daily_mixed
+    ORDER BY
+        branch_id,
+        metric_date,
+        sort_score DESC NULLS LAST
+),
+-- Latest meaningful calendar day per branch, then highest sort_score on that day.
+per_branch_latest_meaningful AS (
+    SELECT DISTINCT ON (branch_id)
+        organization_id,
+        branch_id,
+        branch_name,
+        metric_date,
+        title,
+        description,
+        sort_score
+    FROM daily_best
+    ORDER BY
+        branch_id,
+        metric_date DESC NULLS LAST,
+        sort_score DESC NULLS LAST
 ),
 org_pool AS (
     SELECT
         b.organization_id,
-        MAX(l.metric_date) AS latest_metric_date,
+        MAX(bd.metric_date) AS latest_metric_date,
         (
             ARRAY_AGG(
                 COALESCE(
@@ -830,11 +858,11 @@ org_pool AS (
             ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name))
         )[1] AS sample_branch_id
     FROM branches b
-    LEFT JOIN latest l ON l.branch_id = b.id::uuid
+    LEFT JOIN branch_days bd ON bd.branch_id = b.id::uuid
     WHERE b.organization_id IS NOT NULL
     GROUP BY b.organization_id
 ),
--- Weak org-level rows only when there is no per-branch line for that org (no summary-backed rows).
+-- Weak org-level rows only when no branch produced a summary-backed meaningful line.
 fallback AS (
     SELECT
         o.organization_id::uuid AS organization_id,
@@ -845,8 +873,11 @@ fallback AS (
         'Core performance is steady with no major positive disruptions.'::text AS description,
         300::numeric AS sort_score
     FROM org_pool o
-    WHERE NOT EXISTS (SELECT 1 FROM tight_signals t WHERE t.organization_id = o.organization_id)
-      AND NOT EXISTS (SELECT 1 FROM stable_only s WHERE s.organization_id = o.organization_id)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM per_branch_latest_meaningful m
+        WHERE m.organization_id = o.organization_id
+    )
 
     UNION ALL
 
@@ -859,8 +890,11 @@ fallback AS (
         'The business is maintaining a steady pace today.'::text,
         200::numeric
     FROM org_pool o
-    WHERE NOT EXISTS (SELECT 1 FROM tight_signals t WHERE t.organization_id = o.organization_id)
-      AND NOT EXISTS (SELECT 1 FROM stable_only s WHERE s.organization_id = o.organization_id)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM per_branch_latest_meaningful m
+        WHERE m.organization_id = o.organization_id
+    )
 
     UNION ALL
 
@@ -873,13 +907,14 @@ fallback AS (
         'Revenue is tracking steadily versus recent days.'::text,
         100::numeric
     FROM org_pool o
-    WHERE NOT EXISTS (SELECT 1 FROM tight_signals t WHERE t.organization_id = o.organization_id)
-      AND NOT EXISTS (SELECT 1 FROM stable_only s WHERE s.organization_id = o.organization_id)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM per_branch_latest_meaningful m
+        WHERE m.organization_id = o.organization_id
+    )
 ),
 all_rows AS (
-    SELECT * FROM tight_signals
-    UNION ALL
-    SELECT * FROM stable_only
+    SELECT * FROM per_branch_latest_meaningful
     UNION ALL
     SELECT * FROM fallback
 ),
@@ -933,7 +968,7 @@ FROM ranked r
 WHERE r.rn <= 3;
 
 COMMENT ON VIEW public.whats_working_today IS
-    'Sole logic-bearing What’s Working view: tight signals (bounded deltas) + per-branch stable + org fallback; 1-3 rows per org.';
+    'Latest meaningful metric_date per branch from all summary days; tight (bounded) or per-day stable; org weak fallback if no branch rows; top 3 per org.';
 
 GRANT SELECT ON public.whats_working_today TO anon, authenticated;
 
