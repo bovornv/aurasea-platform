@@ -1,17 +1,20 @@
 -- What’s Working: canonical definition lives in rebuild-alerts-enriched-engine.sql (STEP 6d).
 --
+-- Architecture:
+--   public.whats_working_today              — sole logic-bearing view
+--   public.whats_working_today__candidate   — TEMP: SELECT * FROM public.whats_working_today
+--   public.whats_working_today_v_next       — TEMP: SELECT * FROM whats_working_today__candidate (runtime default)
+--
 -- Contract (no highlight_text column):
---   title       → headline (positive signal or org fallback)
---   description → short natural explanation of title (grey detail line)
+--   title       → headline
+--   description → grey detail line
 --   sort_score, organization_id, branch_id, branch_name, metric_date
 --
--- Runtime relations:
---   whats_working_today → whats_working_today__candidate → whats_working_today_v_next (app reads v_next).
---
 -- Deploy:
---   1) Run the full rebuild-alerts-enriched-engine.sql (STEP 1 drops/recreates whats_working_today + wrappers).
+--   1) Run the full rebuild-alerts-enriched-engine.sql (STEP 1 drops/recreates base + aliases).
 --   2) If STEP 1 dropped public.today_company_dashboard, run restore-today-company-dashboard-after-rebuild.sql
 --      or the matching block in fix-today-priorities-stable-schema.sql.
 --
--- Verify:
+-- Verify (rows should match across all three):
+--   SELECT * FROM public.whats_working_today ORDER BY sort_score DESC LIMIT 3;
 --   SELECT * FROM public.whats_working_today_v_next ORDER BY sort_score DESC LIMIT 3;

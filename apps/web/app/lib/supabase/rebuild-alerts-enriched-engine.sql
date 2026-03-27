@@ -22,7 +22,7 @@ DROP VIEW IF EXISTS public.whats_working_today_v_next CASCADE;
 DROP VIEW IF EXISTS public.whats_working_today__candidate CASCADE;
 DROP VIEW IF EXISTS opportunities_today CASCADE;
 DROP VIEW IF EXISTS watchlist_today CASCADE;
-DROP VIEW IF EXISTS whats_working_today CASCADE;
+DROP VIEW IF EXISTS public.whats_working_today CASCADE;
 DROP VIEW IF EXISTS today_branch_priorities CASCADE;
 DROP VIEW IF EXISTS today_priorities_view CASCADE;
 DROP VIEW IF EXISTS today_priorities_clean CASCADE;
@@ -660,14 +660,25 @@ GRANT SELECT ON today_branch_priorities TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authenticated;
 
 -- STEP 6d — What’s Working (positive + fallback): always 1-3 rows per org
+--
+-- View chain (single source of truth + temporary compatibility aliases — do not add logic here):
+--   public.whats_working_today              ← ONLY definition with business logic (this CREATE below)
+--   public.whats_working_today__candidate   ← thin alias: SELECT * FROM whats_working_today
+--   public.whats_working_today_v_next       ← thin alias: SELECT * FROM whats_working_today__candidate
+-- Runtime may keep using whats_working_today_v_next; all three return identical rows/columns.
+--
 -- Contract: headline = title; grey detail = description (short explanation, not duplicate of title).
+-- Columns: organization_id, branch_id, branch_name, metric_date, title, description, sort_score.
 -- No highlight_text column.
+--
+-- metric_date comes from latest row per branch in today_summary_clean (ORDER BY metric_date DESC per branch).
+-- When upstream data’s latest day is e.g. 2026-03-27, outputs use that date — views do not inject dates.
 --
 -- Stale / outlier guard: unbounded revenue_delta_day (e.g. +786% from baseline noise) must NOT emit
 -- "Customer traffic up (+786%)" or dominate via sort_score. Only "tight" deltas (10–100%) produce
 -- positive signal lines; otherwise the branch falls back to per-branch stable copy (F&B / acc).
 -- Org-wide generic weak rows apply only when the org has no branch lines from summary data.
-CREATE OR REPLACE VIEW whats_working_today AS
+CREATE OR REPLACE VIEW public.whats_working_today AS
 WITH base AS (
     SELECT
         t.branch_id::uuid AS branch_id,
@@ -921,38 +932,22 @@ SELECT
 FROM ranked r
 WHERE r.rn <= 3;
 
-COMMENT ON VIEW whats_working_today IS
-    'Tight positive signals (bounded deltas) + per-branch stable + org fallback; title + description only; 1-3 rows per org.';
+COMMENT ON VIEW public.whats_working_today IS
+    'Sole logic-bearing What’s Working view: tight signals (bounded deltas) + per-branch stable + org fallback; 1-3 rows per org.';
 
-GRANT SELECT ON whats_working_today TO anon, authenticated;
+GRANT SELECT ON public.whats_working_today TO anon, authenticated;
 
--- Compatibility + runtime read target (PostgREST): same columns as whats_working_today.
+-- Temporary compatibility aliases (no logic; identical rows to public.whats_working_today).
 CREATE OR REPLACE VIEW public.whats_working_today__candidate AS
-SELECT
-    organization_id,
-    branch_id,
-    branch_name,
-    metric_date,
-    title,
-    description,
-    sort_score
-FROM public.whats_working_today;
+SELECT * FROM public.whats_working_today;
 
 CREATE OR REPLACE VIEW public.whats_working_today_v_next AS
-SELECT
-    organization_id,
-    branch_id,
-    branch_name,
-    metric_date,
-    title,
-    description,
-    sort_score
-FROM public.whats_working_today__candidate;
+SELECT * FROM public.whats_working_today__candidate;
 
 COMMENT ON VIEW public.whats_working_today__candidate IS
-    'Pass-through of whats_working_today; kept for dependency chain / migrations.';
+    'TEMP alias: SELECT * FROM public.whats_working_today. Safe to drop after dependents move to base or v_next.';
 COMMENT ON VIEW public.whats_working_today_v_next IS
-    'App reads this relation for branch + company What’s Working (title = headline, description = grey line).';
+    'TEMP alias: SELECT * FROM whats_working_today__candidate. Runtime PostgREST target; title=headline, description=grey line.';
 
 GRANT SELECT ON public.whats_working_today__candidate TO anon, authenticated;
 GRANT SELECT ON public.whats_working_today_v_next TO anon, authenticated;
@@ -1260,6 +1255,6 @@ GRANT SELECT ON watchlist_today TO anon, authenticated;
 -- SELECT * FROM today_priorities ORDER BY sort_score DESC LIMIT 5;
 -- SELECT * FROM today_priorities_clean WHERE organization_id = '...' ORDER BY rank ASC LIMIT 3;
 -- SELECT * FROM today_branch_priorities WHERE branch_id = '...' ORDER BY rank ASC LIMIT 3;
--- SELECT * FROM whats_working_today ORDER BY sort_score DESC LIMIT 3;
+-- SELECT * FROM public.whats_working_today ORDER BY sort_score DESC LIMIT 3;
 -- SELECT * FROM opportunities_today ORDER BY sort_score DESC LIMIT 3;
 -- SELECT * FROM watchlist_today WHERE organization_id = '...' ORDER BY sort_score DESC LIMIT 3;
