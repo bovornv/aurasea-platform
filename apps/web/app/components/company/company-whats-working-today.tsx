@@ -23,7 +23,7 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading, organizationId
   };
   const dateKey = (d: string | null | undefined): string => ((d ?? '').trim().slice(0, 10));
   const toDisplay = (row: WhatsWorkingTodayRow): { title: string; detail: string } => {
-    const title = (row.title ?? row.highlight_text ?? row.description ?? '—').trim();
+    const title = (row.title ?? row.description ?? row.highlight_text ?? '—').trim();
     const detail = ((row.description ?? '').trim() || (row.highlight_text ?? '').trim());
     if (detail && normalize(detail) === normalize(title)) return { title, detail: '' };
     return { title, detail };

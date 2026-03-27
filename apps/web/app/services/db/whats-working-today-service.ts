@@ -13,7 +13,6 @@ import {
 } from '../../lib/supabase/postgrest-phase1-cutover';
 import {
   pickStr,
-  resolveTodayPanelDisplay,
   SELECT_WHATS_WORKING_TODAY,
 } from './today-panels-columns';
 
@@ -44,7 +43,8 @@ export function dedupeWhatsWorkingRows(rows: WhatsWorkingTodayRow[]): WhatsWorki
   const seen = new Set<string>();
   const out: WhatsWorkingTodayRow[] = [];
   for (const row of rows) {
-    const k = `${normalizeBranchIdKey(row.branch_id)}|${row.metric_date ?? ''}|${normalizeWhatsWorkingTitle(row.highlight_text)}`;
+    const displayKey = row.title || row.description || row.highlight_text || '';
+    const k = `${normalizeBranchIdKey(row.branch_id)}|${row.metric_date ?? ''}|${normalizeWhatsWorkingTitle(displayKey)}`;
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(row);
@@ -127,8 +127,7 @@ export async function fetchWhatsWorkingToday(
     const r = row as Record<string, unknown>;
     const title = pickStr(r, 'title') || null;
     const description = pickStr(r, 'description') || null;
-    const resolved =
-      resolveTodayPanelDisplay(r, ['highlight_text', 'highlightText']) || null;
+    const highlightText = pickStr(r, 'highlight_text', 'highlightText') || null;
     return {
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
@@ -136,7 +135,7 @@ export async function fetchWhatsWorkingToday(
       metric_date: r.metric_date != null ? String(r.metric_date).slice(0, 10) : null,
       title,
       description,
-      highlight_text: resolved,
+      highlight_text: highlightText,
       sort_score: pickNum(r, 'sort_score'),
     };
   });

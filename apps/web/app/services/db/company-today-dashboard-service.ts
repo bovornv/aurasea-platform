@@ -501,7 +501,7 @@ async function fetchCompanyPanelsFromDashboardView(
       metric_date: pickStr(r, 'metric_date') || null,
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,
-      highlight_text: pickStr(r, 'highlight_text', 'highlightText', 'title', 'description') || null,
+      highlight_text: pickStr(r, 'highlight_text', 'highlightText') || null,
       sort_score: pickNum(r, 'sort_score'),
     }));
 
