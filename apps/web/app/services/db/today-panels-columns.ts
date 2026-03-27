@@ -18,7 +18,7 @@ export const SELECT_WHATS_WORKING_TODAY_BRANCH = 'title,description,sort_score,h
 
 export const SELECT_OPPORTUNITIES_TODAY_BRANCH = 'title,description,sort_score,opportunity_text';
 
-export const SELECT_WATCHLIST_TODAY_BRANCH = 'title,description,sort_score,warning_text';
+export const SELECT_WATCHLIST_TODAY_BRANCH = 'metric_date,title,description,sort_score,warning_text';
 
 export function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {

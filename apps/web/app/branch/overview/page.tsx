@@ -147,6 +147,7 @@ export default function BranchOverviewPage() {
   const [branchWhatsWorkingRows, setBranchWhatsWorkingRows] = useState<string[]>([]);
   const [branchOpportunitiesRows, setBranchOpportunitiesRows] = useState<string[]>([]);
   const [branchWatchlistRows, setBranchWatchlistRows] = useState<string[]>([]);
+  const [branchWatchlistMeta, setBranchWatchlistMeta] = useState<{ rowsReturned: number; latestMetricDate: string | null } | null>(null);
   const [branchSectionLoading, setBranchSectionLoading] = useState(false);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
   const [accTodayUiRow, setAccTodayUiRow] = useState<AccommodationTodayMetricsUiRow | null>(null);
@@ -1064,11 +1065,13 @@ export default function BranchOverviewPage() {
   const watchlistDebug = useMemo(() => {
     const direct = cleanSectionText(branchWatchlistRows);
     const meaningful = direct.filter((x) => !isWeakWatchlistText(x));
-    const weakCount = Math.max(0, branchWatchlistRows.length - meaningful.length);
+    const totalRows = branchWatchlistMeta?.rowsReturned ?? branchWatchlistRows.length;
+    const weakCount = Math.max(0, totalRows - meaningful.length);
     if (meaningful.length > 0) {
       return {
         sourcePath: 'watchlist_today_v_next',
-        totalRows: branchWatchlistRows.length,
+        totalRows,
+        latestMetricDate: branchWatchlistMeta?.latestMetricDate ?? null,
         meaningfulCount: meaningful.length,
         weakCount,
         fallbackUsed: false,
@@ -1077,7 +1080,8 @@ export default function BranchOverviewPage() {
     }
     return {
       sourcePath: 'watchlist_today_v_next',
-      totalRows: branchWatchlistRows.length,
+      totalRows,
+      latestMetricDate: branchWatchlistMeta?.latestMetricDate ?? null,
       meaningfulCount: 0,
       weakCount,
       fallbackUsed: true,
@@ -1086,7 +1090,7 @@ export default function BranchOverviewPage() {
         detail: '',
       }],
     };
-  }, [branchWatchlistRows, cleanSectionText, isWeakWatchlistText, parseWatchlistLine, locale]);
+  }, [branchWatchlistRows, branchWatchlistMeta, cleanSectionText, isWeakWatchlistText, parseWatchlistLine, locale]);
 
   const watchlistRowsForDisplay = watchlistDebug.displayItems.map((x) => `${x.title}${x.detail ? ` - ${x.detail}` : ''}`);
 
@@ -1127,6 +1131,7 @@ export default function BranchOverviewPage() {
       setBranchWhatsWorkingRows([]);
       setBranchOpportunitiesRows([]);
       setBranchWatchlistRows([]);
+      setBranchWatchlistMeta(null);
       setBranchSectionLoading(false);
       return;
     }
@@ -1134,6 +1139,7 @@ export default function BranchOverviewPage() {
       setBranchWhatsWorkingRows([]);
       setBranchOpportunitiesRows([]);
       setBranchWatchlistRows([]);
+      setBranchWatchlistMeta(null);
       setBranchSectionLoading(false);
       return;
     }
@@ -1161,6 +1167,7 @@ export default function BranchOverviewPage() {
         setBranchWhatsWorkingRows(panels.workingLines);
         setBranchOpportunitiesRows(panels.opportunityLines);
         setBranchWatchlistRows(panels.watchlistLines);
+        setBranchWatchlistMeta(panels.watchlistMeta ?? null);
       } finally {
         if (!cancelled) setBranchSectionLoading(false);
       }
@@ -1687,11 +1694,18 @@ export default function BranchOverviewPage() {
       branch_id: branch.id,
       source_used: watchlistDebug.sourcePath,
       total_rows_returned: watchlistDebug.totalRows,
+      latest_metric_date_found: watchlistDebug.latestMetricDate ?? null,
       meaningful_rows_count: watchlistDebug.meaningfulCount,
       weak_rows_count: watchlistDebug.weakCount,
       fallback_used: watchlistDebug.fallbackUsed,
       final_title_shown: watchlistDebug.displayItems.map((x) => x.title).filter(Boolean).slice(0, 3),
       final_detail_shown: watchlistDebug.displayItems.map((x) => x.detail).filter(Boolean).slice(0, 3),
+      selected_final_row: watchlistDebug.displayItems[0]
+        ? {
+            title: watchlistDebug.displayItems[0].title,
+            detail: watchlistDebug.displayItems[0].detail,
+          }
+        : null,
     });
   }, [branch?.id, watchlistDebug]);
 

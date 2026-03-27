@@ -525,10 +525,19 @@ export interface BranchTodayPanels {
   workingLines: string[];
   opportunityLines: string[];
   watchlistLines: string[];
+  watchlistMeta?: {
+    rowsReturned: number;
+    latestMetricDate: string | null;
+  };
 }
 
 async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string): Promise<BranchTodayPanels> {
-  const empty: BranchTodayPanels = { workingLines: [], opportunityLines: [], watchlistLines: [] };
+  const empty: BranchTodayPanels = {
+    workingLines: [],
+    opportunityLines: [],
+    watchlistLines: [],
+    watchlistMeta: { rowsReturned: 0, latestMetricDate: null },
+  };
   const bid = branchId?.trim();
   if (!bid || !isSupabaseAvailable()) return empty;
   const supabase = getSupabaseClient();
@@ -619,14 +628,21 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         .slice(0, 3);
     })(),
     (async () => {
-      if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.watchlist_today)) return [];
+      if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.watchlist_today)) {
+        return {
+          lines: [] as string[],
+          rowsReturned: 0,
+          latestMetricDate: null as string | null,
+        };
+      }
       const wlTable = resolvePostgrestPhase1Table('watchlist_today');
       const { data, error } = await supabase
         .from(wlTable)
         .select(SELECT_WATCHLIST_TODAY_BRANCH)
         .eq('branch_id', bid)
+        .order('metric_date', { ascending: false })
         .order('sort_score', { ascending: false })
-        .limit(3);
+        .limit(20);
       const wlRaw = Array.isArray(data) ? data : [];
       logPostgrestPhase1Read('watchlist_today', {
         branchId: bid,
@@ -637,10 +653,27 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         if (isPostgrestObjectMissingError(error)) {
           markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.watchlist_today);
         }
-        return [];
+        return {
+          lines: [] as string[],
+          rowsReturned: wlRaw.length,
+          latestMetricDate: null as string | null,
+        };
       }
-      if (!Array.isArray(data)) return [];
-      return data
+      if (!Array.isArray(data)) {
+        return {
+          lines: [] as string[],
+          rowsReturned: 0,
+          latestMetricDate: null as string | null,
+        };
+      }
+      const rows = data as Array<Record<string, unknown>>;
+      const latestMetricDate = rows
+        .map((r) => (r.metric_date != null ? String(r.metric_date).slice(0, 10) : ''))
+        .find((d) => d.length > 0) || null;
+      const latestRows = latestMetricDate
+        ? rows.filter((r) => String(r.metric_date ?? '').slice(0, 10) === latestMetricDate)
+        : rows;
+      const lines = latestRows
         .map((row) => {
           const r = row as Record<string, unknown>;
           return composeDedupedPanelLine({
@@ -651,13 +684,22 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         })
         .filter(Boolean)
         .slice(0, 3);
+      return {
+        lines,
+        rowsReturned: rows.length,
+        latestMetricDate,
+      };
     })(),
   ]);
 
   return {
     workingLines: workingRes,
     opportunityLines: oppRes,
-    watchlistLines: watchRes,
+    watchlistLines: watchRes.lines,
+    watchlistMeta: {
+      rowsReturned: watchRes.rowsReturned,
+      latestMetricDate: watchRes.latestMetricDate,
+    },
   };
 }
 
@@ -671,6 +713,7 @@ export async function fetchBranchTodayPanels(branchId: string, branchLabel: stri
       workingLines: [],
       opportunityLines: [],
       watchlistLines: [],
+      watchlistMeta: { rowsReturned: 0, latestMetricDate: null },
     };
   }
   const inflight = branchPanelsInFlight.get(bid);
