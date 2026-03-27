@@ -174,6 +174,79 @@ function isWeakWatchlistText(...parts: Array<string | null | undefined>): boolea
   );
 }
 
+function isGenericStableOpportunityText(...parts: Array<string | null | undefined>): boolean {
+  const n = normalizePanelText(parts.filter(Boolean).join(' | '));
+  if (!n) return true;
+  return (
+    n.includes('operations stable today') ||
+    n.includes('no urgent priority issues detected') ||
+    n.includes('no clear opportunities today') ||
+    n.includes('ยังไม่มีโอกาสชัดเจนวันนี้')
+  );
+}
+
+function mergeCompanyOpportunities(
+  opportunities: OpportunitiesTodayRow[],
+  priorities: TodayPrioritiesRow[],
+  branchNameById: Map<string, string>
+): {
+  rows: OpportunitiesTodayRow[];
+  sourceUsed: string;
+  dbActionableCount: number;
+  fallbackActionableCount: number;
+} {
+  const byBranch = new Map<string, OpportunitiesTodayRow>();
+  const dbActionable = opportunities.filter(
+    (r) =>
+      !isGenericStableOpportunityText(r.title, r.description, r.opportunity_text) &&
+      (r.branch_id ?? '').trim().length > 0
+  );
+  for (const row of dbActionable) {
+    const branchId = (row.branch_id ?? '').trim();
+    if (!branchId || byBranch.has(branchId)) continue;
+    byBranch.set(branchId, {
+      ...row,
+      branch_name: row.branch_name?.trim() || branchNameById.get(branchId) || null,
+    });
+  }
+
+  const priorityFallback = priorities.filter(
+    (r) =>
+      !isGenericStableOpportunityText(r.title, r.description, r.action_text) &&
+      (r.branch_id ?? '').trim().length > 0
+  );
+  for (const row of priorityFallback) {
+    const branchId = (row.branch_id ?? '').trim();
+    if (!branchId || byBranch.has(branchId)) continue;
+    const branchName = row.branch_name?.trim() || branchNameById.get(branchId) || null;
+    byBranch.set(branchId, {
+      organization_id: row.organization_id,
+      branch_id: branchId,
+      branch_name: branchName,
+      metric_date: null,
+      title: row.title,
+      description: row.description || row.action_text,
+      opportunity_text: row.description || row.action_text,
+      sort_score: row.sort_score,
+    });
+  }
+
+  const merged = Array.from(byBranch.values())
+    .sort((a, b) => (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY))
+    .slice(0, 3);
+  return {
+    rows: merged,
+    sourceUsed:
+      dbActionable.length > 0 && merged.length > dbActionable.length
+        ? 'opportunities_today_v_next+today_priorities_company_view_v_next'
+        : dbActionable.length > 0
+          ? 'opportunities_today_v_next'
+          : 'today_priorities_company_view_v_next',
+    dbActionableCount: dbActionable.length,
+    fallbackActionableCount: priorityFallback.length,
+  };
+}
+
 function dedupeOpportunityLine(parts: {
   branchId: string;
   title: string;
@@ -395,7 +468,7 @@ async function fetchCompanyPanelsFromDashboardView(
     .map((r): OpportunitiesTodayRow => ({
       organization_id: organizationId,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
-      branch_name: null,
+      branch_name: pickStr(r, 'branch_name', 'branchName') || null,
       metric_date: pickStr(r, 'metric_date') || null,
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,
@@ -515,10 +588,50 @@ export async function fetchCompanyTodayDashboard(
       }
     }
 
+    let opportunityMergePriorities = priorities;
+    if (orgId && branchIds.length > 0) {
+      const targetBranchCount = new Set(branchIds.map((x) => x.trim()).filter(Boolean)).size;
+      const actionablePriorityBranchIds = new Set(
+        priorities
+          .filter(
+            (r) =>
+              !isGenericStableOpportunityText(r.title, r.description, r.action_text) &&
+              (r.branch_id ?? '').trim().length > 0
+          )
+          .map((r) => (r.branch_id ?? '').trim())
+          .filter(Boolean)
+      );
+      if (actionablePriorityBranchIds.size < targetBranchCount) {
+        try {
+          const backfillPriorities = await fillCompanyPrioritiesFromBranchesAndUi(
+            orgId,
+            branchIds,
+            bundle,
+            locale,
+            Math.max(prioLim, targetBranchCount * 2)
+          );
+          const seen = new Set<string>();
+          opportunityMergePriorities = [...priorities, ...backfillPriorities].filter((r) => {
+            const k = `${(r.branch_id ?? '').trim()}|${(r.title ?? '').trim().toLowerCase()}|${(r.description ?? '').trim().toLowerCase()}`;
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          });
+        } catch {
+          opportunityMergePriorities = priorities;
+        }
+      }
+    }
+
     const branchNameById = new Map(
       (bundle.businessStatus ?? [])
         .map((r) => [r.branchId?.trim(), r.branchName?.trim()] as const)
         .filter((x): x is readonly [string, string] => Boolean(x[0] && x[1]))
+    );
+    const mergedOpportunities = mergeCompanyOpportunities(
+      panels.opportunities,
+      opportunityMergePriorities,
+      branchNameById
     );
     const canonicalWatchlistWithBranchNames = canonicalWatchlist.map((row) => {
       const branchId = (row.branch_id ?? '').trim();
@@ -529,11 +642,28 @@ export async function fetchCompanyTodayDashboard(
       };
     });
 
+    if (process.env.NODE_ENV === 'development' && orgId) {
+      console.log('[opportunities-source]', {
+        page_context: 'company',
+        organization_id: orgId,
+        source_used: mergedOpportunities.sourceUsed,
+        rows_returned: panels.opportunities.length,
+        actionable_rows_count: mergedOpportunities.dbActionableCount,
+        fallback_actionable_rows_count: mergedOpportunities.fallbackActionableCount,
+        selected_rows_after_fallback: mergedOpportunities.rows.map((r) => ({
+          branch_id: r.branch_id,
+          branch_name: r.branch_name,
+          title: r.title,
+          detail: r.opportunity_text || r.description || null,
+        })),
+      });
+    }
+
     return {
       bundle,
       priorities,
       whatsWorking: panels.whatsWorking,
-      opportunities: panels.opportunities,
+      opportunities: mergedOpportunities.rows,
       // Canonical source for company Watchlist: watchlist_today_v_next directly.
       watchlist: canonicalWatchlistWithBranchNames,
       dataConfidence: panels.dataConfidence,

@@ -936,16 +936,36 @@ export default function BranchOverviewPage() {
 
   type OpportunityDisplayItem = { title: string; detail: string };
 
+  const stripBranchNameFromOpportunityText = useCallback((text: string): string => {
+    const t = text.trim();
+    if (!t) return '';
+    const branchName = (branch?.branchName ?? '').trim();
+    if (!branchName) return t;
+    const esc = branchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return t
+      .replace(new RegExp(`\\s*[—-]\\s*${esc}\\s*$`, 'i'), '')
+      .replace(new RegExp(`\\(${esc}\\)\\s*$`, 'i'), '')
+      .replace(new RegExp(`\\bbranch\\s*:\\s*${esc}\\b`, 'i'), '')
+      .trim();
+  }, [branch?.branchName]);
+
   const parseOpportunityLine = useCallback((line: string): OpportunityDisplayItem => {
     const t = line.trim();
     if (!t) return { title: '', detail: '' };
     const idx = t.indexOf(' - ');
-    if (idx === -1) return { title: t, detail: '' };
+    if (idx === -1) {
+      const titleOnly = branch?.moduleType === 'accommodation' ? stripBranchNameFromOpportunityText(t) : t;
+      return { title: titleOnly, detail: '' };
+    }
+    const rawTitle = t.slice(0, idx).trim();
+    const rawDetail = dedupeInlineSegments(t.slice(idx + 3).trim());
+    const title = branch?.moduleType === 'accommodation' ? stripBranchNameFromOpportunityText(rawTitle) : rawTitle;
+    const detail = stripBranchNameFromOpportunityText(rawDetail);
     return {
-      title: t.slice(0, idx).trim(),
-      detail: dedupeInlineSegments(t.slice(idx + 3).trim()),
+      title,
+      detail,
     };
-  }, [dedupeInlineSegments]);
+  }, [branch?.moduleType, dedupeInlineSegments, stripBranchNameFromOpportunityText]);
 
   type WatchlistDisplayItem = { title: string; detail: string };
 
@@ -975,22 +995,21 @@ export default function BranchOverviewPage() {
     if (!branch?.id) return null;
     if (branch.moduleType === 'accommodation') {
       const occ = companyStatusCurrentRow?.occupancy_pct;
-      const branchName = branch.branchName ?? 'This branch';
       if (occ != null && occ < 60) {
         return {
-          title: `Occupancy low — ${branchName}`,
+          title: 'Occupancy low',
           detail: 'Occupancy level is low today. Consider OTA boosts, last-minute packages, and pricing fences.',
         };
       }
       const revpar = companyStatusCurrentRow?.revpar_thb;
       if (revpar != null && revpar > 0) {
         return {
-          title: `Lift RevPAR — ${branchName}`,
+          title: 'Lift RevPAR',
           detail: 'Test a higher-rate fenced package on stronger demand nights to lift RevPAR without broad discounting.',
         };
       }
       return {
-        title: `Protect margin — ${branchName}`,
+        title: 'Protect margin',
         detail: 'Keep base pricing steady and push value-added bundles to convert demand without rate erosion.',
       };
     }
@@ -1672,14 +1691,25 @@ export default function BranchOverviewPage() {
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
+    const selectedRows = opportunityDisplayItems
+      .map((x) => ({ title: x.title, detail: x.detail }))
+      .filter((x) => x.title.trim().length > 0);
+    const actionableRowsCount = selectedRows.filter(
+      (x) =>
+        !isWeakWatchlistText(x.title) &&
+        !/no clear opportunities today|ยังไม่มีโอกาสชัดเจนวันนี้/i.test(`${x.title} ${x.detail}`.trim())
+    ).length;
     if (opportunityFallbackDebug.sourcePath === 'opportunities_today_v_next') {
       console.log('[opportunities-source]', {
         page_context: 'branch',
         branch_id: branch.id,
         source_used: 'opportunities_today_v_next',
+        rows_returned: branchOpportunitiesRows.length,
+        actionable_rows_count: actionableRowsCount,
+        selected_rows_after_fallback: selectedRows.slice(0, 3),
         fallback_used: false,
-        title_shown: opportunityDisplayItems.map((x) => x.title).filter(Boolean).slice(0, 3),
-        detail_shown: opportunityDisplayItems.map((x) => x.detail).filter(Boolean).slice(0, 3),
+        title_shown: selectedRows.map((x) => x.title).filter(Boolean).slice(0, 3),
+        detail_shown: selectedRows.map((x) => x.detail).filter(Boolean).slice(0, 3),
       });
       return;
     }
@@ -1688,12 +1718,15 @@ export default function BranchOverviewPage() {
       page_context: 'branch',
       branch_id: branch.id,
       source_used: opportunityFallbackDebug.sourcePath,
+      rows_returned: branchOpportunitiesRows.length,
+      actionable_rows_count: actionableRowsCount,
+      selected_rows_after_fallback: selectedRows.slice(0, 3),
       fallback_used: true,
       title_shown: first?.title ?? null,
       detail_shown: first?.detail ?? null,
       final_rendered_text: first ? `${first.title}${first.detail ? ` - ${first.detail}` : ''}` : null,
     });
-  }, [branch?.id, opportunityFallbackDebug.sourcePath, opportunityDisplayItems]);
+  }, [branch?.id, opportunityFallbackDebug.sourcePath, opportunityDisplayItems, branchOpportunitiesRows, isWeakWatchlistText]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development' || !branch?.id) return;

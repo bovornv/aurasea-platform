@@ -48,6 +48,17 @@ function deriveOpportunityParts(row: OpportunitiesTodayRow): { title: string; de
   return { title: title || (detail || '—'), detail };
 }
 
+function withBranchInHeadline(title: string, branchName: string): string {
+  const t = title.trim();
+  const b = branchName.trim();
+  if (!b) return t;
+  if (!t) return b;
+  const nt = normalize(t);
+  const nb = normalize(b);
+  if (nt.includes(nb)) return t;
+  return `${t} — ${b}`;
+}
+
 export function CompanyOpportunitiesToday({ rows, locale, loading, organizationId = null }: Props) {
   const th = locale === 'th';
   const actionable = rows
@@ -65,13 +76,24 @@ export function CompanyOpportunitiesToday({ rows, locale, loading, organizationI
   }
 
   if (process.env.NODE_ENV === 'development') {
+    const selected = actionable.slice(0, 3).map((r) => {
+      const parts = deriveOpportunityParts(r);
+      const finalTitle = withBranchInHeadline(parts.title, (r.branch_name ?? '').trim());
+      return {
+        branch_id: r.branch_id,
+        branch_name: r.branch_name ?? null,
+        final_title_shown: finalTitle || null,
+        final_detail_shown: parts.detail || null,
+      };
+    });
     console.log('[opportunities-source]', {
       page_context: 'company',
       organization_id: organizationId,
-      source_used: 'opportunities_today_v_next',
+      source_used: 'company_dashboard_merged_opportunities',
       fallback_used: false,
-      row_count: actionable.length,
-      preview_titles: actionable.map((r) => (r.title ?? '').trim()).filter(Boolean).slice(0, 3),
+      rows_returned: rows.length,
+      actionable_rows_count: actionable.length,
+      selected_rows_after_fallback: selected,
     });
   }
 
@@ -88,7 +110,17 @@ export function CompanyOpportunitiesToday({ rows, locale, loading, organizationI
     >
       {actionable.map((row) => {
         const parts = deriveOpportunityParts(row);
+        const finalTitle = withBranchInHeadline(parts.title, (row.branch_name ?? '').trim());
         const key = `o-${row.branch_id}-${row.metric_date ?? 'd'}-${normKey(row.opportunity_text || row.title)}`;
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[opportunities-company-row-render]', {
+            organization_id: organizationId,
+            branch_id: row.branch_id,
+            branch_name: row.branch_name ?? null,
+            final_title_shown: finalTitle || null,
+            final_detail_shown: parts.detail || null,
+          });
+        }
         return (
           <li
             key={key}
@@ -114,7 +146,7 @@ export function CompanyOpportunitiesToday({ rows, locale, loading, organizationI
               }}
             />
             <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ color: '#0c4a6e', fontWeight: 700 }}>{parts.title}</span>
+              <span style={{ color: '#0c4a6e', fontWeight: 700 }}>{finalTitle}</span>
               {parts.detail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{parts.detail}</span> : null}
             </span>
           </li>

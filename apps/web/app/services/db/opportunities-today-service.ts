@@ -85,7 +85,7 @@ export async function fetchOpportunitiesToday(
     return {
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
-      branch_name: null,
+      branch_name: pickStr(r, 'branch_name', 'branchName') || null,
       metric_date: r.metric_date != null ? String(r.metric_date).slice(0, 10) : null,
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,
