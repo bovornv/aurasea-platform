@@ -125,6 +125,31 @@ export default function BranchTrendsPage() {
     if (trendSeries && trendSeries.revpar.length >= 2) return trendSeries.revpar;
     if (dailyMetrics.length >= 2) {
       return dailyMetrics.map((m) => {
+        const raw = m as unknown as Record<string, unknown>;
+        const canonicalRevpar =
+          raw.revpar_thb != null && Number.isFinite(Number(raw.revpar_thb))
+            ? Number(raw.revpar_thb)
+            : raw.revpar != null && Number.isFinite(Number(raw.revpar))
+              ? Number(raw.revpar)
+              : null;
+        if (canonicalRevpar != null) return canonicalRevpar;
+        const adrRaw =
+          raw.adr_thb != null && Number.isFinite(Number(raw.adr_thb))
+            ? Number(raw.adr_thb)
+            : m.adr != null && Number.isFinite(Number(m.adr))
+              ? Number(m.adr)
+              : null;
+        const occRaw =
+          raw.occupancy_pct != null && Number.isFinite(Number(raw.occupancy_pct))
+            ? Number(raw.occupancy_pct)
+            : raw.occupancy_rate != null && Number.isFinite(Number(raw.occupancy_rate))
+              ? Number(raw.occupancy_rate)
+              : null;
+        if (adrRaw != null && occRaw != null) {
+          // occupancy may be percent (51) or fraction (0.51); normalize safely.
+          const occRatio = occRaw > 1 ? occRaw / 100 : occRaw;
+          return occRatio > 0 ? adrRaw * occRatio : 0;
+        }
         const avail = m.roomsAvailable ?? 0;
         return avail > 0 ? m.revenue / avail : 0;
       });
@@ -166,6 +191,26 @@ export default function BranchTrendsPage() {
     if (dailyMetrics.length >= 2) return dailyMetrics.map((m) => m.date);
     return buildDatesFallback(revenueValues.length || occupancyValues.length || customersValues.length || 1);
   }, [trendSeries?.dates, revenueValues.length, dailyMetrics, occupancyValues.length, customersValues.length]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !isAccommodation) return;
+    if (chartDates.length === 0 || occupancyValues.length !== revparValues.length) return;
+    const samples = chartDates.map((date, i) => ({
+      date,
+      occupancy: occupancyValues[i] ?? null,
+      adr: adrValues[i] ?? null,
+      canonical_revpar:
+        trendSeries && trendSeries.revpar.length === chartDates.length
+          ? trendSeries.revpar[i] ?? null
+          : null,
+      plotted_revpar: revparValues[i] ?? null,
+    }));
+    console.log('[acc-occ-vs-revpar-trace]', {
+      page_context: 'branch_trends_second_chart',
+      branch_id: branch?.id ?? null,
+      samples: samples.slice(-10),
+    });
+  }, [isAccommodation, chartDates, occupancyValues, adrValues, revparValues, trendSeries, branch?.id]);
 
   const chartLocale = locale === 'th' ? 'th' : 'en';
 

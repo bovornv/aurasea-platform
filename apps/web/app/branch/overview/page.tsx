@@ -698,14 +698,50 @@ export default function BranchOverviewPage() {
       const sold = m.roomsSold ?? 0;
       return sold > 0 ? (m.revenue ?? 0) / sold : 0;
     });
-    const totalRooms = branchMetrics?.modules?.accommodation?.totalRoomsAvailable ?? 0;
-    const revpar = totalRooms > 0 ? revenue.map((r) => r / totalRooms) : sorted.map(() => 0);
+    const revpar = sorted.map((m, i) => {
+      const raw = m as unknown as Record<string, unknown>;
+      const canonicalRevpar =
+        raw.revpar_thb != null && Number.isFinite(Number(raw.revpar_thb))
+          ? Number(raw.revpar_thb)
+          : raw.revpar != null && Number.isFinite(Number(raw.revpar))
+            ? Number(raw.revpar)
+            : null;
+      if (canonicalRevpar != null) return canonicalRevpar;
+      const adrValue = adr[i] ?? 0;
+      const avail = m.roomsAvailable ?? 0;
+      const sold = m.roomsSold ?? 0;
+      const occupancyRatePercent = avail > 0 ? (sold / avail) * 100 : 0;
+      if (adrValue > 0 && occupancyRatePercent > 0) {
+        // occupancy is percent in this path, so divide by 100.
+        return adrValue * (occupancyRatePercent / 100);
+      }
+      return avail > 0 ? (m.revenue ?? 0) / avail : 0;
+    });
     const avgTicket = sorted.map((m, i) => {
       const c = customers[i] ?? 0;
       return c > 0 ? revenue[i]! / c : 0;
     });
     return { dates, revenue, occupancy, customers, adr, revpar, avgTicket };
-  }, [driverTrendSeries, dailyMetricsForTrends, branchMetrics?.modules?.accommodation?.totalRoomsAvailable]);
+  }, [driverTrendSeries, dailyMetricsForTrends]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !isAccommodation || !driverChartData) return;
+    const rows = driverChartData.dates.map((date, i) => ({
+      date,
+      occupancy: driverChartData.occupancy[i] ?? null,
+      adr: driverChartData.adr[i] ?? null,
+      canonical_revpar:
+        driverTrendSeries && driverTrendSeries.revpar.length === driverChartData.dates.length
+          ? driverTrendSeries.revpar[i] ?? null
+          : null,
+      plotted_revpar: driverChartData.revpar[i] ?? null,
+    }));
+    console.log('[acc-occ-vs-revpar-trace]', {
+      page_context: 'branch_today_performance_drivers_second_chart',
+      branch_id: branch?.id ?? null,
+      samples: rows.slice(-10),
+    });
+  }, [isAccommodation, driverChartData, driverTrendSeries, branch?.id]);
 
   const performanceDriverInsights = useMemo(() => {
     const loc = locale === 'th' ? 'th' : 'en';
