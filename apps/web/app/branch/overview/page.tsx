@@ -991,6 +991,24 @@ export default function BranchOverviewPage() {
     return { title, detail };
   }, [dedupeInlineSegments]);
 
+  type WorkingDisplayItem = { title: string; detail: string };
+
+  const isWeakWorkingText = useCallback((s: string | null | undefined): boolean => {
+    const n = normalizePanelLine(s);
+    if (!n) return true;
+    return n.includes('business is stable today') || n.includes('all good');
+  }, [normalizePanelLine]);
+
+  const parseWorkingLine = useCallback((line: string): WorkingDisplayItem => {
+    const t = dedupeInlineSegments(line.trim());
+    if (!t) return { title: '', detail: '' };
+    const idx = t.indexOf(' - ');
+    if (idx === -1) return { title: t, detail: '' };
+    const title = t.slice(0, idx).trim();
+    const detail = dedupeInlineSegments(t.slice(idx + 3).trim());
+    return { title, detail };
+  }, [dedupeInlineSegments]);
+
   const generatedMetricOpportunity = useMemo<OpportunityDisplayItem | null>(() => {
     if (!branch?.id) return null;
     if (branch.moduleType === 'accommodation') {
@@ -1120,12 +1138,52 @@ export default function BranchOverviewPage() {
 
   const watchlistRowsForDisplay = watchlistDebug.displayItems.map((x) => `${x.title}${x.detail ? ` - ${x.detail}` : ''}`);
 
-  const whatsWorkingRowsForDisplay = useMemo(() => {
+  const whatsWorkingDebug = useMemo(() => {
     const direct = cleanSectionText(branchWhatsWorkingRows);
-    if (direct.length > 0) return direct;
-    if (branchWorkingFallbackRows.length > 0) return branchWorkingFallbackRows;
-    return [locale === 'th' ? 'สาขาดำเนินงานตามปกติ' : 'Branch operations are stable'];
-  }, [branchWhatsWorkingRows, branchWorkingFallbackRows, cleanSectionText, locale]);
+    const meaningful = direct.filter((x) => !isWeakWorkingText(x));
+    if (meaningful.length > 0) {
+      return {
+        sourcePath: 'whats_working_today_v_next',
+        rowsReturned: branchWhatsWorkingRows.length,
+        meaningfulCount: meaningful.length,
+        fallbackUsed: false,
+        latestRowTitle: direct[0] ?? null,
+        displayItems: meaningful.slice(0, 1).map(parseWorkingLine).filter((x) => x.title.length > 0),
+      };
+    }
+    if (direct.length > 0) {
+      return {
+        sourcePath: 'whats_working_today_v_next',
+        rowsReturned: branchWhatsWorkingRows.length,
+        meaningfulCount: 0,
+        fallbackUsed: true,
+        latestRowTitle: direct[0] ?? null,
+        displayItems: direct.slice(0, 1).map(parseWorkingLine).filter((x) => x.title.length > 0),
+      };
+    }
+    if (branchWorkingFallbackRows.length > 0) {
+      return {
+        sourcePath: 'generated_metric_fallback',
+        rowsReturned: 0,
+        meaningfulCount: branchWorkingFallbackRows.length,
+        fallbackUsed: true,
+        latestRowTitle: branchWorkingFallbackRows[0] ?? null,
+        displayItems: [parseWorkingLine(branchWorkingFallbackRows[0] ?? '')],
+      };
+    }
+    return {
+      sourcePath: 'generic_empty_fallback',
+      rowsReturned: 0,
+      meaningfulCount: 0,
+      fallbackUsed: true,
+      latestRowTitle: null as string | null,
+      displayItems: [{
+        title: locale === 'th' ? 'สาขาดำเนินงานตามปกติ' : 'Branch operations are stable',
+        detail: '',
+      }],
+    };
+  }, [branchWhatsWorkingRows, branchWorkingFallbackRows, cleanSectionText, isWeakWorkingText, parseWorkingLine, locale]);
+  const whatsWorkingRowsForDisplay = whatsWorkingDebug.displayItems.map((x) => `${x.title}${x.detail ? ` - ${x.detail}` : ''}`);
 
   const businessTrendsText = useMemo(() => {
     if (branch?.moduleType !== 'accommodation') return null;
@@ -1646,6 +1704,24 @@ export default function BranchOverviewPage() {
     fnbOperatingStatus?.avg_cost,
     fnbMarginFromDaily.marginTrend,
   ]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
+    console.log('[whats-working-source]', {
+      page_context: 'branch',
+      branch_id: branch.id,
+      source_relation: 'whats_working_today_v_next',
+      source_used: whatsWorkingDebug.sourcePath,
+      rows_returned: whatsWorkingDebug.rowsReturned,
+      latest_row_title: whatsWorkingDebug.latestRowTitle,
+      meaningful_rows_count: whatsWorkingDebug.meaningfulCount,
+      selected_final_row: whatsWorkingDebug.displayItems.slice(0, 1).map((x) => ({
+        title: x.title,
+        detail: x.detail || null,
+      })),
+      fallback_used: whatsWorkingDebug.fallbackUsed,
+    });
+  }, [branch?.id, whatsWorkingDebug]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development' || !branch?.id) return;
@@ -2193,13 +2269,28 @@ export default function BranchOverviewPage() {
           {branchSectionLoading ? (
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
           ) : (
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {whatsWorkingRowsForDisplay.slice(0, 3).map((text, idx) => (
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {whatsWorkingDebug.displayItems.slice(0, 3).map((item, idx) => (
                 <li
-                  key={`bw-${branch?.id ?? 'b'}-${normalizeWhatsWorkingTitle(text)}-${idx}`}
-                  style={{ color: '#166534', fontSize: 14, lineHeight: 1.5 }}
+                  key={`bw-${branch?.id ?? 'b'}-${normalizeWhatsWorkingTitle(item.title)}-${idx}`}
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 14, lineHeight: 1.5 }}
                 >
-                  • {text}
+                  <span
+                    aria-hidden
+                    style={{
+                      flexShrink: 0,
+                      width: '8px',
+                      height: '8px',
+                      marginTop: '6px',
+                      borderRadius: '9999px',
+                      background: '#22c55e',
+                      boxShadow: '0 0 0 2px rgba(34, 197, 94, 0.25)',
+                    }}
+                  />
+                  <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ color: '#166534', fontWeight: 700 }}>{item.title}</span>
+                    {item.detail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{item.detail}</span> : null}
+                  </span>
                 </li>
               ))}
             </ul>

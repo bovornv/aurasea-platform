@@ -2,7 +2,6 @@
 
 import {
   dedupeWhatsWorkingRows,
-  normalizeWhatsWorkingTitle,
   type WhatsWorkingTodayRow,
 } from '../../services/db/whats-working-today-service';
 
@@ -10,11 +9,56 @@ interface Props {
   rows: WhatsWorkingTodayRow[];
   locale: string;
   loading?: boolean;
+  organizationId?: string | null;
 }
 
-export function CompanyWhatsWorkingToday({ rows, locale, loading }: Props) {
+export function CompanyWhatsWorkingToday({ rows, locale, loading, organizationId = null }: Props) {
   const th = locale === 'th';
-  const visible = dedupeWhatsWorkingRows(rows).slice(0, 3);
+  const normalize = (s: string | null | undefined): string =>
+    (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const isWeak = (row: WhatsWorkingTodayRow): boolean => {
+    const n = normalize([row.title, row.description, row.highlight_text].filter(Boolean).join(' | '));
+    if (!n) return true;
+    return n.includes('business is stable today') || n.includes('all good');
+  };
+  const dateKey = (d: string | null | undefined): string => ((d ?? '').trim().slice(0, 10));
+  const toDisplay = (row: WhatsWorkingTodayRow): { title: string; detail: string } => {
+    const title = (row.title ?? row.highlight_text ?? row.description ?? '—').trim();
+    const detail = ((row.description ?? '').trim() || (row.highlight_text ?? '').trim());
+    if (detail && normalize(detail) === normalize(title)) return { title, detail: '' };
+    return { title, detail };
+  };
+  const withBranch = (title: string, branchName: string): string => {
+    const t = title.trim();
+    const b = branchName.trim();
+    if (!b) return t;
+    const nt = normalize(t);
+    const nb = normalize(b);
+    if (nt.includes(nb)) return t;
+    return `${t} — ${b}`;
+  };
+  const deduped = dedupeWhatsWorkingRows(rows);
+  const byBranch = new Map<string, WhatsWorkingTodayRow[]>();
+  for (const row of deduped) {
+    const k = (row.branch_id ?? '').trim();
+    if (!k) continue;
+    const arr = byBranch.get(k) ?? [];
+    arr.push(row);
+    byBranch.set(k, arr);
+  }
+  const selectedRows: WhatsWorkingTodayRow[] = [];
+  for (const list of byBranch.values()) {
+    const sorted = [...list].sort((a, b) => {
+      const dc = dateKey(b.metric_date).localeCompare(dateKey(a.metric_date));
+      if (dc !== 0) return dc;
+      return (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY);
+    });
+    const meaningful = sorted.find((r) => !isWeak(r));
+    selectedRows.push((meaningful ?? sorted[0]) as WhatsWorkingTodayRow);
+  }
+  const visible = selectedRows
+    .sort((a, b) => (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY))
+    .slice(0, 3);
 
   const emptyMsg = th
     ? 'ผลงานคงที่ — ยังไม่มีสัญญาณเชิงบวกที่โดดเด่น'
@@ -26,6 +70,32 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading }: Props) {
   }
   if (visible.length === 0) {
     return <p style={{ margin: 0, fontSize: '14px', color: '#64748b', lineHeight: 1.5 }}>{emptyMsg}</p>;
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    const sortedAll = [...deduped].sort((a, b) => {
+      const dc = dateKey(b.metric_date).localeCompare(dateKey(a.metric_date));
+      if (dc !== 0) return dc;
+      return (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY);
+    });
+    const latest = sortedAll[0] ?? null;
+    console.log('[whats-working-source]', {
+      page_context: 'company',
+      organization_id: organizationId,
+      source_relation: 'whats_working_today_v_next',
+      rows_returned: rows.length,
+      latest_row_title: latest?.title ?? null,
+      meaningful_rows_count: deduped.filter((r) => !isWeak(r)).length,
+      selected_final_row: visible.slice(0, 3).map((r) => {
+        const parts = toDisplay(r);
+        return {
+          branch_id: r.branch_id,
+          title: withBranch(parts.title, (r.branch_name ?? '').trim()),
+          detail: parts.detail || null,
+        };
+      }),
+      fallback_used: visible.some((r) => isWeak(r)),
+    });
   }
 
   return (
@@ -40,10 +110,9 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading }: Props) {
       }}
     >
       {visible.map((row) => {
-        const text =
-          row.highlight_text?.trim() || row.title?.trim() || row.description?.trim() || row.branch_name || '—';
-        const norm = normalizeWhatsWorkingTitle(row.highlight_text || row.title || row.branch_name);
-        const key = `w-${row.branch_id}-${row.metric_date ?? 'd'}-${norm.slice(0, 80)}`;
+        const parts = toDisplay(row);
+        const finalTitle = withBranch(parts.title, (row.branch_name ?? '').trim());
+        const key = `w-${row.branch_id}-${row.metric_date ?? 'd'}-${normalize(finalTitle).slice(0, 80)}`;
         return (
           <li
             key={key}
@@ -53,7 +122,6 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading }: Props) {
               gap: '10px',
               fontSize: '14px',
               lineHeight: 1.5,
-              color: '#166534',
               fontWeight: 500,
             }}
           >
@@ -69,7 +137,10 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading }: Props) {
                 boxShadow: '0 0 0 2px rgba(34, 197, 94, 0.25)',
               }}
             />
-            <span>{text}</span>
+            <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ color: '#166534', fontWeight: 700 }}>{finalTitle}</span>
+              {parts.detail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{parts.detail}</span> : null}
+            </span>
           </li>
         );
       })}

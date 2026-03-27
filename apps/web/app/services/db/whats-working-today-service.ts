@@ -10,7 +10,6 @@ import {
 } from '../../lib/supabase/postgrest-missing-resource';
 import {
   logPostgrestPhase1Read,
-  resolvePostgrestPhase1Table,
 } from '../../lib/supabase/postgrest-phase1-cutover';
 import {
   pickStr,
@@ -66,6 +65,16 @@ export function dedupeWhatsWorkingHighlightLines(lines: string[]): string[] {
   return out;
 }
 
+function normalizePanelText(s: string | null | undefined): string {
+  return (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isWeakWhatsWorkingText(...parts: Array<string | null | undefined>): boolean {
+  const n = normalizePanelText(parts.filter(Boolean).join(' | '));
+  if (!n) return true;
+  return n.includes('business is stable today') || n.includes('all good');
+}
+
 function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
   for (const k of keys) {
     const v = r[k];
@@ -87,12 +96,13 @@ export async function fetchWhatsWorkingToday(
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
-  const cap = Math.min(10, Math.max(1, limit));
-  const table = resolvePostgrestPhase1Table('whats_working_today');
+  const cap = Math.min(50, Math.max(1, limit));
+  const table = 'whats_working_today_v_next';
   const { data, error } = await supabase
     .from(table)
     .select(SELECT_WHATS_WORKING_TODAY)
     .eq('organization_id', organizationId.trim())
+    .order('metric_date', { ascending: false })
     .order('sort_score', { ascending: false })
     .limit(cap);
 
@@ -122,7 +132,7 @@ export async function fetchWhatsWorkingToday(
     return {
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
-      branch_name: null,
+      branch_name: pickStr(r, 'branch_name', 'branchName') || null,
       metric_date: r.metric_date != null ? String(r.metric_date).slice(0, 10) : null,
       title,
       description,
@@ -130,5 +140,21 @@ export async function fetchWhatsWorkingToday(
       sort_score: pickNum(r, 'sort_score'),
     };
   });
-  return dedupeWhatsWorkingRows(mapped);
+  const deduped = dedupeWhatsWorkingRows(mapped);
+  const byBranch = new Map<string, WhatsWorkingTodayRow[]>();
+  for (const row of deduped) {
+    const branchId = (row.branch_id ?? '').trim();
+    if (!branchId) continue;
+    const bucket = byBranch.get(branchId) ?? [];
+    bucket.push(row);
+    byBranch.set(branchId, bucket);
+  }
+  const selected: WhatsWorkingTodayRow[] = [];
+  for (const rows of byBranch.values()) {
+    const meaningful = rows.filter((r) => !isWeakWhatsWorkingText(r.title, r.description, r.highlight_text));
+    selected.push((meaningful[0] ?? rows[0]) as WhatsWorkingTodayRow);
+  }
+  return selected
+    .sort((a, b) => (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY))
+    .slice(0, Math.max(1, limit));
 }

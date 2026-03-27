@@ -712,6 +712,7 @@ function OwnerSummaryContent() {
               rows={whatsWorkingRows}
               loading={companyTodayLoading}
               locale={locale}
+              organizationId={organizationIdForData}
             />
           </MonitoringErrorBoundary>
         </OperatingSection>

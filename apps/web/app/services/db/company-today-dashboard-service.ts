@@ -174,6 +174,12 @@ function isWeakWatchlistText(...parts: Array<string | null | undefined>): boolea
   );
 }
 
+function isWeakWhatsWorkingText(...parts: Array<string | null | undefined>): boolean {
+  const n = normalizePanelText(parts.filter(Boolean).join(' | '));
+  if (!n) return true;
+  return n.includes('business is stable today') || n.includes('all good');
+}
+
 function isGenericStableOpportunityText(...parts: Array<string | null | undefined>): boolean {
   const n = normalizePanelText(parts.filter(Boolean).join(' | '));
   if (!n) return true;
@@ -635,6 +641,13 @@ export async function fetchCompanyTodayDashboard(
       orgId,
       branchNameById
     );
+    const canonicalWhatsWorkingWithBranchNames = (panels.whatsWorking ?? []).map((row) => {
+      const branchId = (row.branch_id ?? '').trim();
+      return {
+        ...row,
+        branch_name: row.branch_name?.trim() || (branchId ? branchNameById.get(branchId) ?? null : null),
+      };
+    });
     const canonicalWatchlistWithBranchNames = canonicalWatchlist.map((row) => {
       const branchId = (row.branch_id ?? '').trim();
       const fallbackBranchName = branchId ? branchNameById.get(branchId) ?? null : null;
@@ -664,7 +677,7 @@ export async function fetchCompanyTodayDashboard(
     return {
       bundle,
       priorities,
-      whatsWorking: panels.whatsWorking,
+      whatsWorking: canonicalWhatsWorkingWithBranchNames,
       opportunities: mergedOpportunities.rows,
       // Canonical source for company Watchlist: watchlist_today_v_next directly.
       watchlist: canonicalWatchlistWithBranchNames,
@@ -715,13 +728,14 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
   const [workingRes, oppRes, watchRes] = await Promise.all([
     (async () => {
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.whats_working_today)) return [];
-      const wwTable = resolvePostgrestPhase1Table('whats_working_today');
+      const wwTable = 'whats_working_today_v_next';
       const { data, error } = await supabase
         .from(wwTable)
         .select(SELECT_WHATS_WORKING_TODAY_BRANCH)
         .eq('branch_id', bid)
+        .order('metric_date', { ascending: false })
         .order('sort_score', { ascending: false })
-        .limit(3);
+        .limit(20);
       const wwRaw = Array.isArray(data) ? data : [];
       logPostgrestPhase1Read('whats_working_today', {
         branchId: bid,
@@ -735,18 +749,45 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         return [];
       }
       if (!Array.isArray(data)) return [];
-      const lines = data
+      const rows = data as Array<Record<string, unknown>>;
+      const latestMetricDate =
+        rows.map((r) => (r.metric_date != null ? String(r.metric_date).slice(0, 10) : '')).find((d) => d.length > 0) || null;
+      const latestRows = latestMetricDate
+        ? rows.filter((r) => String(r.metric_date ?? '').slice(0, 10) === latestMetricDate)
+        : rows;
+      const entries = latestRows
         .map((row) => {
           const r = row as Record<string, unknown>;
+          const title = pickStr(r, 'title');
+          const description = pickStr(r, 'description');
+          const highlight = pickStr(r, 'highlight_text', 'highlightText');
           const line = composeDedupedPanelLine({
-            title: pickStr(r, 'title'),
-            description: pickStr(r, 'description'),
-            primary: pickStr(r, 'highlight_text', 'highlightText'),
+            title,
+            // detail preference: description first, fallback to highlight_text
+            description: highlight,
+            primary: description,
           });
-          return applyWorkingSubstitutions(line);
+          return {
+            line: applyWorkingSubstitutions(line),
+            weak: isWeakWhatsWorkingText(title, description, highlight),
+          };
         })
-        .filter(Boolean);
-      return dedupeWhatsWorkingHighlightLines(lines).slice(0, 3);
+        .filter((x) => Boolean(x.line));
+      const meaningful = entries.filter((x) => !x.weak);
+      const selected = (meaningful.length > 0 ? meaningful : entries).slice(0, 1);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[whats-working-source]', {
+          page_context: 'branch',
+          branch_id: bid,
+          source_relation: wwTable,
+          rows_returned: wwRaw.length,
+          latest_row_title: pickStr((latestRows[0] ?? {}) as Record<string, unknown>, 'title') || null,
+          meaningful_rows_count: meaningful.length,
+          selected_final_row: selected[0]?.line ?? null,
+          fallback_used: meaningful.length === 0,
+        });
+      }
+      return dedupeWhatsWorkingHighlightLines(selected.map((x) => x.line)).slice(0, 1);
     })(),
     (async () => {
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.opportunities_today)) return [];
