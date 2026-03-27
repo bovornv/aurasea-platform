@@ -722,8 +722,8 @@ export default function BranchOverviewPage() {
         ),
         occRev: trendInsightDual(
           { values: driverChartData.occupancy, metric: 'occupancy' },
-          driverChartData.revenue.length === driverChartData.occupancy.length
-            ? { values: driverChartData.revenue, metric: 'revenue' }
+          driverChartData.revpar.length === driverChartData.occupancy.length
+            ? { values: driverChartData.revpar, metric: 'revpar' }
             : null,
           loc
         ),
@@ -1960,7 +1960,7 @@ export default function BranchOverviewPage() {
                   <TrendChartCard
                     legend={[
                       { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
-                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
+                      { label: locale === 'th' ? 'รายได้ต่อห้อง' : 'RevPAR', color: '#16a34a' },
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
@@ -1969,15 +1969,15 @@ export default function BranchOverviewPage() {
                   >
                     <DecisionTrendChart
                       values={driverChartData.occupancy}
-                      valuesRight={driverChartData.revenue.length === driverChartData.occupancy.length ? driverChartData.revenue : undefined}
+                      valuesRight={driverChartData.revpar.length === driverChartData.occupancy.length ? driverChartData.revpar : undefined}
                       dates={driverChartData.dates}
                       color="#2563eb"
                       colorRight="#16a34a"
                       showBaseline={true}
                       formatLeft={(v) => `${Math.round(v)}%`}
-                      formatRight={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      formatRight={(v) => `฿${Math.round(v)}`}
                       leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
-                      rightLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
+                      rightLabel={locale === 'th' ? 'รายได้ต่อห้อง (฿)' : 'RevPAR (฿)'}
                       emptyMessage={locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'}
                       locale={locale === 'th' ? 'th' : 'en'}
                       insightCustomers={driverChartData.customers}

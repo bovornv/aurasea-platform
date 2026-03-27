@@ -181,7 +181,7 @@ export default function BranchTrendsPage() {
         );
         out.accOccRev = trendInsightDual(
           { values: occupancyValues, metric: 'occupancy' },
-          revenueValues.length === occupancyValues.length ? { values: revenueValues, metric: 'revenue' } : null,
+          revparValues.length === occupancyValues.length ? { values: revparValues, metric: 'revpar' } : null,
           loc
         );
       }
@@ -332,11 +332,11 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
-                  {/* 2. Occupancy + Revenue — Primary (demand vs money). Left: Occupancy, Right: Revenue */}
+                  {/* 2. Occupancy + RevPAR — Primary (demand vs room yield). Left: Occupancy, Right: RevPAR */}
                   <TrendChartCard
                     legend={[
                       { label: locale === 'th' ? 'อัตราการเข้าพัก' : 'Occupancy', color: '#2563eb' },
-                      { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
+                      { label: locale === 'th' ? 'รายได้ต่อห้อง' : 'RevPAR', color: '#16a34a' },
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
@@ -345,15 +345,15 @@ export default function BranchTrendsPage() {
                   >
                     <DecisionTrendChart
                       values={occupancyValues}
-                      valuesRight={revenueValues.length === occupancyValues.length ? revenueValues : undefined}
+                      valuesRight={revparValues.length === occupancyValues.length ? revparValues : undefined}
                       dates={chartDates.length === occupancyValues.length ? chartDates : undefined}
                       color="#2563eb"
                       colorRight="#16a34a"
                       showBaseline={true}
                       formatLeft={(v) => `${Math.round(v)}%`}
-                      formatRight={(v) => `฿${(v / 1000).toFixed(0)}k`}
+                      formatRight={(v) => `฿${Math.round(v)}`}
                       leftLabel={locale === 'th' ? 'อัตราการเข้าพัก (%)' : 'Occupancy (%)'}
-                      rightLabel={locale === 'th' ? 'รายได้ (฿)' : 'Revenue (฿)'}
+                      rightLabel={locale === 'th' ? 'รายได้ต่อห้อง (฿)' : 'RevPAR (฿)'}
                       emptyMessage={emptyMsg}
                       locale={chartLocale}
                       insightCustomers={aligned(customersValues, occupancyValues.length)}
