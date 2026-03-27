@@ -166,10 +166,10 @@ function composeDedupedPanelLine(parts: {
   return title && secondary ? `${title} - ${secondary}` : title || secondary;
 }
 
-/** Branch What's Working: headline = title, grey line = description (fallback highlight_text). No composeDedupedPanelLine — avoids stripping detail when fields overlap. */
-function buildWhatsWorkingBranchLine(title: string, description: string, highlight: string): string {
+/** Branch What's Working: headline = title, grey line = description. */
+function buildWhatsWorkingBranchLine(title: string, description: string): string {
   const t = title.trim();
-  const detail = (description || '').trim() || (highlight || '').trim();
+  const detail = (description || '').trim();
   if (!t) return detail;
   if (!detail) return t;
   const nT = normalizePanelText(t);
@@ -511,7 +511,6 @@ async function fetchCompanyPanelsFromDashboardView(
       metric_date: pickStr(r, 'metric_date') || null,
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,
-      highlight_text: pickStr(r, 'highlight_text', 'highlightText') || null,
       sort_score: pickNum(r, 'sort_score'),
     }));
 
@@ -770,7 +769,6 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
       type ParsedWw = {
         title: string;
         description: string;
-        highlight: string;
         metric_date: string;
         sort_score: number | null;
         weak: boolean;
@@ -780,19 +778,17 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
           const r = row as Record<string, unknown>;
           const title = pickStr(r, 'title');
           const description = pickStr(r, 'description');
-          const highlight = pickStr(r, 'highlight_text', 'highlightText');
           const metric_date = r.metric_date != null ? String(r.metric_date).slice(0, 10) : '';
           const sort_score = pickNum(r, 'sort_score');
           return {
             title,
             description,
-            highlight,
             metric_date,
             sort_score,
-            weak: isWeakWhatsWorkingText(title, description, highlight),
+            weak: isWeakWhatsWorkingText(title, description),
           };
         })
-        .filter((p) => Boolean(p.title || p.description || p.highlight));
+        .filter((p) => Boolean(p.title || p.description));
       parsed.sort((a, b) => {
         const dc = b.metric_date.localeCompare(a.metric_date);
         if (dc !== 0) return dc;
@@ -801,7 +797,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
       const meaningfulRows = parsed.filter((p) => !p.weak);
       const picked = meaningfulRows.length > 0 ? meaningfulRows[0] : parsed[0];
       if (!picked) return [];
-      const rawLine = buildWhatsWorkingBranchLine(picked.title, picked.description, picked.highlight);
+      const rawLine = buildWhatsWorkingBranchLine(picked.title, picked.description);
       const line = applyWorkingSubstitutions(rawLine);
       if (process.env.NODE_ENV === 'development') {
         const parts = line.includes(' - ') ? line.split(' - ') : [line];
@@ -815,7 +811,6 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
           meaningful_rows_count: meaningfulRows.length,
           selected_title: picked.title || null,
           selected_description: picked.description || null,
-          selected_highlight_text: picked.highlight || null,
           final_title_shown: head || null,
           final_detail_shown: tail || null,
           fallback_used: picked.weak,

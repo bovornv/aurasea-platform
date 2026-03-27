@@ -996,7 +996,12 @@ export default function BranchOverviewPage() {
   const isWeakWorkingText = useCallback((s: string | null | undefined): boolean => {
     const n = normalizePanelLine(s);
     if (!n) return true;
-    return n.includes('business is stable today') || n.includes('all good');
+    return (
+      n.includes('business is stable today') ||
+      n.includes('operations are holding steady') ||
+      n.includes('revenue flow is consistent') ||
+      n.includes('all good')
+    );
   }, [normalizePanelLine]);
 
   const parseWorkingLine = useCallback((line: string): WorkingDisplayItem => {

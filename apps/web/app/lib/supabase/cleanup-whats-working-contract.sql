@@ -1,0 +1,9 @@
+-- What’s Working view-contract cleanup (no new tables/columns).
+--
+-- Dependency-safe order for a full alerts rebuild:
+--   1. rebuild-alerts-enriched-engine.sql — STEP 1 drops today_company_dashboard + whats_working chain;
+--      STEP 6d recreates whats_working_today (title, description only) + whats_working_today__candidate + whats_working_today_v_next.
+--   2. restore-today-company-dashboard-after-rebuild.sql — recreates today_company_dashboard (whats_working JSON without highlight_text).
+--
+-- If priorities views are also out of date, run fix-today-priorities-stable-schema.sql instead of step 2
+-- (it includes the same today_company_dashboard definition).

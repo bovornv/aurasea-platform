@@ -19,12 +19,8 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading, organizationId
   const normalize = (s: string | null | undefined): string =>
     (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
   const toDisplay = (row: WhatsWorkingTodayRow): { title: string; detail: string } => {
-    const title =
-      (row.title ?? '').trim() ||
-      (row.highlight_text ?? '').trim() ||
-      (row.description ?? '').trim() ||
-      '—';
-    const detail = (row.description ?? '').trim() || (row.highlight_text ?? '').trim();
+    const title = (row.title ?? '').trim() || (row.description ?? '').trim() || '—';
+    const detail = (row.description ?? '').trim();
     if (detail && normalize(detail) === normalize(title)) return { title, detail: '' };
     return { title, detail };
   };
@@ -68,19 +64,18 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading, organizationId
       source_relation: 'whats_working_today_v_next',
       rows_returned: rows.length,
       latest_row_title: latest?.title ?? null,
-      meaningful_rows_count: deduped.filter((r) => !isWeakWhatsWorkingText(r.title, r.description, r.highlight_text)).length,
+      meaningful_rows_count: deduped.filter((r) => !isWeakWhatsWorkingText(r.title, r.description)).length,
       selected_final_row: visible.slice(0, 3).map((r) => {
         const parts = toDisplay(r);
         return {
           branch_id: r.branch_id,
           selected_title: r.title ?? null,
           selected_description: r.description ?? null,
-          selected_highlight_text: r.highlight_text ?? null,
           final_title_shown: withBranch(parts.title, (r.branch_name ?? '').trim()),
           final_detail_shown: parts.detail || null,
         };
       }),
-      fallback_used: visible.some((r) => isWeakWhatsWorkingText(r.title, r.description, r.highlight_text)),
+      fallback_used: visible.some((r) => isWeakWhatsWorkingText(r.title, r.description)),
     });
   }
 

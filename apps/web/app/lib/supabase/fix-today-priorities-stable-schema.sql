@@ -595,7 +595,6 @@ SELECT
           ww.metric_date,
           ww.title,
           ww.description,
-          ww.highlight_text,
           ww.sort_score
         FROM public.whats_working_today ww
         WHERE ww.organization_id = o.organization_id

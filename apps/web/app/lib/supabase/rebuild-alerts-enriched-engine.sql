@@ -15,6 +15,11 @@
 -- =============================================================================
 
 -- STEP 1 — Drop dependents first (children → parent). CASCADE cleans legacy dependents.
+-- Drops public.today_company_dashboard (depends on whats_working_today). After this script, recreate it via
+-- restore-today-company-dashboard-after-rebuild.sql or the today_company_dashboard block in fix-today-priorities-stable-schema.sql.
+DROP VIEW IF EXISTS public.today_company_dashboard CASCADE;
+DROP VIEW IF EXISTS public.whats_working_today_v_next CASCADE;
+DROP VIEW IF EXISTS public.whats_working_today__candidate CASCADE;
 DROP VIEW IF EXISTS opportunities_today CASCADE;
 DROP VIEW IF EXISTS watchlist_today CASCADE;
 DROP VIEW IF EXISTS whats_working_today CASCADE;
@@ -29,6 +34,8 @@ DROP VIEW IF EXISTS alerts_critical CASCADE;
 DROP VIEW IF EXISTS alerts_top3_revenue_leaks CASCADE;
 DROP VIEW IF EXISTS alerts_today CASCADE;
 DROP VIEW IF EXISTS alerts_enriched CASCADE;
+-- Parity/test wrappers may depend on the RPC; drop before function.
+DROP VIEW IF EXISTS public.get_alerts_critical_parity CASCADE;
 DROP FUNCTION IF EXISTS public.get_alerts_critical(text[]);
 
 -- Optional: remove old pipeline if still present (safe if already gone)
@@ -653,6 +660,13 @@ GRANT SELECT ON today_branch_priorities TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authenticated;
 
 -- STEP 6d — What’s Working (positive + fallback): always 1-3 rows per org
+-- Contract: headline = title; grey detail = description (short explanation, not duplicate of title).
+-- No highlight_text column.
+--
+-- Stale / outlier guard: unbounded revenue_delta_day (e.g. +786% from baseline noise) must NOT emit
+-- "Customer traffic up (+786%)" or dominate via sort_score. Only "tight" deltas (10–100%) produce
+-- positive signal lines; otherwise the branch falls back to per-branch stable copy (F&B / acc).
+-- Org-wide generic weak rows apply only when the org has no branch lines from summary data.
 CREATE OR REPLACE VIEW whats_working_today AS
 WITH base AS (
     SELECT
@@ -695,51 +709,97 @@ latest AS (
     FROM base
     ORDER BY branch_id, metric_date DESC NULLS LAST
 ),
-signals AS (
+-- Bounded positive signals only (excludes absurd % spikes). sort_score capped so recency + tier stay meaningful.
+tight_signals AS (
     SELECT
         l.organization_id::uuid AS organization_id,
         l.branch_id::uuid AS branch_id,
         l.branch_name::text AS branch_name,
         l.metric_date::date AS metric_date,
-        ('Customer traffic up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%) (' || l.branch_name || ')')::text AS highlight_text,
         ('Customer traffic up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%)')::text AS title,
-        ('Branch: ' || l.branch_name)::text AS description,
-        (COALESCE(l.revenue_delta_day, 0) * 1000::numeric + COALESCE(l.total_revenue, 0))::numeric AS sort_score
+        'Revenue momentum is strong versus recent days.'::text AS description,
+        LEAST(
+            299999::numeric,
+            250000::numeric
+                + LEAST(ABS(COALESCE(l.revenue_delta_day, 0)), 100::numeric) * 1000::numeric
+                + LEAST(COALESCE(l.total_revenue, 0), 50000::numeric)
+        ) AS sort_score
     FROM latest l
     WHERE l.branch_type = 'fnb'
       AND l.organization_id IS NOT NULL
       AND l.revenue_delta_day IS NOT NULL
-      AND l.revenue_delta_day >= 10
+      AND l.revenue_delta_day >= 10::numeric
+      AND l.revenue_delta_day <= 100::numeric
     UNION ALL
     SELECT
         l.organization_id::uuid,
         l.branch_id::uuid,
         l.branch_name::text,
         l.metric_date::date,
-        ('Revenue trending up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%) (' || l.branch_name || ')')::text,
         ('Revenue trending up (+' || ROUND(ABS(l.revenue_delta_day))::text || '%)')::text,
-        ('Branch: ' || l.branch_name)::text,
-        (COALESCE(l.revenue_delta_day, 0) * 1000::numeric + COALESCE(l.total_revenue, 0))::numeric
+        'Revenue is tracking steadily versus recent days.'::text,
+        LEAST(
+            299999::numeric,
+            250000::numeric
+                + LEAST(ABS(COALESCE(l.revenue_delta_day, 0)), 100::numeric) * 1000::numeric
+                + LEAST(COALESCE(l.total_revenue, 0), 50000::numeric)
+        )
     FROM latest l
     WHERE l.branch_type = 'accommodation'
       AND l.organization_id IS NOT NULL
       AND l.revenue_delta_day IS NOT NULL
-      AND l.revenue_delta_day >= 10
+      AND l.revenue_delta_day >= 10::numeric
+      AND l.revenue_delta_day <= 100::numeric
     UNION ALL
     SELECT
         l.organization_id::uuid,
         l.branch_id::uuid,
         l.branch_name::text,
         l.metric_date::date,
-        ('Occupancy improving (+' || ROUND(ABS(l.occupancy_delta_week))::text || '%) (' || l.branch_name || ')')::text,
         ('Occupancy improving (+' || ROUND(ABS(l.occupancy_delta_week))::text || '%)')::text,
-        ('Branch: ' || l.branch_name)::text,
-        (COALESCE(l.occupancy_delta_week, 0) * 800::numeric + COALESCE(l.total_revenue, 0))::numeric
+        'Recent booking demand is holding steady or improving.'::text,
+        LEAST(
+            299999::numeric,
+            250000::numeric
+                + LEAST(ABS(COALESCE(l.occupancy_delta_week, 0)), 100::numeric) * 800::numeric
+                + LEAST(COALESCE(l.total_revenue, 0), 50000::numeric)
+        )
     FROM latest l
     WHERE l.branch_type = 'accommodation'
       AND l.organization_id IS NOT NULL
       AND l.occupancy_delta_week IS NOT NULL
-      AND l.occupancy_delta_week >= 10
+      AND l.occupancy_delta_week >= 10::numeric
+      AND l.occupancy_delta_week <= 100::numeric
+),
+-- Per-branch stable lines when no tight signal exists for that branch (e.g. outlier delta excluded).
+stable_only AS (
+    SELECT
+        l.organization_id::uuid AS organization_id,
+        l.branch_id::uuid AS branch_id,
+        l.branch_name::text AS branch_name,
+        l.metric_date::date AS metric_date,
+        (
+            CASE l.branch_type
+                WHEN 'fnb' THEN 'Revenue flow is consistent'::text
+                WHEN 'accommodation' THEN 'Room demand is stable'::text
+                ELSE 'Business is stable today'::text
+            END
+        ) AS title,
+        (
+            CASE l.branch_type
+                WHEN 'fnb' THEN 'Revenue is tracking steadily versus recent days.'::text
+                WHEN 'accommodation' THEN 'Recent booking demand is holding steady.'::text
+                ELSE 'Core performance is steady with no major positive disruptions.'::text
+            END
+        ) AS description,
+        (190000::numeric + (l.metric_date - DATE '1970-01-01')) AS sort_score
+    FROM latest l
+    WHERE l.organization_id IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM tight_signals t
+          WHERE t.branch_id = l.branch_id
+      )
 ),
 org_pool AS (
     SELECT
@@ -763,24 +823,19 @@ org_pool AS (
     WHERE b.organization_id IS NOT NULL
     GROUP BY b.organization_id
 ),
-has_positive AS (
-    SELECT DISTINCT s.organization_id
-    FROM signals s
-    WHERE s.organization_id IS NOT NULL
-),
+-- Weak org-level rows only when there is no per-branch line for that org (no summary-backed rows).
 fallback AS (
     SELECT
         o.organization_id::uuid AS organization_id,
         COALESCE(o.sample_branch_id, NULL::text)::uuid AS branch_id,
         COALESCE(o.sample_branch_name, NULL::text)::text AS branch_name,
         o.latest_metric_date::date AS metric_date,
-        'No major operational risks detected'::text AS highlight_text,
-        'All good'::text AS title,
-        'No major operational risks detected'::text AS description,
+        'Business is stable today'::text AS title,
+        'Core performance is steady with no major positive disruptions.'::text AS description,
         300::numeric AS sort_score
     FROM org_pool o
-    LEFT JOIN has_positive hp ON hp.organization_id = o.organization_id
-    WHERE hp.organization_id IS NULL
+    WHERE NOT EXISTS (SELECT 1 FROM tight_signals t WHERE t.organization_id = o.organization_id)
+      AND NOT EXISTS (SELECT 1 FROM stable_only s WHERE s.organization_id = o.organization_id)
 
     UNION ALL
 
@@ -789,13 +844,12 @@ fallback AS (
         COALESCE(o.sample_branch_id, NULL::text)::uuid,
         COALESCE(o.sample_branch_name, NULL::text)::text,
         o.latest_metric_date::date,
-        'Performance stable across branches'::text,
-        'Stable performance'::text,
-        'Performance stable across branches'::text,
+        'Operations are holding steady'::text,
+        'The business is maintaining a steady pace today.'::text,
         200::numeric
     FROM org_pool o
-    LEFT JOIN has_positive hp ON hp.organization_id = o.organization_id
-    WHERE hp.organization_id IS NULL
+    WHERE NOT EXISTS (SELECT 1 FROM tight_signals t WHERE t.organization_id = o.organization_id)
+      AND NOT EXISTS (SELECT 1 FROM stable_only s WHERE s.organization_id = o.organization_id)
 
     UNION ALL
 
@@ -804,39 +858,41 @@ fallback AS (
         COALESCE(o.sample_branch_id, NULL::text)::uuid,
         COALESCE(o.sample_branch_name, NULL::text)::text,
         o.latest_metric_date::date,
-        (COALESCE(o.sample_branch_name, 'Branch') || ' traffic stable')::text,
-        'Traffic stable'::text,
-        (COALESCE(o.sample_branch_name, 'Branch') || ' traffic stable')::text,
+        'Revenue flow is consistent'::text,
+        'Revenue is tracking steadily versus recent days.'::text,
         100::numeric
     FROM org_pool o
-    LEFT JOIN has_positive hp ON hp.organization_id = o.organization_id
-    WHERE hp.organization_id IS NULL
+    WHERE NOT EXISTS (SELECT 1 FROM tight_signals t WHERE t.organization_id = o.organization_id)
+      AND NOT EXISTS (SELECT 1 FROM stable_only s WHERE s.organization_id = o.organization_id)
 ),
 all_rows AS (
-    SELECT * FROM signals
+    SELECT * FROM tight_signals
+    UNION ALL
+    SELECT * FROM stable_only
     UNION ALL
     SELECT * FROM fallback
 ),
 deduped_rows AS (
     SELECT DISTINCT ON (
+        a.organization_id,
         lower(trim(COALESCE(a.branch_id::text, ''))),
         COALESCE(a.metric_date::date, '1970-01-01'::date),
-        lower(trim(COALESCE(a.highlight_text, '')))
+        lower(trim(COALESCE(a.title, '')))
     )
         a.organization_id,
         a.branch_id,
         a.branch_name,
         a.metric_date,
-        a.highlight_text,
         a.title,
         a.description,
         a.sort_score
     FROM all_rows a
     WHERE a.organization_id IS NOT NULL
     ORDER BY
+        a.organization_id,
         lower(trim(COALESCE(a.branch_id::text, ''))),
         COALESCE(a.metric_date::date, '1970-01-01'::date),
-        lower(trim(COALESCE(a.highlight_text, ''))),
+        lower(trim(COALESCE(a.title, ''))),
         a.sort_score DESC NULLS LAST
 ),
 ranked AS (
@@ -845,13 +901,12 @@ ranked AS (
         d.branch_id,
         d.branch_name,
         d.metric_date,
-        d.highlight_text,
         d.title,
         d.description,
         d.sort_score,
         ROW_NUMBER() OVER (
             PARTITION BY d.organization_id
-            ORDER BY d.sort_score DESC, d.metric_date DESC NULLS LAST
+            ORDER BY d.metric_date DESC NULLS LAST, d.sort_score DESC, d.branch_id::text
         ) AS rn
     FROM deduped_rows d
 )
@@ -862,15 +917,45 @@ SELECT
     r.metric_date,
     r.title,
     r.description,
-    r.highlight_text,
     r.sort_score
 FROM ranked r
 WHERE r.rn <= 3;
 
 COMMENT ON VIEW whats_working_today IS
-    'Positive signals + fallback insights; always 1-3 rows per org; GET order=sort_score.desc&limit=3';
+    'Tight positive signals (bounded deltas) + per-branch stable + org fallback; title + description only; 1-3 rows per org.';
 
 GRANT SELECT ON whats_working_today TO anon, authenticated;
+
+-- Compatibility + runtime read target (PostgREST): same columns as whats_working_today.
+CREATE OR REPLACE VIEW public.whats_working_today__candidate AS
+SELECT
+    organization_id,
+    branch_id,
+    branch_name,
+    metric_date,
+    title,
+    description,
+    sort_score
+FROM public.whats_working_today;
+
+CREATE OR REPLACE VIEW public.whats_working_today_v_next AS
+SELECT
+    organization_id,
+    branch_id,
+    branch_name,
+    metric_date,
+    title,
+    description,
+    sort_score
+FROM public.whats_working_today__candidate;
+
+COMMENT ON VIEW public.whats_working_today__candidate IS
+    'Pass-through of whats_working_today; kept for dependency chain / migrations.';
+COMMENT ON VIEW public.whats_working_today_v_next IS
+    'App reads this relation for branch + company What’s Working (title = headline, description = grey line).';
+
+GRANT SELECT ON public.whats_working_today__candidate TO anon, authenticated;
+GRANT SELECT ON public.whats_working_today_v_next TO anon, authenticated;
 
 -- STEP 6e — Opportunities (advisor-style lines from opportunity alerts)
 CREATE OR REPLACE VIEW opportunities_today AS

@@ -24,8 +24,6 @@ export interface WhatsWorkingTodayRow {
   metric_date: string | null;
   title: string | null;
   description: string | null;
-  /** Primary line for UI + dedupe: highlight_text if set, else title/description. */
-  highlight_text: string | null;
   sort_score: number | null;
 }
 
@@ -43,7 +41,7 @@ export function dedupeWhatsWorkingRows(rows: WhatsWorkingTodayRow[]): WhatsWorki
   const seen = new Set<string>();
   const out: WhatsWorkingTodayRow[] = [];
   for (const row of rows) {
-    const displayKey = row.title || row.description || row.highlight_text || '';
+    const displayKey = row.title || row.description || '';
     const k = `${normalizeBranchIdKey(row.branch_id)}|${row.metric_date ?? ''}|${normalizeWhatsWorkingTitle(displayKey)}`;
     if (seen.has(k)) continue;
     seen.add(k);
@@ -69,11 +67,16 @@ function normalizePanelText(s: string | null | undefined): string {
   return (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-/** Exported for branch/company selection parity. */
+/** Exported for branch/company selection parity (SQL fallback rows when no positive signal). */
 export function isWeakWhatsWorkingText(...parts: Array<string | null | undefined>): boolean {
   const n = normalizePanelText(parts.filter(Boolean).join(' | '));
   if (!n) return true;
-  return n.includes('business is stable today') || n.includes('all good');
+  return (
+    n.includes('business is stable today') ||
+    n.includes('operations are holding steady') ||
+    n.includes('revenue flow is consistent') ||
+    n.includes('all good')
+  );
 }
 
 function dateKey(d: string | null | undefined): string {
@@ -99,7 +102,7 @@ export function selectLatestMeaningfulWhatsWorkingPerBranch(rows: WhatsWorkingTo
   const out: WhatsWorkingTodayRow[] = [];
   for (const list of byBranch.values()) {
     const sorted = [...list].sort(sortWhatsWorkingNewestFirst);
-    const meaningful = sorted.filter((r) => !isWeakWhatsWorkingText(r.title, r.description, r.highlight_text));
+    const meaningful = sorted.filter((r) => !isWeakWhatsWorkingText(r.title, r.description));
     out.push((meaningful.length > 0 ? meaningful[0] : sorted[0]) as WhatsWorkingTodayRow);
   }
   return out.sort((a, b) => (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY));
@@ -157,7 +160,6 @@ export async function fetchWhatsWorkingToday(
     const r = row as Record<string, unknown>;
     const title = pickStr(r, 'title') || null;
     const description = pickStr(r, 'description') || null;
-    const highlightText = pickStr(r, 'highlight_text', 'highlightText') || null;
     return {
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
@@ -165,7 +167,6 @@ export async function fetchWhatsWorkingToday(
       metric_date: r.metric_date != null ? String(r.metric_date).slice(0, 10) : null,
       title,
       description,
-      highlight_text: highlightText,
       sort_score: pickNum(r, 'sort_score'),
     };
   });
