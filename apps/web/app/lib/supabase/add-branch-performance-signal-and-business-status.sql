@@ -13,7 +13,7 @@
 --
 -- Requires:
 --   public.branches (id, organization_id, name, module_type)
---   public.today_summary_clean (latest metrics per branch/day; same shape semantics as former today_summary_clean_safe)
+--   public.today_summary (latest metrics per branch/day for branch_business_status join)
 --   public.accommodation_profitability_signal (run add-accommodation-profitability-signal-view.sql if missing)
 --   public.fnb_profitability_signal
 --   public.fnb_daily_metrics: metric_date, additional_cost_today (nullable), monthly_fixed_cost (nullable, per row in table — use MAX over 30d, not SUM);
@@ -136,7 +136,7 @@ FROM (
 COMMENT ON VIEW branch_performance_signal IS
   'Latest profitability/margin signal per branch; accommodation + fnb UNION. F&B avg_daily_cost = (SUM(additional_cost_today over 30d ending latest metric_date) + MAX(monthly_fixed_cost in window)) / 30 from fnb_daily_metrics only; also cost_per_customer_30d and cost_to_revenue_30d.';
 
--- ========== 3) branch_business_status — one row per branch (latest today_summary_clean + signals) ==========
+-- ========== 3) branch_business_status — one row per branch (latest today_summary + signals) ==========
 CREATE VIEW branch_business_status AS
 SELECT
   b.id AS branch_id,
@@ -293,7 +293,7 @@ INNER JOIN (
         ELSE 58::numeric
       END
     ) AS health_score
-  FROM today_summary_clean t
+  FROM today_summary t
   CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) AS jrow
   ORDER BY t.branch_id, t.metric_date DESC NULLS LAST
 ) l ON l.branch_id = b.id::text
@@ -303,7 +303,7 @@ LEFT JOIN branch_performance_signal ps_fnb
   ON ps_fnb.branch_id = b.id::text AND ps_fnb.branch_type = 'fnb';
 
 COMMENT ON VIEW branch_business_status IS
-  'Latest today_summary_clean per branch + profitability_trend, margin_trend, avg_daily_cost, fnb cost-per-customer and cost/revenue ratio (F&B) from branch_performance_signal.';
+  'Latest today_summary per branch + profitability_trend, margin_trend, avg_daily_cost, fnb cost-per-customer and cost/revenue ratio (F&B) from branch_performance_signal.';
 
 GRANT SELECT ON branch_performance_signal TO anon, authenticated;
 GRANT SELECT ON branch_business_status TO anon, authenticated;

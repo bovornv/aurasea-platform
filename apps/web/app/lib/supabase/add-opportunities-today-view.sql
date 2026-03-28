@@ -20,7 +20,7 @@ WITH base AS (
       ) THEN 'fnb'::text
       ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
     END AS branch_type
-  FROM public.today_summary_clean t
+  FROM public.today_summary t
   CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
   LEFT JOIN public.branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
   WHERE b.organization_id IS NOT NULL

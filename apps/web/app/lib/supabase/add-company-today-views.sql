@@ -10,13 +10,13 @@
 --
 -- **Recommended:** run `add-branch-performance-signal-and-business-status.sql` (in order: drop views →
 -- branch_performance_signal → branch_business_status). Requires accommodation_profitability_signal,
--- fnb_profitability_signal, today_summary_clean (via branch_business_status), branches.
+-- fnb_profitability_signal, today_summary (via branch_business_status), branches.
 --
 -- **Branch Today top bar (accommodation):** `add-accommodation-today-metrics-ui-view.sql` creates
--- `accommodation_today_metrics_ui` (COALESCE health_score to 50; branch_id join via ::text to today_summary_clean).
+-- `accommodation_today_metrics_ui` (COALESCE health_score to 50; branch_id join via ::text to today_summary).
 --
 -- Unified alerts pipeline (recommended): run the **entire** rebuild-alerts-enriched-engine.sql script
--- (not bare view names). Uses branch_business_status (backed by today_summary_clean + signals).
+-- (not bare view names). Uses branch_business_status (backed by today_summary + signals).
 --   alerts_enriched → alerts_today → branch_alerts_today (alias), alerts_critical, alerts_top3_revenue_leaks, alerts_fix_this_first
 -- Branch Today UI: add-branch-alerts-today.sql or rebuild (fixes /rest/v1/branch_alerts_today 404)
 -- Verify: SELECT * FROM alerts_today LIMIT 5;

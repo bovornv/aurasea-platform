@@ -87,11 +87,23 @@ BEGIN
       $sql$
       WITH daily AS (
         SELECT
-          t.branch_id::text AS branch_id,
-          t.metric_date::date AS metric_date,
-          COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
-          LAG(COALESCE(t.total_revenue, 0)::numeric, 1) OVER (PARTITION BY t.branch_id ORDER BY t.metric_date) AS rev_l1
-        FROM public.today_summary_clean t
+          x.branch_id,
+          x.metric_date,
+          x.total_revenue,
+          LAG(x.total_revenue, 1) OVER (PARTITION BY x.branch_id ORDER BY x.metric_date) AS rev_l1
+        FROM (
+          SELECT
+            t.branch_id::text AS branch_id,
+            t.metric_date::date AS metric_date,
+            COALESCE(
+              NULLIF(TRIM(j.jb->>'total_revenue'), '')::numeric,
+              NULLIF(TRIM(j.jb->>'revenue'), '')::numeric,
+              NULLIF(TRIM(j.jb->>'total_revenue_thb'), '')::numeric,
+              0::numeric
+            ) AS total_revenue
+          FROM public.today_summary t
+          CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
+        ) x
       ),
       latest AS (
         SELECT DISTINCT ON (d.branch_id)
@@ -154,9 +166,15 @@ BEGIN
         SELECT
           t.branch_id::text AS branch_id,
           t.metric_date::date AS metric_date,
-          COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
+          COALESCE(
+            NULLIF(TRIM(j.jb->>'total_revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'revenue'), '')::numeric,
+            NULLIF(TRIM(j.jb->>'total_revenue_thb'), '')::numeric,
+            0::numeric
+          ) AS total_revenue,
           ROW_NUMBER() OVER (PARTITION BY t.branch_id ORDER BY t.metric_date DESC NULLS LAST) AS rn
-        FROM public.today_summary_clean t
+        FROM public.today_summary t
+        CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
       ),
       agg AS (
         SELECT

@@ -8,6 +8,6 @@ CREATE OR REPLACE VIEW public.today_summary_clean AS
 SELECT * FROM public.today_summary_clean_v_next;
 
 COMMENT ON VIEW public.today_summary_clean IS
-  'Passthrough to public.today_summary_clean_v_next; stable API name for alerts, branch_business_status, and Today engines.';
+  'Passthrough to public.today_summary_clean_v_next; stable API name for objects still reading today_summary_clean (e.g. alerts_enriched).';
 
 GRANT SELECT ON public.today_summary_clean TO anon, authenticated;

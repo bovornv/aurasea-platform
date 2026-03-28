@@ -6,7 +6,7 @@
 --   - revenue_delta from latest branch summary row (vs yesterday)
 --   - Join via branch_id::text (uuid/text safe)
 --
--- Prerequisites: public.accommodation_daily_metrics, public.today_summary_clean
+-- Prerequisites: public.accommodation_daily_metrics, public.today_summary
 -- Revenue column: revenue OR total_revenue_thb (detected below)
 
 DO $$
@@ -17,8 +17,8 @@ BEGIN
   IF to_regclass('public.accommodation_daily_metrics') IS NULL THEN
     RAISE EXCEPTION 'public.accommodation_daily_metrics is required';
   END IF;
-  IF to_regclass('public.today_summary_clean') IS NULL THEN
-    RAISE EXCEPTION 'public.today_summary_clean is required (run fix-today-summary-clean or rebuild pipeline first)';
+  IF to_regclass('public.today_summary') IS NULL THEN
+    RAISE EXCEPTION 'public.today_summary is required (run add-today-summary-view / replace pipeline first)';
   END IF;
 
   IF EXISTS (
@@ -63,7 +63,7 @@ SELECT
 FROM public.accommodation_daily_metrics a
 LEFT JOIN LATERAL (
   SELECT t.revenue_delta_day, t.health_score
-  FROM public.today_summary_clean t
+  FROM public.today_summary t
   WHERE t.branch_id::text = a.branch_id::text
   ORDER BY t.metric_date DESC NULLS LAST
   LIMIT 1
@@ -76,6 +76,6 @@ $v$,
 END $$;
 
 COMMENT ON VIEW public.accommodation_today_metrics_ui IS
-  'Per-day accommodation KPIs + latest branch revenue_delta_day/health from today_summary_clean.';
+  'Per-day accommodation KPIs + latest branch revenue_delta_day/health from today_summary.';
 
 GRANT SELECT ON public.accommodation_today_metrics_ui TO anon, authenticated;

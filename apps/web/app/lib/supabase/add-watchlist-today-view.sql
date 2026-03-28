@@ -1,6 +1,6 @@
 -- Company Today — early warning watchlist (non-urgent downward trends)
 -- Canonical body: rebuild-alerts-enriched-engine.sql STEP 6f.
--- One row per branch; per-branch fallback with latest metric_date from today_summary_clean.
+-- One row per branch; per-branch fallback with latest metric_date from today_summary.
 -- Contract: organization_id, branch_id, branch_name, metric_date, title, description, sort_score (no warning_text).
 -- GET /rest/v1/watchlist_today?select=organization_id,branch_id,branch_name,metric_date,title,description,sort_score&organization_id=eq.{uuid}
 
@@ -30,7 +30,7 @@ WITH base AS (
     ) AS rooms_sold,
     b.organization_id::uuid AS organization_id,
     COALESCE(b.branch_name, b.name) AS branch_name
-  FROM public.today_summary_clean t
+  FROM public.today_summary t
   CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
   LEFT JOIN public.branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
   WHERE b.organization_id IS NOT NULL

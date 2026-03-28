@@ -108,7 +108,7 @@ export type FnbTodayUiLike = {
   metric_date?: string | null;
   revenue?: number | null;
   customers?: number | null;
-  /** Prefer `today_summary_clean` / Today summary revenue_delta_day when present */
+  /** Today priorities use DB views; panel metrics use `today_summary` via engines (not this service). */
   revenue_delta_day?: number | null;
 };
 

@@ -5,10 +5,10 @@
 -- Always use: CREATE OR REPLACE VIEW view_name AS ...
 --
 -- Prerequisites:
---   - public.today_summary_clean (total_revenue or revenue pipeline; see fix-today-summary-clean / upgrade scripts)
+--   - public.today_summary (whats_working_today / opportunities_today / watchlist_today); public.today_summary_clean (STEP 2 alerts_enriched only)
 --   - public.branches (id, organization_id, branch_name, module_type; legacy name coalesced in views)
 --
--- App/API use branch_business_status + daily tables; alerts engine reads today_summary_clean only.
+-- App/API use branch_business_status + daily tables; Today panels read today_summary; alerts_enriched reads today_summary_clean.
 --
 -- After running, verify:
 --   SELECT * FROM alerts_today LIMIT 5;
@@ -49,7 +49,7 @@ DROP VIEW IF EXISTS alerts_revenue_split CASCADE;
 DROP VIEW IF EXISTS alerts_with_actions CASCADE;
 DROP VIEW IF EXISTS alerts_opportunities CASCADE;
 
--- STEP 2 — Core engine (join today_summary_clean + branches; same metric semantics as safe view)
+-- STEP 2 — Core engine (join today_summary_clean + branches; priorities/alerts chain — not Today panel sections)
 CREATE OR REPLACE VIEW alerts_enriched AS
 WITH ts AS (
     SELECT
@@ -668,7 +668,7 @@ GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authentica
 -- Columns: organization_id, branch_id, branch_name, metric_date, title, description, sort_score.
 -- No highlight_text column.
 --
--- Per branch: scan all today_summary_clean rows (with org); pick the latest metric_date that yields a
+-- Per branch: scan all today_summary rows (with org); pick the latest metric_date that yields a
 -- meaningful line (tight signal or per-day stable). Avoids locking to one global “latest” row when
 -- newer dates exist in the source chain.
 --
@@ -721,7 +721,7 @@ WITH base AS (
                 'unknown'
             )::text
         END AS branch_type
-    FROM today_summary_clean t
+    FROM today_summary t
     CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
     LEFT JOIN branches b ON trim(both FROM b.id::text) = trim(both FROM t.branch_id::text)
 ),
@@ -1010,7 +1010,7 @@ WITH base AS (
             ) THEN 'fnb'::text
             ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
         END AS branch_type
-    FROM today_summary_clean t
+    FROM today_summary t
     CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
     LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
     WHERE b.organization_id IS NOT NULL
@@ -1216,7 +1216,7 @@ WITH base AS (
         ) AS rooms_sold,
         b.organization_id::uuid AS organization_id,
         COALESCE(b.branch_name, b.name) AS branch_name
-    FROM today_summary_clean t
+    FROM today_summary t
     CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
     LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
     WHERE b.organization_id IS NOT NULL
