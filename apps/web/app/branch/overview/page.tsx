@@ -1053,7 +1053,7 @@ export default function BranchOverviewPage() {
     const direct = cleanSectionText(branchOpportunitiesRows);
     if (direct.length > 0) {
       return {
-        sourcePath: 'opportunities_today_v_next',
+        sourcePath: 'opportunities_today',
         rows: direct,
         details: [] as Array<{ title: string; generatedDetail: string; fallbackDetail: string; finalText: string }>,
         displayItems: direct.map(parseOpportunityLine).filter((x) => x.title.length > 0),
@@ -1743,7 +1743,7 @@ export default function BranchOverviewPage() {
 
     logSection('business_trends', 'company_status_current + today_summary (delta)', businessTrendsText ? [businessTrendsText.line1, businessTrendsText.line2] : [], !businessTrendsText, businessTrendsText ? [businessTrendsText.line1, businessTrendsText.line2] : []);
     logSection('whats_working', 'whats_working_today', branchWhatsWorkingRows, branchWhatsWorkingRows.length === 0, whatsWorkingRowsForDisplay);
-    logSection('opportunities', 'opportunities_today_v_next (alerts track)', branchOpportunitiesRows, branchOpportunitiesRows.length === 0, opportunityRowsForDisplay);
+    logSection('opportunities', 'opportunities_today', branchOpportunitiesRows, branchOpportunitiesRows.length === 0, opportunityRowsForDisplay);
     logSection('watchlist', 'watchlist_today', branchWatchlistRows, branchWatchlistRows.length === 0, watchlistRowsForDisplay);
   }, [
     branch?.id,
@@ -1766,11 +1766,11 @@ export default function BranchOverviewPage() {
         !isWeakWatchlistText(x.title) &&
         !/no clear opportunities today|ยังไม่มีโอกาสชัดเจนวันนี้/i.test(`${x.title} ${x.detail}`.trim())
     ).length;
-    if (opportunityFallbackDebug.sourcePath === 'opportunities_today_v_next') {
+    if (opportunityFallbackDebug.sourcePath === 'opportunities_today') {
       console.log('[opportunities-source]', {
         page_context: 'branch',
         branch_id: branch.id,
-        source_used: 'opportunities_today_v_next',
+        source_used: 'opportunities_today',
         rows_returned: branchOpportunitiesRows.length,
         actionable_rows_count: actionableRowsCount,
         selected_rows_after_fallback: selectedRows.slice(0, 3),

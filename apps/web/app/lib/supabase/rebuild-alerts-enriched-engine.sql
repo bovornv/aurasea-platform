@@ -20,6 +20,7 @@
 DROP VIEW IF EXISTS public.today_company_dashboard CASCADE;
 DROP VIEW IF EXISTS public.whats_working_today_v_next CASCADE;
 DROP VIEW IF EXISTS public.whats_working_today__candidate CASCADE;
+DROP VIEW IF EXISTS public.opportunity_alerts CASCADE;
 DROP VIEW IF EXISTS opportunities_today CASCADE;
 DROP VIEW IF EXISTS public.watchlist_today CASCADE;
 DROP VIEW IF EXISTS public.whats_working_today CASCADE;
@@ -991,7 +992,7 @@ GRANT SELECT ON public.whats_working_today TO anon, authenticated;
 -- Legacy aliases whats_working_today__candidate / whats_working_today_v_next: not recreated here.
 -- Drop with: apps/web/app/lib/supabase/drop-whats-working-alias-views.sql
 
--- STEP 6e — Opportunities (advisor-style lines from opportunity alerts)
+-- STEP 6e — Opportunities (metrics-only; no priority/problem fallbacks; one row per branch)
 CREATE OR REPLACE VIEW opportunities_today AS
 WITH base AS (
     SELECT
@@ -1011,7 +1012,7 @@ WITH base AS (
         END AS branch_type
     FROM today_summary_clean t
     CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
-    LEFT JOIN branches b ON b.id::text = t.branch_id::text
+    LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
     WHERE b.organization_id IS NOT NULL
 ),
 latest AS (
@@ -1028,7 +1029,22 @@ latest AS (
             NULLIF(TRIM(j->>'total_revenue_thb'), '')::numeric,
             NULLIF(TRIM(j->>'revenue_thb'), '')::numeric,
             0::numeric
-        ) AS revenue_thb
+        ) AS revenue_thb,
+        COALESCE(
+            NULLIF(TRIM(j->>'occupancy_rate'), '')::numeric,
+            CASE
+                WHEN NULLIF(TRIM(COALESCE(j->>'rooms_available', j->>'capacity', '')), '')::numeric > 0::numeric
+                THEN (
+                    COALESCE(
+                        NULLIF(TRIM(COALESCE(j->>'utilized', j->>'rooms_sold', '')), '')::numeric,
+                        0::numeric
+                    )
+                    / NULLIF(TRIM(COALESCE(j->>'rooms_available', j->>'capacity', '')), '')::numeric
+                ) * 100::numeric
+                ELSE NULL::numeric
+            END
+        ) AS occ_pct,
+        COALESCE(NULLIF(TRIM(j->>'occupancy_delta_week'), '')::numeric, NULL::numeric) AS occupancy_delta_week
     FROM base
     ORDER BY branch_id, metric_date DESC NULLS LAST
 ),
@@ -1054,11 +1070,11 @@ signals AS (
             CASE
                 WHEN l.branch_type = 'accommodation'
                     AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5 THEN
-                    'Strong weekend pattern → add package (' || l.branch_name || ')'
+                    'Strong weekend demand — add a fenced package or rate ladder at ' || l.branch_name || ' to capture upside without broad discounting.'
                 WHEN l.branch_type = 'fnb' THEN
-                    'Customer traffic rising → increase avg ticket (' || l.branch_name || ')'
+                    'Customer traffic is rising — increase average ticket with bundles, add-ons, and suggestive selling at ' || l.branch_name || '.'
                 ELSE
-                    'High demand detected → raise price slightly (' || l.branch_name || ')'
+                    'Demand looks healthy — test a small price or mix uplift at ' || l.branch_name || ' while monitoring conversion.'
             END
         ) AS opportunity_text,
         (
@@ -1069,30 +1085,107 @@ signals AS (
     FROM latest l
     WHERE l.revenue_delta_day IS NOT NULL
       AND l.revenue_delta_day >= 10
-),
-ranked AS (
+
+    UNION ALL
+
     SELECT
-        s.*,
-        ROW_NUMBER() OVER (
-            PARTITION BY s.organization_id
-            ORDER BY s.sort_score DESC NULLS LAST, s.metric_date DESC NULLS LAST
-        ) AS rn
+        l.organization_id,
+        l.branch_id,
+        l.branch_name,
+        l.metric_date,
+        'Capture rising occupancy'::text AS title,
+        ('Branch: ' || l.branch_name)::text AS description,
+        (
+            'Week-on-week occupancy is improving at '
+            || l.branch_name
+            || ' — prioritize ADR/package upsells and in-house F&B conversion while demand is building.'
+        )::text AS opportunity_text,
+        (
+            145::numeric
+            + LEAST(COALESCE(l.occupancy_delta_week, 0::numeric), 25::numeric) * 1.5::numeric
+            + COALESCE(l.revenue_thb, 0)::numeric / 2500::numeric
+        ) AS sort_score
+    FROM latest l
+    WHERE l.branch_type = 'accommodation'
+      AND l.occupancy_delta_week IS NOT NULL
+      AND l.occupancy_delta_week >= 5::numeric
+
+    UNION ALL
+
+    SELECT
+        l.organization_id,
+        l.branch_id,
+        l.branch_name,
+        l.metric_date,
+        'Lift ADR on strong occupancy'::text AS title,
+        ('Branch: ' || l.branch_name)::text AS description,
+        (
+            'Occupancy is elevated at '
+            || l.branch_name
+            || ' — protect rate integrity, promote premium room types, and attach F&B experiences to lift RevPAR.'
+        )::text AS opportunity_text,
+        (
+            138::numeric
+            + COALESCE(l.occ_pct, 0::numeric) / 4::numeric
+            + COALESCE(l.revenue_thb, 0)::numeric / 3000::numeric
+        ) AS sort_score
+    FROM latest l
+    WHERE l.branch_type = 'accommodation'
+      AND l.occ_pct IS NOT NULL
+      AND l.occ_pct >= 68::numeric
+      AND (l.revenue_delta_day IS NULL OR l.revenue_delta_day < 10::numeric)
+
+    UNION ALL
+
+    SELECT
+        l.organization_id,
+        l.branch_id,
+        l.branch_name,
+        l.metric_date,
+        'Add a weekend package'::text AS title,
+        ('Branch: ' || l.branch_name)::text AS description,
+        (
+            'Weekend nights are active at '
+            || l.branch_name
+            || ' with healthy occupancy — package premium room + F&B to capture willingness-to-pay.'
+        )::text AS opportunity_text,
+        (
+            132::numeric
+            + COALESCE(l.occ_pct, 0::numeric) / 5::numeric
+        ) AS sort_score
+    FROM latest l
+    WHERE l.branch_type = 'accommodation'
+      AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5
+      AND l.occ_pct IS NOT NULL
+      AND l.occ_pct >= 52::numeric
+      AND (l.revenue_delta_day IS NULL OR l.revenue_delta_day < 10::numeric)
+),
+best_per_branch AS (
+    SELECT DISTINCT ON (s.branch_id)
+        s.organization_id,
+        s.branch_id,
+        s.branch_name,
+        s.metric_date,
+        s.title,
+        s.description,
+        s.opportunity_text,
+        s.sort_score
     FROM signals s
+    ORDER BY s.branch_id, s.sort_score DESC NULLS LAST, s.metric_date DESC NULLS LAST
 )
 SELECT
-    r.organization_id,
-    r.branch_id,
-    r.branch_name,
-    r.metric_date,
-    r.title,
-    r.description,
-    r.opportunity_text,
-    r.sort_score
-FROM ranked r
-WHERE r.rn <= 3;
+    b.organization_id,
+    b.branch_id,
+    b.branch_name,
+    b.metric_date,
+    b.title,
+    b.description,
+    b.opportunity_text,
+    b.sort_score
+FROM best_per_branch b;
 
 COMMENT ON VIEW opportunities_today IS
-    'Opportunity alerts; latest per branch; GET order=sort_score.desc&limit=3';
+    'Opportunity-style signals only; one row per branch (best score); accommodation uses occupancy deltas / occupancy %, not only revenue_delta_day.';
 
 GRANT SELECT ON opportunities_today TO anon, authenticated;
 
@@ -1287,5 +1380,5 @@ GRANT SELECT ON public.watchlist_today TO anon, authenticated;
 -- SELECT * FROM today_priorities_clean WHERE organization_id = '...' ORDER BY rank ASC LIMIT 3;
 -- SELECT * FROM today_branch_priorities WHERE branch_id = '...' ORDER BY rank ASC LIMIT 3;
 -- SELECT * FROM public.whats_working_today ORDER BY sort_score DESC LIMIT 3;
--- SELECT * FROM opportunities_today ORDER BY sort_score DESC LIMIT 3;
+-- SELECT * FROM opportunities_today WHERE organization_id = '...' ORDER BY branch_name;
 -- SELECT * FROM watchlist_today WHERE organization_id = '...' ORDER BY branch_name;

@@ -618,7 +618,7 @@ SELECT
         FROM public.opportunities_today ot
         WHERE ot.organization_id = o.organization_id
         ORDER BY ot.sort_score DESC NULLS LAST
-        LIMIT 3
+        LIMIT 30
       ) op
     ),
     '[]'::jsonb

@@ -26,7 +26,7 @@
  * `alerts_today` / `alerts_enriched` chain, `today_summary` / `today_summary_clean`, `daily_metrics_legacy`.
  *
  * Alerts/opportunities track (separate toggle, OFF by default):
- * - opportunities_today → opportunities_today_v_next when `NEXT_PUBLIC_POSTGREST_ALERTS_V_NEXT=true`
+ * - opportunities_today → always `opportunities_today` (single source; v_next not used)
  * - get_alerts_critical → get_alerts_critical__candidate when `NEXT_PUBLIC_POSTGREST_ALERTS_V_NEXT=true`
  *   (or `POSTGREST_ALERTS_V_NEXT=true` on server).
  */
@@ -62,7 +62,7 @@ const ALERTS_LIVE: Record<PostgrestAlertsLogical, string> = {
 };
 
 const ALERTS_V_NEXT: Record<PostgrestAlertsLogical, string> = {
-  opportunities_today: 'opportunities_today_v_next',
+  opportunities_today: 'opportunities_today',
   get_alerts_critical: 'get_alerts_critical__candidate',
 };
 

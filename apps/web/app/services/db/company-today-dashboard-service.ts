@@ -124,47 +124,6 @@ function dedupeRepeatedSegments(input: string): string {
   return kept.join(' - ');
 }
 
-function composeDedupedPanelLine(parts: {
-  title: string;
-  description: string;
-  primary: string;
-}): string {
-  const title = parts.title.trim();
-  const description = parts.description.trim();
-  const primary = parts.primary.trim();
-
-  const nDesc = normalizePanelText(description);
-  const nPrimary = normalizePanelText(primary);
-
-  let secondary = '';
-  if (nPrimary && nDesc) {
-    if (nPrimary === nDesc) {
-      secondary = primary.length >= description.length ? primary : description;
-    } else if (nPrimary.includes(nDesc)) {
-      secondary = primary;
-    } else if (nDesc.includes(nPrimary)) {
-      secondary = description;
-    } else {
-      secondary = primary;
-    }
-  } else {
-    secondary = primary || description;
-  }
-
-  secondary = dedupeRepeatedSegments(secondary);
-  const nTitle = normalizePanelText(title);
-  const nSecondary = normalizePanelText(secondary);
-  if (nTitle && nSecondary && (nSecondary === nTitle || nSecondary.startsWith(`${nTitle} -`) || nSecondary.includes(nTitle))) {
-    secondary = dedupeRepeatedSegments(
-      secondary
-        .replace(new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*-\\s*`, 'i'), '')
-        .trim()
-    );
-  }
-
-  return title && secondary ? `${title} - ${secondary}` : title || secondary;
-}
-
 /** Branch What's Working: headline = title, grey line = description. */
 function buildWhatsWorkingBranchLine(title: string, description: string): string {
   const t = title.trim();
@@ -289,9 +248,9 @@ function mergeCompanyOpportunities(
     rows: merged,
     sourceUsed:
       dbActionable.length > 0 && merged.length > dbActionable.length
-        ? 'opportunities_today_v_next+generated_opportunity_fallback'
+        ? 'opportunities_today+generated_opportunity_fallback'
         : dbActionable.length > 0
-          ? 'opportunities_today_v_next'
+          ? 'opportunities_today'
           : 'generated_opportunity_fallback',
     dbActionableCount: dbActionable.length,
     fallbackActionableCount: generatedFallback.length,
@@ -304,23 +263,16 @@ function dedupeOpportunityLine(parts: {
   description: string;
   opportunityText: string;
 }): string {
-  const finalText = composeDedupedPanelLine({
-    title: parts.title,
-    description: parts.description,
-    primary: parts.opportunityText,
-  });
-  const nDesc = normalizePanelText(parts.description);
-  const nOpp = normalizePanelText(parts.opportunityText);
-  if (process.env.NODE_ENV === 'development' && nOpp && nDesc && (nOpp === nDesc || nOpp.includes(nDesc) || nDesc.includes(nOpp))) {
-    console.log('[branch-opportunity-text-dedup]', {
-      branch_id: parts.branchId,
-      title: parts.title || null,
-      description: parts.description || null,
-      opportunity_text: parts.opportunityText || null,
-      final_rendered_text: finalText || null,
-    });
+  const title = parts.title.trim();
+  const opp = parts.opportunityText.trim();
+  const desc = parts.description.trim();
+  if (title && opp) {
+    return dedupeRepeatedSegments(`${title} - ${opp}`);
   }
-  return finalText;
+  if (title && desc) {
+    return dedupeRepeatedSegments(`${title} - ${desc}`);
+  }
+  return dedupeRepeatedSegments(title || opp || desc);
 }
 
 function withCompanyRankAndSegment(rows: TodayPrioritiesRow[], limit: number): TodayPrioritiesRow[] {
