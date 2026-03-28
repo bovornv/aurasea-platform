@@ -1,12 +1,11 @@
 -- Phase 1: Compatibility views so frontend does not break before migration.
--- Prerequisites: today_summary must exist (run add-today-summary-view.sql first).
+-- Prerequisites: public.today_summary_clean_v_next must exist; public.today_summary from add-today-summary-view.sql is kept (do not drop).
 -- For alerts_final we create it from branch_alerts_display if that exists; else you must create alerts_final yourself.
 
--- Step 0: Create today_summary_clean from existing today_summary (so we have the "core" view name).
--- Do not drop today_summary later; it stays as the source.
-DROP VIEW IF EXISTS today_summary_clean CASCADE;
-CREATE VIEW today_summary_clean AS
-SELECT * FROM today_summary;
+-- Step 0: Stable metrics view name = passthrough to today_summary_clean_v_next (column parity required).
+-- Requires public.today_summary_clean_v_next. Do not drop public.today_summary (legacy dependents).
+CREATE OR REPLACE VIEW public.today_summary_clean AS
+SELECT * FROM public.today_summary_clean_v_next;
 
 -- Step 1: Create alerts_final from branch_alerts_display if it exists (else skip or create manually).
 DROP VIEW IF EXISTS alerts_final CASCADE;
