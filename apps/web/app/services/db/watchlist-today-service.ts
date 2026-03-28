@@ -11,11 +11,7 @@ import {
 import {
   logPostgrestPhase1Read,
 } from '../../lib/supabase/postgrest-phase1-cutover';
-import {
-  pickStr,
-  resolveTodayPanelDisplay,
-  SELECT_WATCHLIST_TODAY,
-} from './today-panels-columns';
+import { pickStr, SELECT_WATCHLIST_TODAY } from './today-panels-columns';
 
 export interface WatchlistTodayRow {
   organization_id: string | null;
@@ -25,8 +21,6 @@ export interface WatchlistTodayRow {
   metric_date: string | null;
   title: string | null;
   description: string | null;
-  /** Primary line: warning_text if set, else title/description. */
-  warning_text: string | null;
   sort_score: number | null;
 }
 
@@ -52,8 +46,7 @@ export async function fetchWatchlistToday(
   if (!supabase) return [];
 
   const cap = Math.min(50, Math.max(1, limit));
-  // Runtime lock: Watchlist must read from v_next in all active UI paths.
-  const table = 'watchlist_today_v_next';
+  const table = 'watchlist_today';
   const { data, error } = await supabase
     .from(table)
     .select(SELECT_WATCHLIST_TODAY)
@@ -81,8 +74,6 @@ export async function fetchWatchlistToday(
   const raw = Array.isArray(data) ? data : [];
   return raw.map((row) => {
     const r = row as Record<string, unknown>;
-    const resolved =
-      resolveTodayPanelDisplay(r, ['warning_text', 'warningText']) || null;
     return {
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
@@ -90,7 +81,6 @@ export async function fetchWatchlistToday(
       metric_date: r.metric_date != null ? String(r.metric_date).slice(0, 10) : null,
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,
-      warning_text: resolved,
       sort_score: pickNum(r, 'sort_score'),
     };
   });

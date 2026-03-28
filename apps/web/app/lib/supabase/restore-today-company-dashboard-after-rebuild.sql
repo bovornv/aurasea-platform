@@ -2,6 +2,7 @@
 -- Prerequisites: public.today_priorities_company_view, public.whats_working_today (title + description only),
 -- public.opportunities_today, public.watchlist_today, public.company_data_confidence.
 -- whats_working JSON: branch_id, metric_date, title, description, sort_score (no highlight_text).
+-- watchlist JSON: branch_id, metric_date, title, description, sort_score (no warning_text).
 
 DROP VIEW IF EXISTS public.today_company_dashboard CASCADE;
 
@@ -85,7 +86,6 @@ SELECT
           wt.metric_date,
           wt.title,
           wt.description,
-          wt.warning_text,
           wt.sort_score
         FROM public.watchlist_today wt
         WHERE wt.organization_id = o.organization_id

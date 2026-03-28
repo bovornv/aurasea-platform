@@ -632,7 +632,6 @@ SELECT
           wt.metric_date,
           wt.title,
           wt.description,
-          wt.warning_text,
           wt.sort_score
         FROM public.watchlist_today wt
         WHERE wt.organization_id = o.organization_id

@@ -43,7 +43,6 @@ import {
   resolvePostgrestPhase1Table,
 } from '../../lib/supabase/postgrest-phase1-cutover';
 import {
-  resolveTodayPanelDisplay,
   SELECT_OPPORTUNITIES_TODAY_BRANCH,
   SELECT_WATCHLIST_TODAY_BRANCH,
   SELECT_WHATS_WORKING_TODAY_BRANCH,
@@ -536,7 +535,6 @@ async function fetchCompanyPanelsFromDashboardView(
       metric_date: pickStr(r, 'metric_date') || null,
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,
-      warning_text: pickStr(r, 'warning_text', 'warningText', 'title', 'description') || null,
       sort_score: pickNum(r, 'sort_score'),
     }));
 
@@ -695,7 +693,7 @@ export async function fetchCompanyTodayDashboard(
       priorities,
       whatsWorking: canonicalWhatsWorkingWithBranchNames,
       opportunities: mergedOpportunities.rows,
-      // Canonical source for company Watchlist: watchlist_today_v_next directly.
+      // Canonical source for company Watchlist: watchlist_today.
       watchlist: canonicalWatchlistWithBranchNames,
       dataConfidence: panels.dataConfidence,
       latestBusinessStatus,
@@ -724,7 +722,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
     workingLines: [],
     opportunityLines: [],
     watchlistLines: [],
-    watchlistMeta: { rowsReturned: 0, latestMetricDate: null, relationName: 'watchlist_today_v_next' },
+    watchlistMeta: { rowsReturned: 0, latestMetricDate: null, relationName: 'watchlist_today' },
   };
   const bid = branchId?.trim();
   if (!bid || !isSupabaseAvailable()) return empty;
@@ -862,11 +860,10 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
           lines: [] as string[],
           rowsReturned: 0,
           latestMetricDate: null as string | null,
-          relationName: 'watchlist_today_v_next',
+          relationName: 'watchlist_today',
         };
       }
-      // Runtime lock: Watchlist must read from v_next in all active UI paths.
-      const wlTable = 'watchlist_today_v_next';
+      const wlTable = 'watchlist_today';
       const { data, error } = await supabase
         .from(wlTable)
         .select(SELECT_WATCHLIST_TODAY_BRANCH)
@@ -919,16 +916,10 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
           const r = row as Record<string, unknown>;
           const title = pickStr(r, 'title');
           const description = pickStr(r, 'description');
-          const warningText = pickStr(r, 'warning_text', 'warningText');
-          // Watchlist detail rule: prefer description, fallback to warning_text.
-          const line = composeDedupedPanelLine({
-            title,
-            description: warningText,
-            primary: description,
-          });
+          const line = buildWhatsWorkingBranchLine(title, description);
           return {
             line,
-            weak: isWeakWatchlistText(title, description, warningText),
+            weak: isWeakWatchlistText(title, description),
           };
         })
         .filter((x) => Boolean(x.line));
@@ -976,7 +967,7 @@ export async function fetchBranchTodayPanels(branchId: string, branchLabel: stri
       workingLines: [],
       opportunityLines: [],
       watchlistLines: [],
-      watchlistMeta: { rowsReturned: 0, latestMetricDate: null, relationName: 'watchlist_today_v_next' },
+      watchlistMeta: { rowsReturned: 0, latestMetricDate: null, relationName: 'watchlist_today' },
     };
   }
   const inflight = branchPanelsInFlight.get(bid);

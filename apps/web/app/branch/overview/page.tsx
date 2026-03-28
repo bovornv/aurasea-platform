@@ -1096,7 +1096,7 @@ export default function BranchOverviewPage() {
     const weakCount = Math.max(0, totalRows - meaningful.length);
     if (meaningful.length > 0) {
       return {
-        sourcePath: branchWatchlistMeta?.relationName ?? 'watchlist_today_v_next',
+        sourcePath: branchWatchlistMeta?.relationName ?? 'watchlist_today',
         totalRows,
         latestMetricDate: branchWatchlistMeta?.latestMetricDate ?? null,
         meaningfulCount: meaningful.length,
@@ -1106,7 +1106,7 @@ export default function BranchOverviewPage() {
       };
     }
     return {
-      sourcePath: branchWatchlistMeta?.relationName ?? 'watchlist_today_v_next',
+      sourcePath: branchWatchlistMeta?.relationName ?? 'watchlist_today',
       totalRows,
       latestMetricDate: branchWatchlistMeta?.latestMetricDate ?? null,
       meaningfulCount: 0,
@@ -1744,7 +1744,7 @@ export default function BranchOverviewPage() {
     logSection('business_trends', 'company_status_current + today_summary (delta)', businessTrendsText ? [businessTrendsText.line1, businessTrendsText.line2] : [], !businessTrendsText, businessTrendsText ? [businessTrendsText.line1, businessTrendsText.line2] : []);
     logSection('whats_working', 'whats_working_today', branchWhatsWorkingRows, branchWhatsWorkingRows.length === 0, whatsWorkingRowsForDisplay);
     logSection('opportunities', 'opportunities_today_v_next (alerts track)', branchOpportunitiesRows, branchOpportunitiesRows.length === 0, opportunityRowsForDisplay);
-    logSection('watchlist', 'watchlist_today_v_next', branchWatchlistRows, branchWatchlistRows.length === 0, watchlistRowsForDisplay);
+    logSection('watchlist', 'watchlist_today', branchWatchlistRows, branchWatchlistRows.length === 0, watchlistRowsForDisplay);
   }, [
     branch?.id,
     businessTrendsText,

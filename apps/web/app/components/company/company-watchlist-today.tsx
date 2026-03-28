@@ -30,24 +30,10 @@ function isWeakWatchlistText(...parts: Array<string | null | undefined>): boolea
 }
 
 function toDisplay(row: WatchlistTodayRow): { title: string; detail: string } {
-  const title = (row.title ?? '').trim();
-  const warning = (row.warning_text ?? '').trim();
-  const desc = (row.description ?? '').trim();
-  const nDesc = normalize(desc);
-  const nWarning = normalize(warning);
-  let detail = '';
-  if (nDesc && nWarning) {
-    if (nDesc === nWarning || nDesc.includes(nWarning)) detail = desc;
-    else if (nWarning.includes(nDesc)) detail = warning;
-    else detail = desc;
-  } else {
-    detail = desc || warning;
-  }
-  if (title && normalize(detail).startsWith(`${normalize(title)} -`)) {
-    detail = detail.slice(title.length + 3).trim();
-  }
-  if (normalize(detail) === normalize(title)) detail = '';
-  return { title: title || (detail || '—'), detail };
+  const title = (row.title ?? '').trim() || (row.description ?? '').trim() || '—';
+  const detail = (row.description ?? '').trim();
+  if (detail && normalize(detail) === normalize(title)) return { title, detail: '' };
+  return { title, detail };
 }
 
 function toDateKey(date: string | null | undefined): string {
@@ -72,7 +58,7 @@ function withBranchInHeadline(title: string, branchName: string): string {
 
 export function CompanyWatchlistToday({ rows, locale, loading, organizationId = null }: Props) {
   const th = locale === 'th';
-  const meaningful = rows.filter((r) => !isWeakWatchlistText(r.title, r.description, r.warning_text));
+  const meaningful = rows.filter((r) => !isWeakWatchlistText(r.title, r.description));
   const sortedMeaningful = [...meaningful].sort((a, b) => {
     const dateCmp = toDateKey(b.metric_date).localeCompare(toDateKey(a.metric_date));
     if (dateCmp !== 0) return dateCmp;
@@ -102,7 +88,7 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
     console.log('[watchlist-source]', {
       page_context: 'company',
       organization_id: organizationId,
-      relation_name_queried: 'watchlist_today_v_next',
+      relation_name_queried: 'watchlist_today',
       total_rows_returned: rows.length,
       latest_metric_date: latestMetricDate,
       meaningful_rows_count: meaningful.length,
@@ -111,7 +97,7 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
         branch_id: r.branch_id,
         metric_date: r.metric_date,
         title: r.title,
-        detail: r.description || r.warning_text || null,
+        detail: r.description || null,
       })),
       fallback_used: selectedRows.length === 0,
       final_title_shown: shown.map((x) => x.title).filter(Boolean).slice(0, 3),
@@ -140,7 +126,7 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
         const parts = toDisplay(row);
         const branchName = (row.branch_name ?? '').trim();
         const finalTitle = withBranchInHeadline(parts.title, branchName);
-        const key = `wl-${row.branch_id || 'org'}-${row.metric_date ?? 'd'}-${normKey(row.warning_text || row.title)}`;
+        const key = `wl-${row.branch_id || 'org'}-${row.metric_date ?? 'd'}-${normKey(row.title)}`;
         if (process.env.NODE_ENV === 'development') {
           console.log('[watchlist-company-row-render]', {
             organization_id: organizationId,

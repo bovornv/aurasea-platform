@@ -9,7 +9,7 @@
  *
  * Phase 1 logical → physical when enabled:
  * - whats_working_today → whats_working_today (base view; alias views not used by app)
- * - watchlist_today → watchlist_today_v_next
+ * - watchlist_today → watchlist_today (base view)
  * - branch_business_status_api → branch_business_status_api_v_next
  * - today_priorities_view → today_priorities_view_v_next
  * - today_priorities_company_view → today_priorities_company_view_v_next
@@ -50,7 +50,7 @@ const LIVE: Record<PostgrestPhase1Logical, string> = {
 
 const V_NEXT: Record<PostgrestPhase1Logical, string> = {
   whats_working_today: 'whats_working_today',
-  watchlist_today: 'watchlist_today_v_next',
+  watchlist_today: 'watchlist_today',
   branch_business_status_api: 'branch_business_status_api_v_next',
   today_priorities_view: 'today_priorities_view_v_next',
   today_priorities_company_view: 'today_priorities_company_view_v_next',
