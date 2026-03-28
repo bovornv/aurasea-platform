@@ -1097,6 +1097,7 @@ COMMENT ON VIEW opportunities_today IS
 GRANT SELECT ON opportunities_today TO anon, authenticated;
 
 -- STEP 6f — Watchlist (early warning, non-urgent downward trends)
+-- One row per branch: best signal for that branch, else per-branch fallback with latest metric_date.
 -- Contract: headline = title; detail = description. No warning_text column.
 CREATE OR REPLACE VIEW public.watchlist_today AS
 WITH base AS (
@@ -1205,77 +1206,73 @@ signals AS (
       AND l.rooms_sold < l.room_l1
       AND l.room_l1 < l.room_l2
 ),
-org_pool AS (
+best_signal AS (
+    SELECT DISTINCT ON (s.branch_id)
+        s.organization_id,
+        s.branch_id,
+        s.branch_name,
+        s.metric_date,
+        s.title,
+        s.description,
+        s.sort_score
+    FROM signals s
+    ORDER BY s.branch_id, s.sort_score DESC, s.metric_date DESC NULLS LAST
+),
+branch_dim AS (
     SELECT
-        b.organization_id,
-        (
-            ARRAY_AGG(
-                COALESCE(
-                    NULLIF(TRIM(BOTH FROM b.branch_name), ''),
-                    NULLIF(TRIM(BOTH FROM b.name), ''),
-                    TRIM(BOTH FROM b.id::text)
-                )
-                ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name)
-            )
-        )[1] AS sample_branch_name,
-        (
-            ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name))
-        )[1] AS sample_branch_id
+        b.organization_id::uuid AS organization_id,
+        TRIM(BOTH FROM b.id::text)::uuid AS branch_id,
+        COALESCE(
+            NULLIF(TRIM(BOTH FROM b.branch_name::text), ''),
+            NULLIF(TRIM(BOTH FROM b.name::text), ''),
+            TRIM(BOTH FROM b.id::text)
+        )::text AS branch_name
     FROM branches b
     WHERE b.organization_id IS NOT NULL
-    GROUP BY b.organization_id
-),
-has_signal AS (
-    SELECT DISTINCT s.organization_id
-    FROM signals s
 ),
 fallback AS (
     SELECT
-        o.organization_id::uuid AS organization_id,
-        o.sample_branch_id::uuid AS branch_id,
-        o.sample_branch_name::text AS branch_name,
-        NULL::date AS metric_date,
+        d.organization_id,
+        d.branch_id,
+        d.branch_name,
+        l.metric_date::date AS metric_date,
         'No early warning signals detected'::text AS title,
-        ('Revenue, customers, and rooms sold are not showing a three-day softening pattern for ' || o.sample_branch_name || '.')::text AS description,
+        (
+            'Revenue, customers, and rooms sold are not showing a three-day softening pattern for '
+            || d.branch_name
+            || '.'
+        )::text AS description,
         30::numeric AS sort_score
-    FROM org_pool o
-    LEFT JOIN has_signal hs ON hs.organization_id = o.organization_id
-    WHERE hs.organization_id IS NULL
-),
-all_rows AS (
-    SELECT * FROM signals
-    UNION ALL
-    SELECT * FROM fallback
-),
-ranked AS (
-    SELECT
-        a.organization_id,
-        a.branch_id,
-        a.branch_name,
-        a.metric_date,
-        a.title,
-        a.description,
-        a.sort_score,
-        ROW_NUMBER() OVER (
-            PARTITION BY a.organization_id
-            ORDER BY a.sort_score DESC, a.metric_date DESC NULLS LAST
-        ) AS rn
-    FROM all_rows a
-    WHERE a.organization_id IS NOT NULL
+    FROM branch_dim d
+    LEFT JOIN latest l ON TRIM(BOTH FROM l.branch_id::text) = TRIM(BOTH FROM d.branch_id::text)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM best_signal bs
+        WHERE TRIM(BOTH FROM bs.branch_id::text) = TRIM(BOTH FROM d.branch_id::text)
+    )
 )
 SELECT
-    r.organization_id,
-    r.branch_id,
-    r.branch_name,
-    r.metric_date,
-    r.title,
-    r.description,
-    r.sort_score
-FROM ranked r
-WHERE r.rn <= 3;
+    bs.organization_id,
+    bs.branch_id,
+    bs.branch_name,
+    bs.metric_date,
+    bs.title,
+    bs.description,
+    bs.sort_score
+FROM best_signal bs
+UNION ALL
+SELECT
+    f.organization_id,
+    f.branch_id,
+    f.branch_name,
+    f.metric_date,
+    f.title,
+    f.description,
+    f.sort_score
+FROM fallback f;
 
 COMMENT ON VIEW public.watchlist_today IS
-    'Early warning via lag(1,2): title + description only; max 3 rows per org.';
+    'Early warning via lag(1,2): one row per branch; title + description only.';
 
 GRANT SELECT ON public.watchlist_today TO anon, authenticated;
 
@@ -1291,4 +1288,4 @@ GRANT SELECT ON public.watchlist_today TO anon, authenticated;
 -- SELECT * FROM today_branch_priorities WHERE branch_id = '...' ORDER BY rank ASC LIMIT 3;
 -- SELECT * FROM public.whats_working_today ORDER BY sort_score DESC LIMIT 3;
 -- SELECT * FROM opportunities_today ORDER BY sort_score DESC LIMIT 3;
--- SELECT * FROM watchlist_today WHERE organization_id = '...' ORDER BY sort_score DESC LIMIT 3;
+-- SELECT * FROM watchlist_today WHERE organization_id = '...' ORDER BY branch_name;
