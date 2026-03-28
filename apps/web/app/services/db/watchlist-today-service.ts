@@ -16,7 +16,6 @@ import { pickStr, SELECT_WATCHLIST_TODAY } from './today-panels-columns';
 export interface WatchlistTodayRow {
   organization_id: string | null;
   branch_id: string;
-  /** @deprecated Not in compatibility view. */
   branch_name: string | null;
   metric_date: string | null;
   title: string | null;
@@ -77,7 +76,7 @@ export async function fetchWatchlistToday(
     return {
       organization_id: pickStr(r, 'organization_id', 'organizationId') || null,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
-      branch_name: null,
+      branch_name: pickStr(r, 'branch_name', 'branchName') || null,
       metric_date: r.metric_date != null ? String(r.metric_date).slice(0, 10) : null,
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,

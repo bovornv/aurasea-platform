@@ -200,7 +200,17 @@ BEGIN
           w.branch_id::text AS branch_id,
           w.branch_name::text AS branch_name,
           w.metric_date::date AS metric_date,
-          COALESCE(NULLIF(TRIM(BOTH FROM w.warning_text), ''), 'No early warning signals detected')::text AS insight_text,
+          COALESCE(
+            NULLIF(
+              TRIM(BOTH FROM CONCAT_WS(
+                ' — ',
+                NULLIF(TRIM(BOTH FROM w.title::text), ''),
+                NULLIF(TRIM(BOTH FROM w.description::text), '')
+              )),
+              ''
+            ),
+            'No early warning signals detected'
+          )::text AS insight_text,
           COALESCE(w.sort_score, 0)::numeric AS sort_score
         FROM public.watchlist_today w
       ),

@@ -531,7 +531,7 @@ async function fetchCompanyPanelsFromDashboardView(
     .map((r): WatchlistTodayRow => ({
       organization_id: organizationId,
       branch_id: pickStr(r, 'branch_id', 'branchId'),
-      branch_name: null,
+      branch_name: pickStr(r, 'branch_name', 'branchName') || null,
       metric_date: pickStr(r, 'metric_date') || null,
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,

@@ -21,7 +21,7 @@ DROP VIEW IF EXISTS public.today_company_dashboard CASCADE;
 DROP VIEW IF EXISTS public.whats_working_today_v_next CASCADE;
 DROP VIEW IF EXISTS public.whats_working_today__candidate CASCADE;
 DROP VIEW IF EXISTS opportunities_today CASCADE;
-DROP VIEW IF EXISTS watchlist_today CASCADE;
+DROP VIEW IF EXISTS public.watchlist_today CASCADE;
 DROP VIEW IF EXISTS public.whats_working_today CASCADE;
 DROP VIEW IF EXISTS today_branch_priorities CASCADE;
 DROP VIEW IF EXISTS today_priorities_view CASCADE;
@@ -1097,7 +1097,8 @@ COMMENT ON VIEW opportunities_today IS
 GRANT SELECT ON opportunities_today TO anon, authenticated;
 
 -- STEP 6f — Watchlist (early warning, non-urgent downward trends)
-CREATE OR REPLACE VIEW watchlist_today AS
+-- Contract: headline = title; detail = description. No warning_text column.
+CREATE OR REPLACE VIEW public.watchlist_today AS
 WITH base AS (
     SELECT
         t.branch_id::uuid AS branch_id,
@@ -1161,9 +1162,8 @@ signals AS (
         l.branch_id::uuid AS branch_id,
         l.branch_name::text AS branch_name,
         l.metric_date::date AS metric_date,
-        (l.branch_name || ' revenue trending down (3 days)')::text AS warning_text,
         'Revenue softening'::text AS title,
-        ('Branch: ' || l.branch_name)::text AS description,
+        ('Total revenue has declined three days in a row at ' || l.branch_name || '.')::text AS description,
         (120::numeric + COALESCE(l.total_revenue, 0) / 1000::numeric)::numeric AS sort_score
     FROM latest l
     WHERE l.rev_l1 IS NOT NULL
@@ -1178,9 +1178,8 @@ signals AS (
         l.branch_id::uuid,
         l.branch_name::text,
         l.metric_date::date,
-        ('Customer traffic softening (' || l.branch_name || ')')::text,
-        'Customer traffic softening'::text,
-        ('Branch: ' || l.branch_name)::text,
+        'Customer traffic softening'::text AS title,
+        ('Customer counts have declined three consecutive days at ' || l.branch_name || '.')::text AS description,
         110::numeric
     FROM latest l
     WHERE l.cust_l1 IS NOT NULL
@@ -1196,9 +1195,8 @@ signals AS (
         l.branch_id::uuid,
         l.branch_name::text,
         l.metric_date::date,
-        (l.branch_name || ' rooms sold softening (3 days)')::text,
-        'Rooms sold softening'::text,
-        ('Branch: ' || l.branch_name)::text,
+        'Rooms sold softening'::text AS title,
+        ('Rooms sold have declined three days in a row at ' || l.branch_name || '.')::text AS description,
         100::numeric
     FROM latest l
     WHERE l.room_l1 IS NOT NULL
@@ -1237,9 +1235,8 @@ fallback AS (
         o.sample_branch_id::uuid AS branch_id,
         o.sample_branch_name::text AS branch_name,
         NULL::date AS metric_date,
-        'No early warning signals detected'::text AS warning_text,
-        'All good'::text AS title,
-        'No early warning signals detected'::text AS description,
+        'No early warning signals detected'::text AS title,
+        ('Revenue, customers, and rooms sold are not showing a three-day softening pattern for ' || o.sample_branch_name || '.')::text AS description,
         30::numeric AS sort_score
     FROM org_pool o
     LEFT JOIN has_signal hs ON hs.organization_id = o.organization_id
@@ -1258,7 +1255,6 @@ ranked AS (
         a.metric_date,
         a.title,
         a.description,
-        a.warning_text,
         a.sort_score,
         ROW_NUMBER() OVER (
             PARTITION BY a.organization_id
@@ -1274,15 +1270,14 @@ SELECT
     r.metric_date,
     r.title,
     r.description,
-    r.warning_text,
     r.sort_score
 FROM ranked r
 WHERE r.rn <= 3;
 
-COMMENT ON VIEW watchlist_today IS
-    'Early warning trends via lag(1,2): revenue/customers/rooms softening; fallback when none; limit 3.';
+COMMENT ON VIEW public.watchlist_today IS
+    'Early warning via lag(1,2): title + description only; max 3 rows per org.';
 
-GRANT SELECT ON watchlist_today TO anon, authenticated;
+GRANT SELECT ON public.watchlist_today TO anon, authenticated;
 
 -- STEP 7 — Verify (run these as separate statements after the script succeeds)
 -- SELECT * FROM alerts_today LIMIT 5;

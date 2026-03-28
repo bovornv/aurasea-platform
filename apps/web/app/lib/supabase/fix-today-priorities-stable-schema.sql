@@ -629,6 +629,7 @@ SELECT
       FROM (
         SELECT
           wt.branch_id,
+          wt.branch_name,
           wt.metric_date,
           wt.title,
           wt.description,

@@ -1,26 +1,36 @@
 -- Company Today — early warning watchlist (non-urgent downward trends)
--- GET /rest/v1/watchlist_today?select=*&organization_id=eq.{uuid}&order=sort_score.desc&limit=3
--- Requires: public.today_summary_clean, public.branches
---
--- Rules:
--- - revenue decreasing 3 days: total_revenue(t) < t-1 < t-2
--- - customers decreasing 3 days: customers(t) < t-1 < t-2
--- - rooms sold decreasing 3 days: utilized(t) < t-1 < t-2
--- - fallback rows when no signals so UI never empty
+-- Canonical body: rebuild-alerts-enriched-engine.sql STEP 6f.
+-- Contract: organization_id, branch_id, branch_name, metric_date, title, description, sort_score (no warning_text).
+-- GET /rest/v1/watchlist_today?select=organization_id,branch_id,branch_name,metric_date,title,description,sort_score&organization_id=eq.{uuid}
 
 DROP VIEW IF EXISTS public.watchlist_today CASCADE;
 
 CREATE VIEW public.watchlist_today AS
 WITH base AS (
   SELECT
-    t.branch_id::text AS branch_id,
+    t.branch_id::uuid AS branch_id,
     t.metric_date::date AS metric_date,
-    COALESCE(t.total_revenue, 0)::numeric AS total_revenue,
-    t.customers::numeric AS customers,
-    t.utilized::numeric AS rooms_sold,
-    b.organization_id,
+    COALESCE(
+      NULLIF(TRIM(j.jb->>'total_revenue'), '')::numeric,
+      NULLIF(TRIM(j.jb->>'revenue'), '')::numeric,
+      NULLIF(TRIM(j.jb->>'total_revenue_thb'), '')::numeric,
+      NULLIF(TRIM(j.jb->>'revenue_thb'), '')::numeric,
+      0::numeric
+    ) AS total_revenue,
+    COALESCE(
+      NULLIF(TRIM(j.jb->>'customers'), '')::numeric,
+      NULLIF(TRIM(j.jb->>'total_customers'), '')::numeric,
+      0::numeric
+    ) AS customers,
+    COALESCE(
+      NULLIF(TRIM(j.jb->>'utilized'), '')::numeric,
+      NULLIF(TRIM(j.jb->>'rooms_sold'), '')::numeric,
+      0::numeric
+    ) AS rooms_sold,
+    b.organization_id::uuid AS organization_id,
     COALESCE(b.branch_name, b.name) AS branch_name
   FROM public.today_summary_clean t
+  CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
   LEFT JOIN public.branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
   WHERE b.organization_id IS NOT NULL
 ),
@@ -56,10 +66,11 @@ latest AS (
 signals AS (
   SELECT
     l.organization_id::uuid AS organization_id,
-    l.branch_id::text AS branch_id,
+    l.branch_id::uuid AS branch_id,
     l.branch_name::text AS branch_name,
     l.metric_date::date AS metric_date,
-    (l.branch_name || ' revenue trending down (3 days)')::text AS warning_text,
+    'Revenue softening'::text AS title,
+    ('Total revenue has declined three days in a row at ' || l.branch_name || '.')::text AS description,
     (120::numeric + COALESCE(l.total_revenue, 0) / 1000::numeric)::numeric AS sort_score
   FROM latest l
   WHERE l.rev_l1 IS NOT NULL
@@ -71,10 +82,11 @@ signals AS (
 
   SELECT
     l.organization_id::uuid,
-    l.branch_id::text,
+    l.branch_id::uuid,
     l.branch_name::text,
     l.metric_date::date,
-    ('Customer traffic softening (' || l.branch_name || ')')::text,
+    'Customer traffic softening'::text AS title,
+    ('Customer counts have declined three consecutive days at ' || l.branch_name || '.')::text AS description,
     110::numeric
   FROM latest l
   WHERE l.cust_l1 IS NOT NULL
@@ -87,10 +99,11 @@ signals AS (
 
   SELECT
     l.organization_id::uuid,
-    l.branch_id::text,
+    l.branch_id::uuid,
     l.branch_name::text,
     l.metric_date::date,
-    (l.branch_name || ' rooms sold softening (3 days)')::text,
+    'Rooms sold softening'::text AS title,
+    ('Rooms sold have declined three days in a row at ' || l.branch_name || '.')::text AS description,
     100::numeric
   FROM latest l
   WHERE l.room_l1 IS NOT NULL
@@ -104,12 +117,16 @@ org_pool AS (
     b.organization_id,
     (
       ARRAY_AGG(
-        COALESCE(NULLIF(TRIM(BOTH FROM b.name), ''), TRIM(BOTH FROM b.id::text))
-        ORDER BY b.sort_order NULLS LAST, b.name
+        COALESCE(
+          NULLIF(TRIM(BOTH FROM b.branch_name), ''),
+          NULLIF(TRIM(BOTH FROM b.name), ''),
+          TRIM(BOTH FROM b.id::text)
+        )
+        ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name)
       )
     )[1] AS sample_branch_name,
     (
-      ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, b.name)
+      ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name))
     )[1] AS sample_branch_id
   FROM public.branches b
   WHERE b.organization_id IS NOT NULL
@@ -122,10 +139,11 @@ has_signal AS (
 fallback AS (
   SELECT
     o.organization_id::uuid AS organization_id,
-    o.sample_branch_id::text AS branch_id,
+    o.sample_branch_id::uuid AS branch_id,
     o.sample_branch_name::text AS branch_name,
     NULL::date AS metric_date,
-    'No early warning signals detected'::text AS warning_text,
+    'No early warning signals detected'::text AS title,
+    ('Revenue, customers, and rooms sold are not showing a three-day softening pattern for ' || o.sample_branch_name || '.')::text AS description,
     30::numeric AS sort_score
   FROM org_pool o
   LEFT JOIN has_signal hs ON hs.organization_id = o.organization_id
@@ -142,7 +160,8 @@ ranked AS (
     a.branch_id,
     a.branch_name,
     a.metric_date,
-    a.warning_text,
+    a.title,
+    a.description,
     a.sort_score,
     ROW_NUMBER() OVER (
       PARTITION BY a.organization_id
@@ -156,15 +175,13 @@ SELECT
   r.branch_id,
   r.branch_name,
   r.metric_date,
-  r.warning_text,
+  r.title,
+  r.description,
   r.sort_score
 FROM ranked r
 WHERE r.rn <= 3;
 
 COMMENT ON VIEW public.watchlist_today IS
-  'Early warning trends (3-day softening via lag) with fallback row when none; max 3 rows per org.';
+  'Early warning via lag(1,2): title + description only; max 3 rows per org.';
 
 GRANT SELECT ON public.watchlist_today TO anon, authenticated;
-
--- Verify:
--- SELECT * FROM public.watchlist_today WHERE organization_id = '...' ORDER BY sort_score DESC LIMIT 3;
