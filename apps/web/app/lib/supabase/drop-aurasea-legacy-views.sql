@@ -1,5 +1,5 @@
 -- Phase 2: Drop legacy views AFTER frontend is deployed and uses only:
---   today_summary_clean, alerts_final, branch_learning_phase
+--   today_summary, alerts_final, branch_learning_phase
 -- Do NOT drop tables. Run this only after verifying no 404/400 and UI works.
 
 DROP VIEW IF EXISTS branch_recommendations;

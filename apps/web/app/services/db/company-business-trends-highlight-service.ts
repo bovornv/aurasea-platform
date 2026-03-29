@@ -47,15 +47,44 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
   return null;
 }
 
-/** Display order: accommodation first, then fnb */
-function sortCompanyTrendRows(rows: CompanyBusinessTrendHighlightRow[]): CompanyBusinessTrendHighlightRow[] {
-  const rank = (bt: string): number => {
-    const x = bt.toLowerCase();
-    if (x === 'accommodation') return 0;
-    if (x === 'fnb') return 1;
-    return 9;
+/** Map API/view values to the two slots we show (ignore unknown / garbage). */
+function canonicalTrendBusinessType(bt: string): 'accommodation' | 'fnb' | null {
+  const x = bt.trim().toLowerCase().replace(/\s+/g, '');
+  if (x === 'accommodation' || x === 'hotel') return 'accommodation';
+  if (x === 'fnb' || x === 'f&b' || x === 'foodandbeverage') return 'fnb';
+  return null;
+}
+
+/** At most one row per canonical type: highest sort_score, then branch_name (matches view tie-break). */
+function dedupeOnePerBusinessType(rows: CompanyBusinessTrendHighlightRow[]): CompanyBusinessTrendHighlightRow[] {
+  const best = new Map<'accommodation' | 'fnb', CompanyBusinessTrendHighlightRow>();
+
+  const pickBetter = (a: CompanyBusinessTrendHighlightRow, b: CompanyBusinessTrendHighlightRow): CompanyBusinessTrendHighlightRow => {
+    const sa = a.sort_score;
+    const sb = b.sort_score;
+    if (sa != null && sb != null && sa !== sb) return sa > sb ? a : b;
+    if (sa != null && sb == null) return a;
+    if (sb != null && sa == null) return b;
+    const an = (a.branch_name ?? '').trim();
+    const bn = (b.branch_name ?? '').trim();
+    return an.localeCompare(bn, undefined, { sensitivity: 'base' }) <= 0 ? a : b;
   };
-  return [...rows].sort((a, b) => rank(a.business_type) - rank(b.business_type)).slice(0, 2);
+
+  for (const row of rows) {
+    const canon = canonicalTrendBusinessType(row.business_type);
+    if (!canon) continue;
+    const normalized: CompanyBusinessTrendHighlightRow = { ...row, business_type: canon };
+    const prev = best.get(canon);
+    if (!prev) best.set(canon, normalized);
+    else best.set(canon, pickBetter(prev, normalized));
+  }
+
+  const out: CompanyBusinessTrendHighlightRow[] = [];
+  const acc = best.get('accommodation');
+  const fnb = best.get('fnb');
+  if (acc) out.push(acc);
+  if (fnb) out.push(fnb);
+  return out;
 }
 
 function rowFromRecord(r: Record<string, unknown>, organizationId: string): CompanyBusinessTrendHighlightRow | null {
@@ -114,5 +143,5 @@ export async function fetchCompanyBusinessTrendHighlights(
     .map((row) => rowFromRecord(row as Record<string, unknown>, oid))
     .filter((x): x is CompanyBusinessTrendHighlightRow => x != null);
 
-  return sortCompanyTrendRows(parsed);
+  return dedupeOnePerBusinessType(parsed);
 }

@@ -1,3 +1,4 @@
+-- DEPRECATED — historical (today_summary_clean). Canonical: public.today_summary only.
 -- Upgrade today_summary_clean: revenue → total_revenue, add accommodation_revenue, fnb_revenue.
 -- Strategy: create v3 → drop dependents → drop old view → rename v3 → recreate dependents.
 -- Prerequisite: accommodation_daily_metrics and fnb_daily_metrics must exist.

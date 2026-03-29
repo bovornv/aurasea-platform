@@ -71,7 +71,7 @@ export default function BranchTrendsPage() {
     Promise.all([
       getBranchKpiMetrics(branch.id, DEFAULT_DAYS),
       getDailyMetrics(branch.id, DEFAULT_DAYS),
-      getBranchTrendSeriesWithFallback(branch.id, DEFAULT_DAYS),
+      getBranchTrendSeriesWithFallback(branch.id, DEFAULT_DAYS, { moduleType: branch.moduleType }),
     ])
       .then(([rows, daily, series]) => {
         setKpiRows(rows ?? []);
@@ -223,6 +223,13 @@ export default function BranchTrendsPage() {
   }, [trendSeries, dailyMetrics]);
 
   const avgTicketValues = useMemo(() => {
+    if (
+      trendSeries?.avg_ticket &&
+      trendSeries.avg_ticket.length >= 2 &&
+      trendSeries.avg_ticket.length === trendSeries.customers.length
+    ) {
+      return trendSeries.avg_ticket.map((v) => Number(v ?? 0));
+    }
     if (trendSeries && trendSeries.revenue.length >= 2 && trendSeries.customers.length >= 2) {
       return trendSeries.revenue.map((r, i) => {
         const c = trendSeries!.customers[i] ?? 0;

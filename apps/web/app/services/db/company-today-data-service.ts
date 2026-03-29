@@ -1,5 +1,5 @@
 /**
- * Company Today — `branch_business_status_api` + alerts_* (no today_summary_clean_safe).
+ * Company Today — `branch_business_status_api` + alerts_* (canonical metrics: `public.today_summary`).
  * When views/RPC are missing in PostgREST, we remember per-session and fall back to branches + daily_metrics.
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';

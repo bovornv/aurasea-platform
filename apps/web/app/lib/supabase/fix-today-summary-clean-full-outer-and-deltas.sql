@@ -1,3 +1,4 @@
+-- DEPRECATED — historical. Canonical object: public.today_summary (add-today-summary-view.sql).
 -- Fix: Alerts empty for F&B-only (or accommodation-only) branches.
 -- 1) today_summary_clean used INNER JOIN → only branches with BOTH streams got rows.
 -- 2) revenue_delta_day was NULL → delta-based alerts never fired.

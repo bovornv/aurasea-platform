@@ -311,95 +311,127 @@ export interface BranchTrendSeries {
   revpar: number[];
   adr: number[];
   customers: number[];
+  /** F&B: per-day avg ticket from today_summary when the driver view provides it. */
+  avg_ticket?: number[];
+}
+
+function isAccommodationModuleType(mt: string | null | undefined): boolean {
+  const s = (mt ?? '').toLowerCase();
+  return ['accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'].includes(s);
+}
+
+function isFnbModuleType(mt: string | null | undefined): boolean {
+  const s = (mt ?? '').toLowerCase();
+  return ['fnb', 'restaurant', 'cafe', 'cafe_restaurant'].includes(s);
+}
+
+function startDateStrForDays(days: number): string {
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  return start.toISOString().split('T')[0]!;
 }
 
 /**
- * Fetch last N days for Trends charts from accommodation_daily_metrics / fnb_daily_metrics (no summary view).
+ * Branch Performance Drivers: public.branch_performance_drivers_* (daily_metrics ∪ today_summary in SQL only).
  */
-export async function getBranchTrendSeries(branchId: string, days: number = 30): Promise<BranchTrendSeries | null> {
+export async function getBranchTrendSeries(
+  branchId: string,
+  days: number = 30,
+  ctx?: { moduleType?: string | null }
+): Promise<BranchTrendSeries | null> {
   if (branchId == null || branchId === '') return null;
   rejectMockBranchId(branchId);
   if (!isSupabaseAvailable()) return null;
   const supabase = getSupabaseClient();
   if (!supabase) return null;
-  return (
-    (await getAccommodationTrendFallback(branchId, days, supabase)) ??
-    (await getFnbTrendFallback(branchId, days, supabase))
-  );
-}
 
-/** Build trend series from accommodation_daily_metrics rows. */
-async function getAccommodationTrendFallback(
-  branchId: string,
-  days: number,
-  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>
-): Promise<BranchTrendSeries | null> {
-  const start = new Date();
-  start.setDate(start.getDate() - days);
-  const startStr = start.toISOString().split('T')[0]!;
-  const { data, error } = await supabase
-    .from('accommodation_daily_metrics')
-    .select('metric_date, revenue, rooms_sold, rooms_available')
-    .eq('branch_id', branchId)
-    .gte('metric_date', startStr)
-    .order('metric_date', { ascending: true });
-  if (error || !data || data.length < 2) return null;
-  const rows = data as Array<{ metric_date?: string; revenue?: number | null; rooms_sold?: number | null; rooms_available?: number | null }>;
-  return {
-    dates: rows.map((r) => (r.metric_date ? String(r.metric_date).slice(0, 10) : '')),
-    revenue: rows.map((r) => Number(r.revenue ?? 0)),
-    occupancy: rows.map((r) => {
-      const avail = Number(r.rooms_available ?? 0);
-      const sold = Number(r.rooms_sold ?? 0);
-      return avail > 0 ? (sold / avail) * 100 : 0;
-    }),
-    revpar: rows.map((r) => {
-      const avail = Number(r.rooms_available ?? 0);
-      return avail > 0 ? Number(r.revenue ?? 0) / avail : 0;
-    }),
-    adr: rows.map((r) => {
-      const sold = Number(r.rooms_sold ?? 0);
-      return sold > 0 ? Number(r.revenue ?? 0) / sold : 0;
-    }),
-    customers: rows.map(() => 0),
-  };
-}
+  const startStr = startDateStrForDays(days);
+  const mt = ctx?.moduleType;
 
-/** Build trend series from fnb_daily_metrics rows. */
-async function getFnbTrendFallback(
-  branchId: string,
-  days: number,
-  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>
-): Promise<BranchTrendSeries | null> {
-  const start = new Date();
-  start.setDate(start.getDate() - days);
-  const startStr = start.toISOString().split('T')[0]!;
-  const { data, error } = await supabase
-    .from('fnb_daily_metrics')
-    .select('metric_date, revenue, total_customers')
-    .eq('branch_id', branchId)
-    .gte('metric_date', startStr)
-    .order('metric_date', { ascending: true });
-  if (error || !data || data.length < 2) return null;
-  const rows = data as Array<{ metric_date?: string; revenue?: number | null; total_customers?: number | null }>;
-  return {
-    dates: rows.map((r) => (r.metric_date ? String(r.metric_date).slice(0, 10) : '')),
-    revenue: rows.map((r) => Number(r.revenue ?? 0)),
-    occupancy: rows.map(() => 0),
-    revpar: rows.map(() => 0),
-    adr: rows.map(() => 0),
-    customers: rows.map((r) => Number(r.total_customers ?? 0)),
+  const tryAcc = async (): Promise<BranchTrendSeries | null> => {
+    if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_performance_drivers_accommodation)) {
+      return null;
+    }
+    const { data, error } = await supabase
+      .from('branch_performance_drivers_accommodation')
+      .select('metric_date, revenue, occupancy_rate, revpar, adr')
+      .eq('branch_id', branchId)
+      .gte('metric_date', startStr)
+      .order('metric_date', { ascending: true });
+    if (error) {
+      if (isPostgrestObjectMissingError(error)) {
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_performance_drivers_accommodation);
+      }
+      return null;
+    }
+    if (!data || data.length < 2) return null;
+    const rows = data as Array<{
+      metric_date?: string;
+      revenue?: number | null;
+      occupancy_rate?: number | null;
+      revpar?: number | null;
+      adr?: number | null;
+    }>;
+    return {
+      dates: rows.map((r) => (r.metric_date ? String(r.metric_date).slice(0, 10) : '')),
+      revenue: rows.map((r) => Number(r.revenue ?? 0)),
+      occupancy: rows.map((r) => Number(r.occupancy_rate ?? 0)),
+      revpar: rows.map((r) => Number(r.revpar ?? 0)),
+      adr: rows.map((r) => Number(r.adr ?? 0)),
+      customers: rows.map(() => 0),
+    };
   };
+
+  const tryFnb = async (): Promise<BranchTrendSeries | null> => {
+    if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_performance_drivers_fnb)) return null;
+    const { data, error } = await supabase
+      .from('branch_performance_drivers_fnb')
+      .select('metric_date, revenue, customers, avg_ticket')
+      .eq('branch_id', branchId)
+      .gte('metric_date', startStr)
+      .order('metric_date', { ascending: true });
+    if (error) {
+      if (isPostgrestObjectMissingError(error)) {
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_performance_drivers_fnb);
+      }
+      return null;
+    }
+    if (!data || data.length < 2) return null;
+    const rows = data as Array<{
+      metric_date?: string;
+      revenue?: number | null;
+      customers?: number | null;
+      avg_ticket?: number | null;
+    }>;
+    return {
+      dates: rows.map((r) => (r.metric_date ? String(r.metric_date).slice(0, 10) : '')),
+      revenue: rows.map((r) => Number(r.revenue ?? 0)),
+      occupancy: rows.map(() => 0),
+      revpar: rows.map(() => 0),
+      adr: rows.map(() => 0),
+      customers: rows.map((r) => Number(r.customers ?? 0)),
+      avg_ticket: rows.map((r) => {
+        const v = r.avg_ticket;
+        return v != null && Number.isFinite(Number(v)) ? Number(v) : 0;
+      }),
+    };
+  };
+
+  if (isAccommodationModuleType(mt)) return tryAcc();
+  if (isFnbModuleType(mt)) return tryFnb();
+
+  return (await tryAcc()) ?? (await tryFnb());
 }
 
 /**
- * Fetch trend series for Trends page — daily metrics tables only.
+ * Same as getBranchTrendSeries — pass branch.moduleType so the correct driver view is used first.
  */
 export async function getBranchTrendSeriesWithFallback(
   branchId: string,
-  days: number = 30
+  days: number = 30,
+  ctx?: { moduleType?: string | null }
 ): Promise<BranchTrendSeries | null> {
-  return getBranchTrendSeries(branchId, days);
+  return getBranchTrendSeries(branchId, days, ctx);
 }
 
 /**

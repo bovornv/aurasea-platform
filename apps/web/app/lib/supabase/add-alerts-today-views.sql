@@ -1,5 +1,5 @@
 -- Alerts pipeline: problems (alerts_today) + actions + opportunities → alerts_top (max 3 per branch).
--- Prerequisite: today_summary_clean must exist (revenue_delta_day, occupancy_delta_week).
+-- Prerequisite: public.today_summary must exist (revenue_delta_day, occupancy_delta_week).
 -- DROP first so column names can change (PostgreSQL REPLACE cannot rename columns).
 DROP VIEW IF EXISTS alerts_top CASCADE;
 DROP VIEW IF EXISTS alerts_ranked CASCADE;
@@ -39,7 +39,7 @@ SELECT
 FROM (
     SELECT branch_id, metric_date, revenue_delta_day, occupancy_delta_week,
            NULL::numeric AS customers_delta_day
-    FROM today_summary_clean
+    FROM public.today_summary
 ) t
 WHERE revenue_delta_day <= -10
    OR occupancy_delta_week <= -10
@@ -74,10 +74,10 @@ SELECT
     'Above recent trend' AS cause,
     'Increase prices slightly or upsell premium options' AS recommendation,
     '+5–12% revenue upside' AS expected_recovery
-FROM today_summary_clean
+FROM public.today_summary
 WHERE revenue_delta_day >= 10;
 
--- Step 3b: Revenue split (Accommodation vs F&B). Requires today_summary_clean.accommodation_revenue, fnb_revenue.
+-- Step 3b: Revenue split (Accommodation vs F&B). Requires today_summary.accommodation_revenue, fnb_revenue.
 CREATE VIEW alerts_revenue_split AS
 SELECT
     branch_id,
@@ -121,7 +121,7 @@ SELECT
             THEN '+5–10% room revenue recovery'
         ELSE NULL
     END AS expected_recovery
-FROM today_summary_clean
+FROM public.today_summary
 WHERE fnb_revenue IS NOT NULL
   AND accommodation_revenue IS NOT NULL;
 

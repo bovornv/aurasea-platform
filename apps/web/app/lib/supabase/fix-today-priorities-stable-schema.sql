@@ -9,7 +9,7 @@
 -- Legacy views removed to avoid duplication/confusion:
 --   today_priorities, today_priorities_clean, today_branch_priorities (and any old today_priorities_view)
 --
--- Source: today_summary_clean (+ branches) for shared deltas; F&B change signals also use fnb_daily_metrics
+-- Source: today_summary (+ branches) for shared deltas; F&B change signals also use fnb_daily_metrics
 -- (revenue/customer/ticket vs prior day, 30d cost ratio vs prior 30d). All join columns are alias-qualified.
 -- If there are no triggered insights, the view returns 0 rows and the UI shows empty state
 -- (no hardcoded/generic suggestions).
@@ -33,8 +33,8 @@ DO $$
 DECLARE
   src text;
 BEGIN
-  IF to_regclass('public.today_summary_clean') IS NOT NULL THEN
-    src := 'public.today_summary_clean';
+  IF to_regclass('public.today_summary') IS NOT NULL THEN
+    src := 'public.today_summary';
   ELSE
     src := NULL;
   END IF;
@@ -56,7 +56,7 @@ FROM (
 )
 WHERE false
 $empty$;
-    RAISE NOTICE 'today_priorities_ranked: today_summary_clean missing (empty view).';
+    RAISE NOTICE 'today_priorities_ranked: today_summary missing (empty view).';
   ELSE
     EXECUTE $ts$
 CREATE VIEW public.today_priorities_ranked AS
@@ -64,7 +64,7 @@ WITH latest_day AS (
   SELECT
     trim(both FROM base.branch_id::text) AS bid,
     MAX(base.metric_date::date) AS d
-  FROM public.today_summary_clean base
+  FROM public.today_summary base
   WHERE base.branch_id IS NOT NULL
   GROUP BY trim(both FROM base.branch_id::text)
 ),
@@ -79,7 +79,7 @@ base AS (
       WHEN LOWER(COALESCE(b.module_type::text, '')) IN ('fnb','restaurant','cafe','cafe_restaurant') THEN 'fnb'::text
       ELSE 'accommodation'::text
     END AS business_type
-  FROM public.today_summary_clean base
+  FROM public.today_summary base
   INNER JOIN latest_day ld ON trim(both FROM base.branch_id::text) = ld.bid AND base.metric_date::date = ld.d
   CROSS JOIN LATERAL (SELECT to_jsonb(base) AS jb) jb
   LEFT JOIN public.branches b ON trim(both FROM b.id::text) = trim(both FROM base.branch_id::text)
@@ -472,12 +472,12 @@ SELECT
 FROM picked p
 LEFT JOIN public.branches b ON trim(both FROM b.id::text) = trim(both FROM p.branch_id::text)
 $ts$;
-    RAISE NOTICE 'today_priorities_ranked: using source today_summary_clean';
+    RAISE NOTICE 'today_priorities_ranked: using source today_summary';
   END IF;
 END $$;
 
 COMMENT ON VIEW public.today_priorities_ranked IS
-  'Priorities from today_summary_clean + F&B fnb_daily_metrics deltas; dedup (branch_id, problem_type). F&B cost ratio = (SUM additional_cost_today + MAX monthly_fixed_cost) / SUM revenue per 30d window vs prior 30d.';
+  'Priorities from today_summary + F&B fnb_daily_metrics deltas; dedup (branch_id, problem_type). F&B cost ratio = (SUM additional_cost_today + MAX monthly_fixed_cost) / SUM revenue per 30d window vs prior 30d.';
 
 GRANT SELECT ON public.today_priorities_ranked TO anon, authenticated;
 

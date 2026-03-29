@@ -1,11 +1,6 @@
--- Phase 1: Compatibility views so frontend does not break before migration.
--- Prerequisites: public.today_summary_clean_v_next must exist; public.today_summary from add-today-summary-view.sql is kept (do not drop).
--- For alerts_final we create it from branch_alerts_display if that exists; else you must create alerts_final yourself.
-
--- Step 0: Stable metrics view name = passthrough to today_summary_clean_v_next (column parity required).
--- Requires public.today_summary_clean_v_next. Do not drop public.today_summary (legacy dependents).
-CREATE OR REPLACE VIEW public.today_summary_clean AS
-SELECT * FROM public.today_summary_clean_v_next;
+-- Phase 1: Compatibility views (alerts_final, branch intelligence helpers).
+-- Prerequisites: public.today_summary (merged acc+F&B; see add-today-summary-view.sql).
+-- Deprecated removed: public.today_summary_clean / today_summary_clean_v_next — use public.today_summary only.
 
 -- Step 1: Create alerts_final from branch_alerts_display if it exists (else skip or create manually).
 DROP VIEW IF EXISTS alerts_final CASCADE;
@@ -46,24 +41,21 @@ WHERE bf.rn = 1
   AND bf.alert_type IS NOT NULL
   AND trim(COALESCE(bf.alert_type::text, '')) <> '';
 
--- 3) accommodation_health_today (health from today_summary_clean)
+-- 3) accommodation_health_today (health from today_summary)
 DROP VIEW IF EXISTS accommodation_health_today CASCADE;
 CREATE VIEW accommodation_health_today AS
 SELECT branch_id, metric_date, health_score
-FROM today_summary_clean;
+FROM public.today_summary;
 
--- 4) branch_anomaly_signals (revenue + confidence from today_summary_clean)
+-- 4) branch_anomaly_signals (revenue + confidence from today_summary)
 DROP VIEW IF EXISTS branch_anomaly_signals CASCADE;
 CREATE VIEW branch_anomaly_signals AS
 SELECT branch_id, metric_date, revenue, 0 AS confidence_score
-FROM today_summary_clean;
-
--- (today_summary already exists from add-today-summary-view.sql; do not drop it.)
+FROM public.today_summary;
 
 -- Grants
-GRANT SELECT ON today_summary_clean TO anon, authenticated;
 GRANT SELECT ON alerts_final TO anon, authenticated;
 GRANT SELECT ON branch_recommendations TO anon, authenticated;
 GRANT SELECT ON accommodation_health_today TO anon, authenticated;
 GRANT SELECT ON branch_anomaly_signals TO anon, authenticated;
-GRANT SELECT ON today_summary TO anon, authenticated;
+GRANT SELECT ON public.today_summary TO anon, authenticated;

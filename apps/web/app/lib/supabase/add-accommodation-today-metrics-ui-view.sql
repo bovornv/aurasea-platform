@@ -62,7 +62,9 @@ SELECT
   ts.health_score::numeric AS health_score
 FROM public.accommodation_daily_metrics a
 LEFT JOIN LATERAL (
-  SELECT t.revenue_delta_day, t.health_score
+  SELECT
+    COALESCE(t.accommodation_revenue_delta_day, t.revenue_delta_day) AS revenue_delta_day,
+    t.health_score
   FROM public.today_summary t
   WHERE t.branch_id::text = a.branch_id::text
   ORDER BY t.metric_date DESC NULLS LAST
@@ -76,6 +78,6 @@ $v$,
 END $$;
 
 COMMENT ON VIEW public.accommodation_today_metrics_ui IS
-  'Per-day accommodation KPIs + latest branch revenue_delta_day/health from today_summary.';
+  'Per-day accommodation KPIs + latest branch health from today_summary; revenue_delta prefers accommodation_revenue_delta_day vs prior acc day, else total revenue_delta_day.';
 
 GRANT SELECT ON public.accommodation_today_metrics_ui TO anon, authenticated;

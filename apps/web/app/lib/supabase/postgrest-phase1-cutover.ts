@@ -19,11 +19,11 @@
  * via getBranchBusinessStatusApiTable() (latest-metrics, health-score-kpi, company-today-data, anomaly-signals).
  *
  * No direct `.from()` in app for: `today_summary` (base summary rows), `branch_business_status` (base view), `today_priorities_ranked`.
- * DB may expose `today_summary_clean_v_next`, `branch_business_status_v_next`, `today_priorities_ranked_v_next`;
+ * DB may expose `branch_business_status_v_next`, `today_priorities_ranked_v_next` (naming varies by migration);
  * they are not toggled here until a later phase wires new reads.
  *
  * Intentionally NOT switched by phase-1 mapping (stay on live): `today_company_dashboard`,
- * `alerts_today` / `alerts_enriched` chain (still uses `today_summary_clean` in DB), `today_summary`, `daily_metrics_legacy`.
+ * `alerts_today` / `alerts_enriched` chain and Today panels use `today_summary`; `daily_metrics_legacy` where present.
  *
  * Alerts/opportunities track (separate toggle, OFF by default):
  * - opportunities_today → always `opportunities_today` (single source; v_next not used)

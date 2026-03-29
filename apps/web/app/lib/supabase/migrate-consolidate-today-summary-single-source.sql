@@ -1,17 +1,23 @@
 -- =============================================================================
--- public.today_summary — single canonical branch-day summary (merged acc + F&B)
+-- MIGRATION: Consolidate on public.today_summary only (clean/candidate family removed)
 -- =============================================================================
--- One row per (branch_id, metric_date): FULL OUTER JOIN accommodation_daily_metrics
--- and fnb_daily_metrics. Deltas use calendar prior day / same weekday −7d joins
--- (same semantics as the legacy union-based view, but totals match alerts/priorities).
+-- Run in order in one maintenance window:
 --
--- Exposes legacy column names (revenue = total_revenue) plus split revenue fields,
--- clean-style aliases (utilized, capacity), and stream-specific deltas for UI panels.
+--   STEP A — this file: recreate public.today_summary (CASCADE drops direct view children).
+--   STEP B — rebuild-alerts-enriched-engine.sql (from repo; restores alerts + Today panels).
+--   STEP C — fix-company-status-current-and-today-dashboard.sql (company_status_current, today_company_dashboard).
+--   STEP D — add-accommodation-today-metrics-ui-view.sql (optional UI view).
+--   STEP E — fix-today-priorities-stable-schema.sql (today_priorities_*).
+--   STEP F — drop-today-summary-clean-family.sql (drops legacy names if still present).
 --
--- Prerequisites: public.accommodation_daily_metrics, public.fnb_daily_metrics
--- After changing this view: run rebuild-alerts-enriched-engine.sql if alert views break.
+-- Objects rewired in-repo (reference public.today_summary, not *_clean*):
+--   rebuild-alerts-enriched-engine.sql → alerts_enriched STEP 2, whats_working_today, …
+--   fix-today-priorities-stable-schema.sql → today_priorities_ranked
+--   add-alerts-today-views.sql → legacy alerts_* stack
+--   add-aurasea-core-compatibility-views.sql → accommodation_health_today, branch_anomaly_signals
 -- =============================================================================
 
+-- STEP A.1: CASCADE drops direct view children — run B–E immediately after.
 DROP VIEW IF EXISTS public.today_summary CASCADE;
 
 CREATE VIEW public.today_summary AS
@@ -127,4 +133,8 @@ GRANT SELECT ON public.today_summary TO anon;
 GRANT SELECT ON public.today_summary TO authenticated;
 
 COMMENT ON VIEW public.today_summary IS
-  'Canonical merged branch-day metrics (acc + F&B): one row per branch_id + metric_date; revenue=revenue_delta_day vs prior-day total; accommodation_revenue_delta_day / fnb_revenue_delta_day for stream splits.';
+  'Canonical merged branch-day metrics (acc + F&B). Single source for alerts, priorities, and Today panels.';
+
+-- Next: rebuild-alerts-enriched-engine.sql, fix-company-status-current-and-today-dashboard.sql,
+-- add-accommodation-today-metrics-ui-view.sql, fix-today-priorities-stable-schema.sql,
+-- then drop-today-summary-clean-family.sql.

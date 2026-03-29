@@ -20,6 +20,8 @@ export const POSTGREST_RESOURCE_KEYS = {
   watchlist_today: 'table:watchlist_today',
   business_trends_today: 'table:business_trends_today',
   company_business_trends_today: 'table:company_business_trends_today',
+  branch_performance_drivers_accommodation: 'table:branch_performance_drivers_accommodation',
+  branch_performance_drivers_fnb: 'table:branch_performance_drivers_fnb',
 } as const;
 
 export type PostgrestResourceKey = (typeof POSTGREST_RESOURCE_KEYS)[keyof typeof POSTGREST_RESOURCE_KEYS];

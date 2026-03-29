@@ -422,7 +422,7 @@ export default function BranchOverviewPage() {
       setDriverTrendSeries(null);
       return;
     }
-    getBranchTrendSeriesWithFallback(branch.id, 30)
+    getBranchTrendSeriesWithFallback(branch.id, 30, { moduleType: branch.moduleType })
       .then((series) => setDriverTrendSeries(series ?? null))
       .catch(() => setDriverTrendSeries(null));
   }, [branch?.id, branch?.moduleType]);
@@ -707,10 +707,14 @@ export default function BranchOverviewPage() {
     };
 
     if (driverTrendSeries && driverTrendSeries.revenue.length >= 2) {
-      const avgTicket = driverTrendSeries.revenue.map((r, i) => {
-        const c = driverTrendSeries.customers[i] ?? 0;
-        return c > 0 ? r / c : 0;
-      });
+      const avgTicket =
+        driverTrendSeries.avg_ticket &&
+        driverTrendSeries.avg_ticket.length === driverTrendSeries.revenue.length
+          ? driverTrendSeries.avg_ticket.map((v) => Number(v ?? 0))
+          : driverTrendSeries.revenue.map((r, i) => {
+              const c = driverTrendSeries.customers[i] ?? 0;
+              return c > 0 ? r / c : 0;
+            });
       const revpar = driverTrendSeries.revenue.map((r, i) =>
         pickRevpar({
           canonicalRevpar: driverTrendSeries.revpar[i] ?? null,
