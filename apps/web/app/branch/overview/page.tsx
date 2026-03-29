@@ -2258,10 +2258,25 @@ export default function BranchOverviewPage() {
           {branchSectionLoading && !branchBusinessTrends ? (
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
           ) : branchBusinessTrends ? (
-            <div style={{ fontSize: 14, lineHeight: 1.6, color: '#334155', fontWeight: 500 }}>
-              <div>{branchBusinessTrends.trend_text}</div>
-              <div style={{ color: '#64748b', fontSize: 13, marginTop: 6 }}>{branchBusinessTrends.read_text}</div>
-              <div style={{ color: '#64748b', fontSize: 13, marginTop: 4 }}>{branchBusinessTrends.meaning_text}</div>
+            <div
+              style={{
+                margin: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                fontSize: 14,
+                lineHeight: 1.5,
+              }}
+            >
+              <span style={{ color: '#166534', fontWeight: 700 }}>{branchBusinessTrends.trend_text}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {branchBusinessTrends.read_text ? (
+                  <span style={{ color: '#64748b', fontWeight: 500 }}>{branchBusinessTrends.read_text}</span>
+                ) : null}
+                {branchBusinessTrends.meaning_text ? (
+                  <span style={{ color: '#64748b', fontWeight: 500 }}>{branchBusinessTrends.meaning_text}</span>
+                ) : null}
+              </div>
             </div>
           ) : (
             <p style={{ margin: 0, color: '#475569', fontSize: 14, fontWeight: 600 }}>
