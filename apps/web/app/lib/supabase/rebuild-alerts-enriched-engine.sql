@@ -660,12 +660,10 @@ GRANT SELECT ON today_priorities_view TO anon, authenticated;
 GRANT SELECT ON today_branch_priorities TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authenticated;
 
--- STEP 6d — What’s Working (positive + fallback): up to 3 rows per org
+-- STEP 6d — What’s Working: full history one row per (branch_id, metric_date) from today_summary.
 --
 -- Sources: public.today_summary, public.branches only.
--- description = exactly 'Branch: {name|id}'; whats_working_text = coaching body; sort_score in ~55–78 (no revenue magnitude).
--- daily_best = one row per (branch_id, metric_date); latest day per branch then top 3 per org.
--- Org fallback rows preserved when no branch-level line exists for that org.
+-- best_signal = best positive signal that day (tight deltas); else stable fallback for that branch/date.
 CREATE OR REPLACE VIEW public.whats_working_today AS
 WITH base AS (
     SELECT
@@ -713,7 +711,7 @@ branch_days AS (
     FROM base
     WHERE organization_id IS NOT NULL
 ),
-tight_per_day AS (
+positive_signals AS (
     SELECT
         b.organization_id::uuid AS organization_id,
         b.branch_id::uuid AS branch_id,
@@ -840,14 +838,40 @@ tight_per_day AS (
       AND b.revenue_delta_day >= 10::numeric
       AND b.revenue_delta_day <= 100::numeric
 ),
-stable_per_day AS (
+best_signal AS (
+    SELECT DISTINCT ON (s.branch_id, s.metric_date)
+        s.organization_id,
+        s.branch_id,
+        s.branch_name,
+        s.metric_date,
+        s.title,
+        s.description,
+        s.sort_score,
+        s.whats_working_text
+    FROM positive_signals s
+    ORDER BY
+        s.branch_id,
+        s.metric_date,
+        s.sort_score DESC NULLS LAST,
+        s.title ASC
+),
+branch_dates AS (
+    SELECT DISTINCT
+        bd.organization_id,
+        bd.branch_id,
+        bd.branch_name,
+        bd.branch_type,
+        bd.metric_date
+    FROM branch_days bd
+),
+fallback AS (
     SELECT
-        b.organization_id::uuid AS organization_id,
-        b.branch_id::uuid AS branch_id,
-        b.branch_name::text AS branch_name,
-        b.metric_date::date AS metric_date,
+        d.organization_id,
+        d.branch_id,
+        d.branch_name,
+        d.metric_date,
         (
-            CASE b.branch_type
+            CASE d.branch_type
                 WHEN 'fnb' THEN 'Steady F&B performance'::text
                 WHEN 'accommodation' THEN 'Stable accommodation demand'::text
                 ELSE 'Steady operations'::text
@@ -856,13 +880,13 @@ stable_per_day AS (
         (
             'Branch: '
             || COALESCE(
-                NULLIF(TRIM(BOTH FROM b.branch_name::text), ''),
-                TRIM(BOTH FROM b.branch_id::text)
+                NULLIF(TRIM(BOTH FROM d.branch_name::text), ''),
+                TRIM(BOTH FROM d.branch_id::text)
             )
         )::text AS description,
         57::numeric AS sort_score,
         (
-            CASE b.branch_type
+            CASE d.branch_type
                 WHEN 'fnb' THEN
                     'F&B revenue, covers, and transactions sit in a normal band — space to nudge average ticket '
                     || 'and conversion without chasing volume discounts.'::text
@@ -873,206 +897,38 @@ stable_per_day AS (
                     'Core metrics are flat-to-slightly-positive — no sharp upside spike in the window we scan.'::text
             END
         ) AS whats_working_text
-    FROM branch_days b
+    FROM branch_dates d
     WHERE NOT EXISTS (
         SELECT 1
-        FROM tight_per_day t
-        WHERE t.branch_id = b.branch_id
-          AND t.metric_date = b.metric_date
+        FROM best_signal bs
+        WHERE bs.branch_id = d.branch_id
+          AND bs.metric_date IS NOT DISTINCT FROM d.metric_date
     )
-),
-daily_mixed AS (
-    SELECT * FROM tight_per_day
-    UNION ALL
-    SELECT * FROM stable_per_day
-),
-daily_best AS (
-    SELECT DISTINCT ON (branch_id, metric_date)
-        organization_id,
-        branch_id,
-        branch_name,
-        metric_date,
-        title,
-        description,
-        sort_score,
-        whats_working_text
-    FROM daily_mixed
-    ORDER BY
-        branch_id,
-        metric_date,
-        sort_score DESC NULLS LAST,
-        title ASC
-),
-per_branch_latest_meaningful AS (
-    SELECT DISTINCT ON (branch_id)
-        organization_id,
-        branch_id,
-        branch_name,
-        metric_date,
-        title,
-        description,
-        sort_score,
-        whats_working_text
-    FROM daily_best
-    ORDER BY
-        branch_id,
-        metric_date DESC NULLS LAST,
-        sort_score DESC NULLS LAST
-),
-org_pool AS (
-    SELECT
-        b.organization_id,
-        MAX(bd.metric_date) AS latest_metric_date,
-        (
-            ARRAY_AGG(
-                COALESCE(
-                    NULLIF(TRIM(BOTH FROM b.branch_name), ''),
-                    NULLIF(TRIM(BOTH FROM b.name), ''),
-                    TRIM(BOTH FROM b.id::text)
-                )
-                ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name)
-            )
-        )[1] AS sample_branch_name,
-        (
-            ARRAY_AGG(TRIM(BOTH FROM b.id::text) ORDER BY b.sort_order NULLS LAST, COALESCE(b.branch_name, b.name))
-        )[1] AS sample_branch_id
-    FROM public.branches b
-    LEFT JOIN branch_days bd ON bd.branch_id = b.id::uuid
-    WHERE b.organization_id IS NOT NULL
-    GROUP BY b.organization_id
-),
-fallback AS (
-    SELECT
-        o.organization_id::uuid AS organization_id,
-        COALESCE(o.sample_branch_id, NULL::text)::uuid AS branch_id,
-        COALESCE(o.sample_branch_name, NULL::text)::text AS branch_name,
-        o.latest_metric_date::date AS metric_date,
-        'Portfolio steady'::text AS title,
-        (
-            'Branch: '
-            || COALESCE(
-                NULLIF(TRIM(BOTH FROM o.sample_branch_name::text), ''),
-                TRIM(BOTH FROM o.sample_branch_id::text)
-            )
-        )::text AS description,
-        57::numeric AS sort_score,
-        (
-            'No branch-level positive spike from summary history yet — operations look calm at the sampled branch.'
-        )::text AS whats_working_text
-    FROM org_pool o
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM per_branch_latest_meaningful m
-        WHERE m.organization_id = o.organization_id
-    )
-    UNION ALL
-    SELECT
-        o.organization_id::uuid,
-        COALESCE(o.sample_branch_id, NULL::text)::uuid,
-        COALESCE(o.sample_branch_name, NULL::text)::text,
-        o.latest_metric_date::date,
-        'Org operations calm'::text,
-        (
-            'Branch: '
-            || COALESCE(
-                NULLIF(TRIM(BOTH FROM o.sample_branch_name::text), ''),
-                TRIM(BOTH FROM o.sample_branch_id::text)
-            )
-        )::text,
-        56::numeric,
-        (
-            'Org-wide signals from today_summary are quiet — watch individual branches as fresh days land.'
-        )::text
-    FROM org_pool o
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM per_branch_latest_meaningful m
-        WHERE m.organization_id = o.organization_id
-    )
-    UNION ALL
-    SELECT
-        o.organization_id::uuid,
-        COALESCE(o.sample_branch_id, NULL::text)::uuid,
-        COALESCE(o.sample_branch_name, NULL::text)::text,
-        o.latest_metric_date::date,
-        'Flat-to-positive trend'::text,
-        (
-            'Branch: '
-            || COALESCE(
-                NULLIF(TRIM(BOTH FROM o.sample_branch_name::text), ''),
-                TRIM(BOTH FROM o.sample_branch_id::text)
-            )
-        )::text,
-        55::numeric,
-        (
-            'Trend lines are flat-to-positive at the sampled branch — nothing urgent, nothing overheated.'
-        )::text
-    FROM org_pool o
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM per_branch_latest_meaningful m
-        WHERE m.organization_id = o.organization_id
-    )
-),
-all_rows AS (
-    SELECT * FROM per_branch_latest_meaningful
-    UNION ALL
-    SELECT * FROM fallback
-),
-deduped_rows AS (
-    SELECT DISTINCT ON (
-        a.organization_id,
-        lower(trim(COALESCE(a.branch_id::text, ''))),
-        COALESCE(a.metric_date::date, '1970-01-01'::date),
-        lower(trim(COALESCE(a.title, '')))
-    )
-        a.organization_id,
-        a.branch_id,
-        a.branch_name,
-        a.metric_date,
-        a.title,
-        a.description,
-        a.sort_score,
-        a.whats_working_text
-    FROM all_rows a
-    WHERE a.organization_id IS NOT NULL
-    ORDER BY
-        a.organization_id,
-        lower(trim(COALESCE(a.branch_id::text, ''))),
-        COALESCE(a.metric_date::date, '1970-01-01'::date),
-        lower(trim(COALESCE(a.title, ''))),
-        a.sort_score DESC NULLS LAST
-),
-ranked AS (
-    SELECT
-        d.organization_id,
-        d.branch_id,
-        d.branch_name,
-        d.metric_date,
-        d.title,
-        d.description,
-        d.sort_score,
-        d.whats_working_text,
-        ROW_NUMBER() OVER (
-            PARTITION BY d.organization_id
-            ORDER BY d.metric_date DESC NULLS LAST, d.sort_score DESC, d.branch_id::text
-        ) AS rn
-    FROM deduped_rows d
 )
 SELECT
-    r.organization_id,
-    r.branch_id,
-    r.branch_name,
-    r.metric_date,
-    r.title,
-    r.description,
-    r.sort_score,
-    r.whats_working_text
-FROM ranked r
-WHERE r.rn <= 3;
+    bs.organization_id,
+    bs.branch_id,
+    bs.branch_name,
+    bs.metric_date,
+    bs.title,
+    bs.description,
+    bs.sort_score,
+    bs.whats_working_text
+FROM best_signal bs
+UNION ALL
+SELECT
+    f.organization_id,
+    f.branch_id,
+    f.branch_name,
+    f.metric_date,
+    f.title,
+    f.description,
+    f.sort_score,
+    f.whats_working_text
+FROM fallback f;
 
 COMMENT ON VIEW public.whats_working_today IS
-    'today_summary + branches: type-aware title; Branch: label; whats_working_text; sort_score 55–78; best per branch+date; top 3 per org.';
+    'today_summary + branches: full history one row per (branch_id, metric_date); best positive signal or stable fallback; Branch: label; whats_working_text.';
 
 GRANT SELECT ON public.whats_working_today TO anon, authenticated;
 
