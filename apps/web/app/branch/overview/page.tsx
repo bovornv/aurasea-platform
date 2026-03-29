@@ -2258,26 +2258,39 @@ export default function BranchOverviewPage() {
           {branchSectionLoading && !branchBusinessTrends ? (
             <p style={{ margin: 0, color: '#64748b', fontSize: 14 }}>{locale === 'th' ? 'กำลังโหลด…' : 'Loading…'}</p>
           ) : branchBusinessTrends ? (
-            <div
-              style={{
-                margin: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 12,
-                fontSize: 14,
-                lineHeight: 1.5,
-              }}
-            >
-              <span style={{ color: '#166534', fontWeight: 700 }}>{branchBusinessTrends.trend_text}</span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {branchBusinessTrends.read_text ? (
-                  <span style={{ color: '#64748b', fontWeight: 500 }}>{branchBusinessTrends.read_text}</span>
-                ) : null}
-                {branchBusinessTrends.meaning_text ? (
-                  <span style={{ color: '#64748b', fontWeight: 500 }}>{branchBusinessTrends.meaning_text}</span>
-                ) : null}
-              </div>
-            </div>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <li
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    flexShrink: 0,
+                    width: '8px',
+                    height: '8px',
+                    marginTop: '6px',
+                    borderRadius: '9999px',
+                    background: '#7c3aed',
+                    boxShadow: '0 0 0 2px rgba(124, 58, 237, 0.28)',
+                  }}
+                />
+                <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ color: '#5b21b6', fontWeight: 700 }}>{branchBusinessTrends.trend_text}</span>
+                  {branchBusinessTrends.read_text ? (
+                    <span style={{ color: '#64748b', fontWeight: 500 }}>{branchBusinessTrends.read_text}</span>
+                  ) : null}
+                  {branchBusinessTrends.meaning_text ? (
+                    <span style={{ color: '#64748b', fontWeight: 500 }}>{branchBusinessTrends.meaning_text}</span>
+                  ) : null}
+                </span>
+              </li>
+            </ul>
           ) : (
             <p style={{ margin: 0, color: '#475569', fontSize: 14, fontWeight: 600 }}>
               {locale === 'th'
