@@ -463,6 +463,7 @@ async function fetchCompanyPanelsFromDashboardView(
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,
       sort_score: pickNum(r, 'sort_score'),
+      whats_working_text: pickStr(r, 'whats_working_text', 'whatsWorkingText') || null,
     }));
 
   const opportunities = asRecordArray(root.opportunities)
@@ -720,6 +721,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
       type ParsedWw = {
         title: string;
         description: string;
+        whats_working_text: string;
         metric_date: string;
         sort_score: number | null;
         weak: boolean;
@@ -729,14 +731,16 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
           const r = row as Record<string, unknown>;
           const title = pickStr(r, 'title');
           const description = pickStr(r, 'description');
+          const whats_working_text = pickStr(r, 'whats_working_text', 'whatsWorkingText');
           const metric_date = r.metric_date != null ? String(r.metric_date).slice(0, 10) : '';
           const sort_score = pickNum(r, 'sort_score');
           return {
             title,
             description,
+            whats_working_text,
             metric_date,
             sort_score,
-            weak: isWeakWhatsWorkingText(title, description),
+            weak: isWeakWhatsWorkingText(title, description, whats_working_text),
           };
         })
         .filter((p) => Boolean(p.title || p.description));
@@ -748,7 +752,10 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
       const meaningfulRows = parsed.filter((p) => !p.weak);
       const picked = meaningfulRows.length > 0 ? meaningfulRows[0] : parsed[0];
       if (!picked) return [];
-      const rawLine = buildWhatsWorkingBranchLine(picked.title, picked.description);
+      const rawLine = buildWhatsWorkingBranchLine(
+        picked.title,
+        picked.whats_working_text || picked.description,
+      );
       const line = applyWorkingSubstitutions(rawLine);
       if (process.env.NODE_ENV === 'development') {
         const parts = line.includes(' - ') ? line.split(' - ') : [line];

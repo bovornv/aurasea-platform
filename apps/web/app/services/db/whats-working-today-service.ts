@@ -19,12 +19,12 @@ import {
 export interface WhatsWorkingTodayRow {
   organization_id: string | null;
   branch_id: string;
-  /** @deprecated Not in compatibility view; kept for typing only. */
   branch_name: string | null;
   metric_date: string | null;
   title: string | null;
   description: string | null;
   sort_score: number | null;
+  whats_working_text: string | null;
 }
 
 /** Trim + lowercase for dedupe keys (matches SQL lower(trim(...))). */
@@ -75,6 +75,9 @@ export function isWeakWhatsWorkingText(...parts: Array<string | null | undefined
     n.includes('business is stable today') ||
     n.includes('operations are holding steady') ||
     n.includes('revenue flow is consistent') ||
+    n.includes('portfolio steady') ||
+    n.includes('org operations calm') ||
+    n.includes('flat-to-positive trend') ||
     n.includes('all good')
   );
 }
@@ -102,7 +105,9 @@ export function selectLatestMeaningfulWhatsWorkingPerBranch(rows: WhatsWorkingTo
   const out: WhatsWorkingTodayRow[] = [];
   for (const list of byBranch.values()) {
     const sorted = [...list].sort(sortWhatsWorkingNewestFirst);
-    const meaningful = sorted.filter((r) => !isWeakWhatsWorkingText(r.title, r.description));
+    const meaningful = sorted.filter(
+      (r) => !isWeakWhatsWorkingText(r.title, r.description, r.whats_working_text),
+    );
     out.push((meaningful.length > 0 ? meaningful[0] : sorted[0]) as WhatsWorkingTodayRow);
   }
   return out.sort((a, b) => (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY));
@@ -168,6 +173,8 @@ export async function fetchWhatsWorkingToday(
       title,
       description,
       sort_score: pickNum(r, 'sort_score'),
+      whats_working_text:
+        pickStr(r, 'whats_working_text', 'whatsWorkingText') || null,
     };
   });
   const deduped = dedupeWhatsWorkingRows(mapped);

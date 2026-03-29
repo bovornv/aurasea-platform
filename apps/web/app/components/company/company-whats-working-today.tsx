@@ -18,20 +18,18 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading, organizationId
   const th = locale === 'th';
   const normalize = (s: string | null | undefined): string =>
     (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
-  const toDisplay = (row: WhatsWorkingTodayRow): { title: string; detail: string } => {
-    const title = (row.title ?? '').trim() || (row.description ?? '').trim() || '—';
-    const detail = (row.description ?? '').trim();
-    if (detail && normalize(detail) === normalize(title)) return { title, detail: '' };
-    return { title, detail };
-  };
-  const withBranch = (title: string, branchName: string): string => {
-    const t = title.trim();
-    const b = branchName.trim();
-    if (!b) return t;
-    const nt = normalize(t);
-    const nb = normalize(b);
-    if (nt.includes(nb)) return t;
-    return `${t} — ${b}`;
+  const toParts = (row: WhatsWorkingTodayRow): { headline: string; body: string } => {
+    const title = (row.title ?? '').trim() || '—';
+    const branchName = (row.branch_name ?? '').trim();
+    const head =
+      !branchName || normalize(title).includes(normalize(branchName))
+        ? title
+        : `${title} — ${branchName}`;
+    const wit = (row.whats_working_text ?? '').trim();
+    const desc = (row.description ?? '').trim();
+    let body = wit || desc;
+    if (body && normalize(body) === normalize(head)) body = '';
+    return { headline: head, body };
   };
   const deduped = dedupeWhatsWorkingRows(rows);
   const selectedRows = selectLatestMeaningfulWhatsWorkingPerBranch(deduped);
@@ -64,18 +62,22 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading, organizationId
       source_relation: 'whats_working_today',
       rows_returned: rows.length,
       latest_row_title: latest?.title ?? null,
-      meaningful_rows_count: deduped.filter((r) => !isWeakWhatsWorkingText(r.title, r.description)).length,
+      meaningful_rows_count: deduped.filter(
+        (r) => !isWeakWhatsWorkingText(r.title, r.description, r.whats_working_text),
+      ).length,
       selected_final_row: visible.slice(0, 3).map((r) => {
-        const parts = toDisplay(r);
+        const parts = toParts(r);
         return {
           branch_id: r.branch_id,
           selected_title: r.title ?? null,
           selected_description: r.description ?? null,
-          final_title_shown: withBranch(parts.title, (r.branch_name ?? '').trim()),
-          final_detail_shown: parts.detail || null,
+          final_headline_shown: parts.headline,
+          final_body_shown: parts.body || null,
         };
       }),
-      fallback_used: visible.some((r) => isWeakWhatsWorkingText(r.title, r.description)),
+      fallback_used: visible.some((r) =>
+        isWeakWhatsWorkingText(r.title, r.description, r.whats_working_text),
+      ),
     });
   }
 
@@ -91,9 +93,8 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading, organizationId
       }}
     >
       {visible.map((row) => {
-        const parts = toDisplay(row);
-        const finalTitle = withBranch(parts.title, (row.branch_name ?? '').trim());
-        const key = `w-${row.branch_id}-${row.metric_date ?? 'd'}-${normalize(finalTitle).slice(0, 80)}`;
+        const parts = toParts(row);
+        const key = `w-${row.branch_id}-${row.metric_date ?? 'd'}-${normalize(parts.headline).slice(0, 80)}`;
         return (
           <li
             key={key}
@@ -119,8 +120,8 @@ export function CompanyWhatsWorkingToday({ rows, locale, loading, organizationId
               }}
             />
             <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ color: '#166534', fontWeight: 700 }}>{finalTitle}</span>
-              {parts.detail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{parts.detail}</span> : null}
+              <span style={{ color: '#166534', fontWeight: 700 }}>{parts.headline}</span>
+              {parts.body ? <span style={{ color: '#64748b', fontWeight: 500 }}>{parts.body}</span> : null}
             </span>
           </li>
         );
