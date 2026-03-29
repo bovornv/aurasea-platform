@@ -29,25 +29,26 @@ function isWeakWatchlistText(...parts: Array<string | null | undefined>): boolea
   );
 }
 
-/** title = headline; body = watchlist_text (fallback description); branchLabel = description (Branch: …). */
-function toWatchlistParts(row: WatchlistTodayRow): {
-  title: string;
-  body: string;
-  branchLabel: string;
-  showBranchLabel: boolean;
-} {
-  const desc = (row.description ?? '').trim();
-  const wit = (row.watchlist_text ?? '').trim();
+/** Bold headline: title — branch_name (branch omitted if empty or already in title). Body: watchlist_text, else description. */
+function watchlistHeadline(titleRaw: string, branchName: string): string {
+  const t = (titleRaw ?? '').trim() || '—';
+  const b = (branchName ?? '').trim();
+  if (!b) return t;
+  const nt = normalize(t);
+  const nb = normalize(b);
+  if (nt.includes(nb)) return t;
+  return `${t} — ${b}`;
+}
+
+function toWatchlistParts(row: WatchlistTodayRow): { headline: string; body: string } {
   const title = (row.title ?? '').trim() || '—';
-  const body = wit || desc;
-  const branchLabel = desc;
-  const showBranchLabel =
-    Boolean(branchLabel) &&
-    Boolean(wit) &&
-    normalize(branchLabel) !== normalize(body);
-  let outBody = body;
-  if (outBody && normalize(outBody) === normalize(title)) outBody = '';
-  return { title, body: outBody, branchLabel, showBranchLabel };
+  const branchName = (row.branch_name ?? '').trim();
+  const headline = watchlistHeadline(title, branchName);
+  const wit = (row.watchlist_text ?? '').trim();
+  const desc = (row.description ?? '').trim();
+  let body = wit || desc;
+  if (body && normalize(body) === normalize(headline)) body = '';
+  return { headline, body };
 }
 
 function toDateKey(date: string | null | undefined): string {
@@ -102,13 +103,13 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
         branch_id: r.branch_id,
         metric_date: r.metric_date,
         title: r.title,
+        branch_name: r.branch_name || null,
         watchlist_text: r.watchlist_text || null,
         description: r.description || null,
       })),
       fallback_used: selectedRows.length === 0,
-      final_title_shown: shown.map((x) => x.title).filter(Boolean).slice(0, 3),
+      final_headline_shown: shown.map((x) => x.headline).filter(Boolean).slice(0, 3),
       final_body_shown: shown.map((x) => x.body).filter(Boolean).slice(0, 3),
-      final_branch_label_shown: shown.map((x) => (x.showBranchLabel ? x.branchLabel : '')).filter(Boolean),
     });
   }
 
@@ -136,9 +137,8 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
             organization_id: organizationId,
             branch_id: row.branch_id,
             branch_name: branchName || null,
-            final_title_shown: parts.title || null,
+            final_headline_shown: parts.headline || null,
             final_body_shown: parts.body || null,
-            final_branch_label_shown: parts.showBranchLabel ? parts.branchLabel : null,
           });
         }
         return (
@@ -165,15 +165,10 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
                 boxShadow: '0 0 0 2px rgba(245, 158, 11, 0.25)',
               }}
             />
-            <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ color: '#78350f', fontWeight: 700 }}>{parts.title}</span>
+            <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ color: '#78350f', fontWeight: 700 }}>{parts.headline}</span>
               {parts.body ? (
                 <span style={{ color: '#64748b', fontWeight: 500 }}>{parts.body}</span>
-              ) : null}
-              {parts.showBranchLabel ? (
-                <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500, lineHeight: 1.4 }}>
-                  {parts.branchLabel}
-                </span>
               ) : null}
             </span>
           </li>
