@@ -1,6 +1,6 @@
--- Company-level Business Trends: full history, one winning row per
--- (organization_id, business_type, metric_date) from public.business_trends_today.
--- Top row = highest sort_score (tie-break: branch_id).
+-- Company-level Business Trends: up to 2 rows per organization from public.business_trends_today
+-- (accommodation + fnb). Latest metric_date is computed per (organization_id, business_type), not org-wide.
+-- On that date, top row by sort_score desc, then branch_name asc.
 --
 -- Prerequisites: public.business_trends_today
 
@@ -29,55 +29,53 @@ FROM (
     b.meaning_text,
     b.sort_score,
     ROW_NUMBER() OVER (
-      PARTITION BY b.organization_id, b.business_type, b.metric_date
-      ORDER BY b.sort_score DESC NULLS LAST, b.branch_id ASC
+      PARTITION BY b.organization_id, b.business_type
+      ORDER BY b.sort_score DESC NULLS LAST, b.branch_name ASC NULLS LAST
     ) AS rn
   FROM public.business_trends_today b
+  INNER JOIN (
+    SELECT
+      organization_id,
+      business_type,
+      MAX(metric_date) AS max_metric_date
+    FROM public.business_trends_today
+    WHERE business_type IN ('accommodation'::text, 'fnb'::text)
+    GROUP BY organization_id, business_type
+  ) ld
+    ON ld.organization_id = b.organization_id
+   AND ld.business_type = b.business_type
+   AND ld.max_metric_date = b.metric_date
+  WHERE b.business_type IN ('accommodation'::text, 'fnb'::text)
 ) ranked
 WHERE ranked.rn = 1;
 
 COMMENT ON VIEW public.company_business_trends_today IS
-  'One row per (organization_id, business_type, metric_date): top sort_score from business_trends_today; full daily history.';
+  'Up to 2 rows per org: top accommodation on latest acc date, top fnb on latest fnb date (business_trends_today).';
 
 GRANT SELECT ON public.company_business_trends_today TO anon, authenticated;
 
 -- =============================================================================
--- 2) Verification: accommodation + fnb history (sample)
+-- Verification
 -- =============================================================================
--- SELECT business_type, COUNT(*) AS rows, MIN(metric_date) AS first_date, MAX(metric_date) AS last_date
--- FROM public.company_business_trends_today
--- GROUP BY business_type
--- ORDER BY business_type;
---
--- SELECT organization_id, business_type, metric_date, branch_name, sort_score, LEFT(trend_text, 60) AS trend_snip
--- FROM public.company_business_trends_today
--- WHERE business_type IN ('accommodation', 'fnb')
--- ORDER BY metric_date DESC, business_type
--- LIMIT 30;
-
--- =============================================================================
--- 3) Missing (org, business_type, metric_date) vs business_trends_today
--- =============================================================================
--- Expected: 0 rows (every distinct group in the base table appears in the view).
--- WITH expected AS (
---   SELECT DISTINCT organization_id, business_type, metric_date
---   FROM public.business_trends_today
--- ),
--- got AS (
---   SELECT organization_id, business_type, metric_date
+-- At most 2 rows per organization:
+--   SELECT organization_id, COUNT(*) AS n
 --   FROM public.company_business_trends_today
--- )
--- SELECT e.*
--- FROM expected e
--- LEFT JOIN got g
---   ON g.organization_id = e.organization_id
---  AND g.business_type = e.business_type
---  AND g.metric_date = e.metric_date
--- WHERE g.organization_id IS NULL;
+--   GROUP BY organization_id
+--   HAVING COUNT(*) > 2;
 --
--- Row-count parity:
--- SELECT
---   (SELECT COUNT(*) FROM (
---     SELECT DISTINCT organization_id, business_type, metric_date FROM public.business_trends_today
---   ) s) AS distinct_groups_in_base,
---   (SELECT COUNT(*) FROM public.company_business_trends_today) AS rows_in_view;
+-- View metric_date matches per-type max in base:
+--   SELECT v.organization_id, v.business_type, v.metric_date AS view_date, m.max_d
+--   FROM public.company_business_trends_today v
+--   JOIN (
+--     SELECT organization_id, business_type, MAX(metric_date) AS max_d
+--     FROM public.business_trends_today
+--     WHERE business_type IN ('accommodation', 'fnb')
+--     GROUP BY organization_id, business_type
+--   ) m ON m.organization_id = v.organization_id AND m.business_type = v.business_type
+--   WHERE v.metric_date <> m.max_d;
+--   -- expect 0 rows
+--
+-- Snapshot per org (acc + fnb side by side):
+--   SELECT organization_id, business_type, metric_date, branch_name, sort_score, LEFT(trend_text, 50)
+--   FROM public.company_business_trends_today
+--   ORDER BY organization_id, business_type;
