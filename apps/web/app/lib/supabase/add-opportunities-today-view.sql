@@ -1,6 +1,8 @@
--- Company Today — opportunities (metrics-only; one row per branch when a signal fires)
+-- Company Today — opportunities (metrics-only; public.today_summary + public.branches)
 -- Canonical body: rebuild-alerts-enriched-engine.sql STEP 6e.
 -- Contract: organization_id, branch_id, branch_name, metric_date, title, description, opportunity_text, sort_score
+-- DROP + CREATE avoids 42P16 when column order drifts vs CREATE OR REPLACE.
+
 DROP VIEW IF EXISTS public.opportunities_today CASCADE;
 
 CREATE VIEW public.opportunities_today AS
@@ -12,186 +14,224 @@ WITH base AS (
     b.organization_id::uuid AS organization_id,
     COALESCE(b.branch_name, b.name) AS branch_name,
     CASE
-      WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+      WHEN LOWER(COALESCE(
+        b.module_type::text,
+        TRIM(j.jb->>'module_type'),
+        TRIM(j.jb->>'business_type'),
+        ''
+      )) IN (
         'accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'
       ) THEN 'accommodation'::text
-      WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+      WHEN LOWER(COALESCE(
+        b.module_type::text,
+        TRIM(j.jb->>'module_type'),
+        TRIM(j.jb->>'business_type'),
+        ''
+      )) IN (
         'fnb', 'restaurant', 'cafe', 'cafe_restaurant'
       ) THEN 'fnb'::text
-      ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
+      ELSE COALESCE(
+        NULLIF(LOWER(TRIM(COALESCE(b.module_type::text, TRIM(j.jb->>'module_type'), ''))), ''),
+        'unknown'
+      )::text
     END AS branch_type
   FROM public.today_summary t
   CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
   LEFT JOIN public.branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
   WHERE b.organization_id IS NOT NULL
 ),
-latest AS (
-  SELECT DISTINCT ON (branch_id)
-    organization_id,
-    branch_id,
-    branch_name,
-    branch_type,
-    metric_date,
-    COALESCE(NULLIF(TRIM(j->>'revenue_delta_day'), '')::numeric, NULL::numeric) AS revenue_delta_day,
+daily AS (
+  SELECT
+    d.organization_id,
+    d.branch_id,
+    d.branch_name,
+    d.branch_type,
+    d.metric_date,
+    COALESCE(NULLIF(TRIM(d.j->>'revenue_delta_day'), '')::numeric, NULL::numeric) AS revenue_delta_day,
     COALESCE(
-      NULLIF(TRIM(j->>'total_revenue'), '')::numeric,
-      NULLIF(TRIM(j->>'revenue'), '')::numeric,
-      NULLIF(TRIM(j->>'total_revenue_thb'), '')::numeric,
-      NULLIF(TRIM(j->>'revenue_thb'), '')::numeric,
-      0::numeric
-    ) AS revenue_thb,
-    COALESCE(
-      NULLIF(TRIM(j->>'occupancy_rate'), '')::numeric,
+      NULLIF(TRIM(d.j->>'occupancy_rate'), '')::numeric,
       CASE
-        WHEN NULLIF(TRIM(COALESCE(j->>'rooms_available', j->>'capacity', '')), '')::numeric > 0::numeric
+        WHEN NULLIF(TRIM(COALESCE(d.j->>'rooms_available', d.j->>'capacity', '')), '')::numeric > 0::numeric
         THEN (
           COALESCE(
-            NULLIF(TRIM(COALESCE(j->>'utilized', j->>'rooms_sold', '')), '')::numeric,
+            NULLIF(TRIM(COALESCE(d.j->>'utilized', d.j->>'rooms_sold', '')), '')::numeric,
             0::numeric
           )
-          / NULLIF(TRIM(COALESCE(j->>'rooms_available', j->>'capacity', '')), '')::numeric
+          / NULLIF(TRIM(COALESCE(d.j->>'rooms_available', d.j->>'capacity', '')), '')::numeric
         ) * 100::numeric
         ELSE NULL::numeric
       END
     ) AS occ_pct,
-    COALESCE(NULLIF(TRIM(j->>'occupancy_delta_week'), '')::numeric, NULL::numeric) AS occupancy_delta_week
-  FROM base
-  ORDER BY branch_id, metric_date DESC NULLS LAST
+    COALESCE(NULLIF(TRIM(d.j->>'occupancy_delta_week'), '')::numeric, NULL::numeric) AS occupancy_delta_week
+  FROM base d
 ),
 signals AS (
   SELECT
-    l.organization_id,
-    l.branch_id,
-    l.branch_name,
-    l.metric_date,
+    d.organization_id,
+    d.branch_id,
+    d.branch_name,
+    d.metric_date,
     (
       CASE
-        WHEN l.branch_type = 'accommodation'
-          AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5 THEN
-          'Add a weekend package'::text
-        WHEN l.branch_type = 'accommodation' THEN
-          'Accelerate room revenue'::text
-        WHEN l.branch_type = 'fnb' THEN
-          'Increase average ticket'::text
+        WHEN d.branch_type = 'accommodation'
+          AND EXTRACT(ISODOW FROM d.metric_date::timestamp) >= 5 THEN
+          'Weekend yield package window'::text
+        WHEN d.branch_type = 'accommodation' THEN
+          'Accommodation revenue momentum'::text
+        WHEN d.branch_type = 'fnb' THEN
+          'F&B revenue momentum'::text
         ELSE
-          'Tune demand and pricing mix'::text
+          'Revenue momentum'::text
       END
     ) AS title,
     (
       'Branch: '
       || COALESCE(
-        NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
-        TRIM(BOTH FROM l.branch_id::text)
+        NULLIF(TRIM(BOTH FROM d.branch_name::text), ''),
+        TRIM(BOTH FROM d.branch_id::text)
       )
     )::text AS description,
     (
       CASE
-        WHEN l.branch_type = 'accommodation'
-          AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5 THEN
-          'Strong weekend demand — add a fenced package or rate ladder to capture upside without broad discounting.'::text
-        WHEN l.branch_type = 'fnb' THEN
-          'Customer traffic is rising — use bundles, add-ons, and suggestive selling to lift average ticket.'::text
+        WHEN d.branch_type = 'accommodation'
+          AND EXTRACT(ISODOW FROM d.metric_date::timestamp) >= 5 THEN
+          'Weekend booking pace looks firm — test a fenced package, room-type ladder, and RevPAR yield before '
+          || 'widening discounts.'::text
+        WHEN d.branch_type = 'accommodation' THEN
+          'Accommodation revenue is outpacing recent nights — nudge ADR, room mix, and booking pace while '
+          || 'demand holds.'::text
+        WHEN d.branch_type = 'fnb' THEN
+          'F&B revenue is up versus recent days — lift average ticket with bundles, add-ons, and sharper '
+          || 'conversion on the same traffic.'::text
         ELSE
-          'Demand looks healthy — test a small price or mix uplift while monitoring conversion.'::text
+          'Top-line revenue is ahead of recent days — validate price vs mix before adding cost or labor.'::text
       END
     ) AS opportunity_text,
-    (
-      150::numeric
-      + COALESCE(l.revenue_thb, 0)::numeric / 2000::numeric
-      + ((abs(hashtext(COALESCE(l.branch_id::text, '') || COALESCE(l.branch_name, ''))))::numeric % 1000000::numeric) / 1000000000::numeric
+    LEAST(
+      82::numeric,
+      68::numeric
+      + (
+        (LEAST(ABS(COALESCE(d.revenue_delta_day, 0::numeric)), 100::numeric) - 10::numeric)
+        / 90::numeric
+        * 14::numeric
+      )
     ) AS sort_score
-  FROM latest l
-  WHERE l.revenue_delta_day IS NOT NULL
-    AND l.revenue_delta_day >= 10
+  FROM daily d
+  WHERE d.revenue_delta_day IS NOT NULL
+    AND d.revenue_delta_day >= 10::numeric
+    AND d.revenue_delta_day <= 100::numeric
 
   UNION ALL
 
   SELECT
-    l.organization_id,
-    l.branch_id,
-    l.branch_name,
-    l.metric_date,
-    'Capture rising occupancy'::text AS title,
+    d.organization_id,
+    d.branch_id,
+    d.branch_name,
+    d.metric_date,
+    'Occupancy building week-on-week'::text AS title,
     (
       'Branch: '
       || COALESCE(
-        NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
-        TRIM(BOTH FROM l.branch_id::text)
+        NULLIF(TRIM(BOTH FROM d.branch_name::text), ''),
+        TRIM(BOTH FROM d.branch_id::text)
       )
     )::text AS description,
     (
-      'Week-on-week occupancy is improving — prioritize ADR and package upsells plus in-house F&B conversion while demand builds.'
-    )::text AS opportunity_text,
-    (
-      145::numeric
-      + LEAST(COALESCE(l.occupancy_delta_week, 0::numeric), 25::numeric) * 1.5::numeric
-      + COALESCE(l.revenue_thb, 0)::numeric / 2500::numeric
+      'Same-week occupancy is climbing versus last week — tighten ADR and package structure while rooms sold '
+      || 'and booking pace improve.'::text
+    ) AS opportunity_text,
+    LEAST(
+      80::numeric,
+      64::numeric
+      + (
+        LEAST(COALESCE(d.occupancy_delta_week, 0::numeric), 40::numeric)
+        / 40::numeric
+        * 18::numeric
+      )
     ) AS sort_score
-  FROM latest l
-  WHERE l.branch_type = 'accommodation'
-    AND l.occupancy_delta_week IS NOT NULL
-    AND l.occupancy_delta_week >= 5::numeric
+  FROM daily d
+  WHERE d.branch_type = 'accommodation'
+    AND d.occupancy_delta_week IS NOT NULL
+    AND d.occupancy_delta_week >= 5::numeric
+    AND d.occupancy_delta_week <= 100::numeric
 
   UNION ALL
 
   SELECT
-    l.organization_id,
-    l.branch_id,
-    l.branch_name,
-    l.metric_date,
-    'Lift ADR on strong occupancy'::text AS title,
+    d.organization_id,
+    d.branch_id,
+    d.branch_name,
+    d.metric_date,
+    'Lift ADR at firm occupancy'::text AS title,
     (
       'Branch: '
       || COALESCE(
-        NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
-        TRIM(BOTH FROM l.branch_id::text)
+        NULLIF(TRIM(BOTH FROM d.branch_name::text), ''),
+        TRIM(BOTH FROM d.branch_id::text)
       )
     )::text AS description,
     (
-      'Occupancy is elevated — protect rate integrity, promote premium room types, and attach F&B experiences to lift RevPAR.'
-    )::text AS opportunity_text,
-    (
-      138::numeric
-      + COALESCE(l.occ_pct, 0::numeric) / 4::numeric
-      + COALESCE(l.revenue_thb, 0)::numeric / 3000::numeric
+      'Occupancy is elevated — protect rate integrity, ladder premium room types, and test yield to lift RevPAR '
+      || 'without volume-led discounting.'::text
+    ) AS opportunity_text,
+    LEAST(
+      78::numeric,
+      62::numeric
+      + (
+        LEAST(
+          GREATEST(COALESCE(d.occ_pct, 0::numeric) - 68::numeric, 0::numeric)
+          / NULLIF(100::numeric - 68::numeric, 0::numeric),
+          1::numeric
+        )
+        * 20::numeric
+      )
     ) AS sort_score
-  FROM latest l
-  WHERE l.branch_type = 'accommodation'
-    AND l.occ_pct IS NOT NULL
-    AND l.occ_pct >= 68::numeric
-    AND (l.revenue_delta_day IS NULL OR l.revenue_delta_day < 10::numeric)
+  FROM daily d
+  WHERE d.branch_type = 'accommodation'
+    AND d.occ_pct IS NOT NULL
+    AND d.occ_pct >= 68::numeric
+    AND (d.revenue_delta_day IS NULL OR d.revenue_delta_day < 10::numeric)
 
   UNION ALL
 
   SELECT
-    l.organization_id,
-    l.branch_id,
-    l.branch_name,
-    l.metric_date,
-    'Package weekend room + F&B'::text AS title,
+    d.organization_id,
+    d.branch_id,
+    d.branch_name,
+    d.metric_date,
+    'Weekend room + dining bundle'::text AS title,
     (
       'Branch: '
       || COALESCE(
-        NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
-        TRIM(BOTH FROM l.branch_id::text)
+        NULLIF(TRIM(BOTH FROM d.branch_name::text), ''),
+        TRIM(BOTH FROM d.branch_id::text)
       )
     )::text AS description,
     (
-      'Weekend nights show healthy occupancy — package premium room with F&B to capture willingness-to-pay.'
-    )::text AS opportunity_text,
-    (
-      132::numeric
-      + COALESCE(l.occ_pct, 0::numeric) / 5::numeric
+      'Weekend nights show healthy occupancy — bundle premium room with a dining credit to capture '
+      || 'willingness-to-pay and lift blended RevPAR.'::text
+    ) AS opportunity_text,
+    LEAST(
+      76::numeric,
+      58::numeric
+      + (
+        LEAST(
+          GREATEST(COALESCE(d.occ_pct, 0::numeric) - 52::numeric, 0::numeric)
+          / NULLIF(100::numeric - 52::numeric, 0::numeric),
+          1::numeric
+        )
+        * 18::numeric
+      )
     ) AS sort_score
-  FROM latest l
-  WHERE l.branch_type = 'accommodation'
-    AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5
-    AND l.occ_pct IS NOT NULL
-    AND l.occ_pct >= 52::numeric
-    AND (l.revenue_delta_day IS NULL OR l.revenue_delta_day < 10::numeric)
+  FROM daily d
+  WHERE d.branch_type = 'accommodation'
+    AND EXTRACT(ISODOW FROM d.metric_date::timestamp) >= 5
+    AND d.occ_pct IS NOT NULL
+    AND d.occ_pct >= 52::numeric
+    AND (d.revenue_delta_day IS NULL OR d.revenue_delta_day < 10::numeric)
 ),
-best_per_branch AS (
-  SELECT DISTINCT ON (s.branch_id)
+best_signal AS (
+  SELECT DISTINCT ON (s.branch_id, s.metric_date)
     s.organization_id,
     s.branch_id,
     s.branch_name,
@@ -201,7 +241,11 @@ best_per_branch AS (
     s.opportunity_text,
     s.sort_score
   FROM signals s
-  ORDER BY s.branch_id, s.sort_score DESC NULLS LAST, s.metric_date DESC NULLS LAST
+  ORDER BY
+    s.branch_id,
+    s.metric_date,
+    s.sort_score DESC NULLS LAST,
+    s.title ASC
 )
 SELECT
   b.organization_id,
@@ -212,9 +256,9 @@ SELECT
   b.description,
   b.opportunity_text,
   b.sort_score
-FROM best_per_branch b;
+FROM best_signal b;
 
 COMMENT ON VIEW public.opportunities_today IS
-  'One row per branch (best sort_score, latest metric_date); type-aware titles; description = Branch: {name}; opportunity_text = coaching.';
+  'today_summary + branches: best opportunity per (branch_id, metric_date); Branch: label; bounded sort_score 58–82.';
 
 GRANT SELECT ON public.opportunities_today TO anon, authenticated;
