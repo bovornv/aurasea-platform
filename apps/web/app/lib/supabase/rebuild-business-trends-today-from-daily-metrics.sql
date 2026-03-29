@@ -1,36 +1,21 @@
--- Branch-level Business Trends: one row per (branch_id, metric_date), backfilled from
--- public.daily_metrics + public.branches. Rerun safely: INSERT ... ON CONFLICT DO UPDATE.
+-- =============================================================================
+-- Rebuild public.business_trends_today from public.daily_metrics (+ branches)
+-- =============================================================================
+-- Source of truth: unified daily_metrics view (accommodation ∪ F&B), aligned with
+-- branch-date history the app writes. Replaces today_summary-based gaps for F&B dates.
 --
--- Prerequisites: public.daily_metrics, public.branches (organization_id NOT NULL on joined rows).
-
-CREATE TABLE IF NOT EXISTS public.business_trends_today (
-  organization_id uuid NOT NULL,
-  branch_id uuid NOT NULL,
-  branch_name text NOT NULL,
-  business_type text NOT NULL,
-  metric_date date NOT NULL,
-  template_key text NOT NULL,
-  trend_text text NOT NULL,
-  read_text text NOT NULL,
-  meaning_text text NOT NULL,
-  sort_score numeric NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT business_trends_today_pkey PRIMARY KEY (branch_id, metric_date),
-  CONSTRAINT business_trends_today_business_type_check CHECK (
-    business_type = ANY (ARRAY['accommodation'::text, 'fnb'::text, 'unknown'::text])
-  )
-);
-
-CREATE INDEX IF NOT EXISTS business_trends_today_org_metric_date_idx
-  ON public.business_trends_today (organization_id, metric_date DESC);
+-- Prerequisites:
+--   - public.business_trends_today (table)
+--   - public.daily_metrics (view)
+--   - public.branches (organization_id NOT NULL for included rows)
+--
+-- Safe to re-run: INSERT ... ON CONFLICT DO UPDATE; then DELETE orphans.
+-- After this, run: rebuild-company-business-trends-today-view.sql (if view was dropped)
+-- =============================================================================
 
 COMMENT ON TABLE public.business_trends_today IS
-  'Per-branch daily business trend copy; built from daily_metrics 7d trailing context; PK (branch_id, metric_date).';
+  'Per-branch daily trend; built from public.daily_metrics 7d trailing context + branches; PK (branch_id, metric_date).';
 
-GRANT SELECT ON public.business_trends_today TO anon, authenticated;
-
--- Backfill / refresh all history (idempotent UPSERT)
 WITH
 dm AS (
   SELECT
@@ -135,10 +120,7 @@ classified AS (
     CASE
       WHEN pf.prior_n < 3 OR pf.business_type = 'unknown'::text THEN 'FB'::text
       WHEN pf.business_type = 'accommodation'::text
-        AND (
-          pf.occ_pct IS NULL
-          OR pf.prior_occ_avg IS NULL
-        )
+        AND (pf.occ_pct IS NULL OR pf.prior_occ_avg IS NULL)
         THEN 'FB'::text
       WHEN pf.business_type = 'fnb'::text
         AND (
@@ -331,6 +313,7 @@ ON CONFLICT (branch_id, metric_date) DO UPDATE SET
   sort_score = EXCLUDED.sort_score,
   updated_at = now();
 
+-- Remove rows with no matching daily_metrics row (stale after source shrinks)
 DELETE FROM public.business_trends_today b
 WHERE NOT EXISTS (
   SELECT 1
@@ -341,24 +324,30 @@ WHERE NOT EXISTS (
     AND b.metric_date = d.metric_date::date
 );
 
--- -----------------------------------------------------------------------------
--- Verification (run after script)
--- -----------------------------------------------------------------------------
--- Row counts vs source:
---   SELECT COUNT(*) FROM public.business_trends_today;
---   SELECT COUNT(DISTINCT (branch_id, metric_date)) AS src_pairs
+-- =============================================================================
+-- Verification (examples)
+-- =============================================================================
+-- Mar 29 branch coverage vs daily_metrics:
+--   SELECT d.branch_id, d.metric_date, b.branch_name,
+--          (SELECT COUNT(*) FROM public.business_trends_today t
+--           WHERE t.branch_id::text = trim(d.branch_id::text) AND t.metric_date = d.metric_date::date) AS in_trends
 --   FROM public.daily_metrics d
---   INNER JOIN public.branches b ON trim(both FROM b.id::text) = trim(both FROM d.branch_id::text)
---   WHERE b.organization_id IS NOT NULL;
+--   JOIN public.branches b ON trim(b.id::text) = trim(d.branch_id::text)
+--   WHERE d.metric_date = DATE '2026-03-29' AND b.organization_id IS NOT NULL;
 --
--- One row per (branch_id, metric_date):
---   SELECT branch_id, metric_date, COUNT(*) FROM public.business_trends_today
---   GROUP BY 1, 2 HAVING COUNT(*) > 1;
+-- Missing (branch, date) pairs vs daily_metrics:
+--   SELECT d.branch_id, d.metric_date
+--   FROM public.daily_metrics d
+--   INNER JOIN public.branches br ON trim(br.id::text) = trim(d.branch_id::text)
+--   WHERE br.organization_id IS NOT NULL
+--   EXCEPT
+--   SELECT t.branch_id, t.metric_date FROM public.business_trends_today t;
 --
--- Template distribution:
---   SELECT template_key, business_type, COUNT(*) FROM public.business_trends_today GROUP BY 1, 2 ORDER BY 3 DESC;
---
--- Latest snapshot for one branch (replace UUID):
+-- Crystal Cafe on 2026-03-29 (replace name filter as needed):
 --   SELECT * FROM public.business_trends_today
---   WHERE branch_id = '00000000-0000-0000-0000-000000000000'::uuid
---   ORDER BY metric_date DESC LIMIT 3;
+--   WHERE metric_date = DATE '2026-03-29' AND branch_name ILIKE '%crystal%cafe%';
+--
+-- After rebuilding company_business_trends_today view — company acc + fnb rows:
+--   SELECT organization_id, business_type, metric_date, branch_name, sort_score, LEFT(trend_text, 60)
+--   FROM public.company_business_trends_today
+--   ORDER BY organization_id, business_type;
