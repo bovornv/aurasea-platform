@@ -65,6 +65,18 @@ daily AS (
     COALESCE(NULLIF(TRIM(d.j->>'occupancy_delta_week'), '')::numeric, NULL::numeric) AS occupancy_delta_week
   FROM base d
 ),
+branch_dates AS (
+  SELECT DISTINCT ON (d.branch_id, d.metric_date)
+    d.organization_id,
+    d.branch_id,
+    d.branch_name,
+    d.branch_type,
+    d.metric_date
+  FROM daily d
+  ORDER BY
+    d.branch_id,
+    d.metric_date
+),
 signals AS (
   SELECT
     d.organization_id,
@@ -246,19 +258,75 @@ best_signal AS (
     s.metric_date,
     s.sort_score DESC NULLS LAST,
     s.title ASC
+),
+fallback AS (
+  SELECT
+    bd.organization_id,
+    bd.branch_id,
+    bd.branch_name,
+    bd.metric_date,
+    (
+      CASE
+        WHEN bd.branch_type = 'accommodation' THEN
+          'No acute accommodation opportunity'::text
+        WHEN bd.branch_type = 'fnb' THEN
+          'No acute F&B opportunity'::text
+        ELSE
+          'No acute revenue opportunity'::text
+      END
+    ) AS title,
+    (
+      'Branch: '
+      || COALESCE(
+        NULLIF(TRIM(BOTH FROM bd.branch_name::text), ''),
+        TRIM(BOTH FROM bd.branch_id::text)
+      )
+    )::text AS description,
+    (
+      CASE
+        WHEN bd.branch_type = 'accommodation' THEN
+          'Today’s trend is below our opportunity bar — watch occupancy, ADR, RevPAR, and booking pace before '
+          || 'changing packages or yield.'::text
+        WHEN bd.branch_type = 'fnb' THEN
+          'Today’s trend is below our opportunity bar — watch transactions, average ticket, F&B revenue mix, '
+          || 'and conversion before pushing bundles.'::text
+        ELSE
+          'Today’s trend is below our opportunity bar — hold price and mix discipline until momentum clears '
+          || 'the threshold.'::text
+      END
+    ) AS opportunity_text,
+    58::numeric AS sort_score
+  FROM branch_dates bd
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM best_signal bs
+    WHERE bs.branch_id = bd.branch_id
+      AND bs.metric_date = bd.metric_date
+  )
 )
 SELECT
-  b.organization_id,
-  b.branch_id,
-  b.branch_name,
-  b.metric_date,
-  b.title,
-  b.description,
-  b.opportunity_text,
-  b.sort_score
-FROM best_signal b;
+  x.organization_id,
+  x.branch_id,
+  x.branch_name,
+  x.metric_date,
+  x.title,
+  x.description,
+  x.opportunity_text,
+  x.sort_score
+FROM best_signal x
+UNION ALL
+SELECT
+  f.organization_id,
+  f.branch_id,
+  f.branch_name,
+  f.metric_date,
+  f.title,
+  f.description,
+  f.opportunity_text,
+  f.sort_score
+FROM fallback f;
 
 COMMENT ON VIEW public.opportunities_today IS
-  'today_summary + branches: best opportunity per (branch_id, metric_date); Branch: label; bounded sort_score 58–82.';
+  'today_summary + branches: full history one row per (branch_id, metric_date); best signal or fallback; Branch: label; sort_score 58–82.';
 
 GRANT SELECT ON public.opportunities_today TO anon, authenticated;
