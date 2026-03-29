@@ -51,7 +51,7 @@ import { CompanyBusinessTrendSummary } from '../../components/company/company-bu
 import { CompanyTodaysPriorities } from '../../components/company/company-todays-priorities';
 import { CompanyDataConfidence } from '../../components/company/company-data-confidence';
 import {
-  fetchCompanyBusinessTrendHighlight,
+  fetchCompanyBusinessTrendHighlights,
   type CompanyBusinessTrendHighlightRow,
 } from '../../services/db/company-business-trends-highlight-service';
 import type { CompanyTodayDashboardData } from '../../services/db/company-today-dashboard-service';
@@ -79,7 +79,7 @@ function OwnerSummaryContent() {
   const [companyTodayLoading, setCompanyTodayLoading] = useState(false);
   const [aiDailySummaryText, setAiDailySummaryText] = useState<string | null>(null);
   const [aiDailySummaryLoading, setAiDailySummaryLoading] = useState(false);
-  const [companyBusinessTrendRow, setCompanyBusinessTrendRow] = useState<CompanyBusinessTrendHighlightRow | null>(null);
+  const [companyBusinessTrendRows, setCompanyBusinessTrendRows] = useState<CompanyBusinessTrendHighlightRow[]>([]);
   const [companyBusinessTrendLoading, setCompanyBusinessTrendLoading] = useState(false);
   const [companyDashboard, setCompanyDashboard] = useState<CompanyTodayDashboardData | null>(null);
 
@@ -293,7 +293,7 @@ function OwnerSummaryContent() {
   useEffect(() => {
     if (!mounted) return;
     if (!organizationIdForData) {
-      setCompanyBusinessTrendRow(null);
+      setCompanyBusinessTrendRows([]);
       setCompanyBusinessTrendLoading(false);
       return;
     }
@@ -301,13 +301,11 @@ function OwnerSummaryContent() {
     setCompanyBusinessTrendLoading(true);
     (async () => {
       const r = await Promise.race([
-        fetchCompanyBusinessTrendHighlight(organizationIdForData),
-        new Promise<CompanyBusinessTrendHighlightRow | null>((resolve) =>
-          setTimeout(() => resolve(null), 14000)
-        ),
+        fetchCompanyBusinessTrendHighlights(organizationIdForData),
+        new Promise<CompanyBusinessTrendHighlightRow[]>((resolve) => setTimeout(() => resolve([]), 14000)),
       ]);
       if (!cancelled) {
-        setCompanyBusinessTrendRow(r);
+        setCompanyBusinessTrendRows(Array.isArray(r) ? r : []);
         setCompanyBusinessTrendLoading(false);
       }
     })();
@@ -692,7 +690,7 @@ function OwnerSummaryContent() {
         <OperatingSection title={locale === 'th' ? 'แนวโน้มธุรกิจ' : 'Business trends'}>
           <MonitoringErrorBoundary componentName="Company business trends">
             <CompanyBusinessTrendSummary
-              row={companyBusinessTrendRow}
+              rows={companyBusinessTrendRows}
               loading={companyBusinessTrendLoading}
               locale={locale}
             />

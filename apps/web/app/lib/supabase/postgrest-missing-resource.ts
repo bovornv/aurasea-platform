@@ -19,6 +19,7 @@ export const POSTGREST_RESOURCE_KEYS = {
   opportunities_today: 'table:opportunities_today',
   watchlist_today: 'table:watchlist_today',
   business_trends_today: 'table:business_trends_today',
+  company_business_trends_today: 'table:company_business_trends_today',
 } as const;
 
 export type PostgrestResourceKey = (typeof POSTGREST_RESOURCE_KEYS)[keyof typeof POSTGREST_RESOURCE_KEYS];

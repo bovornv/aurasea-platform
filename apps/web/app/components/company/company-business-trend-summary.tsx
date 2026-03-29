@@ -8,11 +8,11 @@ const BULLET_RING = '0 0 0 2px rgba(124, 58, 237, 0.28)';
 const HEADLINE_COLOR = '#5b21b6';
 
 export function CompanyBusinessTrendSummary({
-  row,
+  rows,
   loading,
   locale,
 }: {
-  row: CompanyBusinessTrendHighlightRow | null;
+  rows: CompanyBusinessTrendHighlightRow[];
   loading: boolean;
   locale: string;
 }) {
@@ -31,15 +31,17 @@ export function CompanyBusinessTrendSummary({
     return <p style={{ margin: 0, fontSize: 14, color: '#64748b' }}>{th ? 'กำลังโหลด…' : 'Loading…'}</p>;
   }
 
-  if (!row || (!(row.trend_text ?? '').trim() && !(row.read_text ?? '').trim() && !(row.meaning_text ?? '').trim())) {
+  const visible = rows.filter(
+    (row) => (row.trend_text ?? '').trim() || (row.read_text ?? '').trim() || (row.meaning_text ?? '').trim(),
+  );
+
+  if (visible.length === 0) {
     return (
       <p style={{ margin: 0, fontSize: 14, color: '#64748b', lineHeight: 1.5 }}>
         {th ? 'ยังไม่มีแนวโน้มจากสาขาในช่วงนี้' : 'No branch trend snapshot available yet'}
       </p>
     );
   }
-
-  const headline = headlineForRow(row);
 
   return (
     <ul
@@ -52,38 +54,45 @@ export function CompanyBusinessTrendSummary({
         gap: '12px',
       }}
     >
-      <li
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '10px',
-          fontSize: '14px',
-          lineHeight: 1.5,
-          fontWeight: 500,
-        }}
-      >
-        <span
-          aria-hidden
-          style={{
-            flexShrink: 0,
-            width: '8px',
-            height: '8px',
-            marginTop: '6px',
-            borderRadius: '9999px',
-            background: BULLET_BG,
-            boxShadow: BULLET_RING,
-          }}
-        />
-        <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ color: HEADLINE_COLOR, fontWeight: 700 }}>{headline}</span>
-          {row.read_text?.trim() ? (
-            <span style={{ color: '#64748b', fontWeight: 500 }}>{row.read_text.trim()}</span>
-          ) : null}
-          {row.meaning_text?.trim() ? (
-            <span style={{ color: '#64748b', fontWeight: 500 }}>{row.meaning_text.trim()}</span>
-          ) : null}
-        </span>
-      </li>
+      {visible.map((row) => {
+        const headline = headlineForRow(row);
+        const key = `cbt-${row.branch_id}-${row.metric_date ?? 'd'}-${row.business_type}`;
+        return (
+          <li
+            key={key}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+              fontSize: '14px',
+              lineHeight: 1.5,
+              fontWeight: 500,
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                flexShrink: 0,
+                width: '8px',
+                height: '8px',
+                marginTop: '6px',
+                borderRadius: '9999px',
+                background: BULLET_BG,
+                boxShadow: BULLET_RING,
+              }}
+            />
+            <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ color: HEADLINE_COLOR, fontWeight: 700 }}>{headline}</span>
+              {row.read_text?.trim() ? (
+                <span style={{ color: '#64748b', fontWeight: 500 }}>{row.read_text.trim()}</span>
+              ) : null}
+              {row.meaning_text?.trim() ? (
+                <span style={{ color: '#64748b', fontWeight: 500 }}>{row.meaning_text.trim()}</span>
+              ) : null}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
