@@ -697,10 +697,20 @@ export async function fetchCompanyTodayDashboard(
   return p;
 }
 
+/** Latest row from public.business_trends_today for branch overview (max metric_date). */
+export interface BranchBusinessTrendsSnapshot {
+  metric_date: string | null;
+  template_key: string | null;
+  trend_text: string;
+  read_text: string;
+  meaning_text: string;
+}
+
 export interface BranchTodayPanels {
   workingLines: string[];
   opportunityLines: string[];
   watchlistLines: string[];
+  businessTrends: BranchBusinessTrendsSnapshot | null;
   watchlistMeta?: {
     rowsReturned: number;
     latestMetricDate: string | null;
@@ -713,6 +723,7 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
     workingLines: [],
     opportunityLines: [],
     watchlistLines: [],
+    businessTrends: null,
     watchlistMeta: { rowsReturned: 0, latestMetricDate: null, relationName: 'watchlist_today' },
   };
   const bid = branchId?.trim();
@@ -730,7 +741,11 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
     return txt;
   };
 
-  const [workingRes, oppRes, watchRes] = await Promise.all([
+  const BT_TABLE = 'business_trends_today';
+  const SELECT_BUSINESS_TRENDS_BRANCH =
+    'metric_date,template_key,trend_text,read_text,meaning_text,sort_score';
+
+  const [workingRes, oppRes, watchRes, trendsRes] = await Promise.all([
     (async () => {
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.whats_working_today)) return [];
       const wwTable = 'whats_working_today';
@@ -985,12 +1000,50 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         relationName: wlTable,
       };
     })(),
+    (async (): Promise<BranchBusinessTrendsSnapshot | null> => {
+      if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.business_trends_today)) return null;
+      const { data, error } = await supabase
+        .from(BT_TABLE)
+        .select(SELECT_BUSINESS_TRENDS_BRANCH)
+        .eq('branch_id', bid)
+        .order('metric_date', { ascending: false })
+        .order('sort_score', { ascending: false })
+        .limit(1);
+      const raw = Array.isArray(data) ? data : [];
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[business-trends-today]', {
+          branch_id: bid,
+          row_count: raw.length,
+          error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+        });
+      }
+      if (error) {
+        if (isPostgrestObjectMissingError(error)) {
+          markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.business_trends_today);
+        }
+        return null;
+      }
+      const row = raw[0] as Record<string, unknown> | undefined;
+      if (!row) return null;
+      const trend_text = pickStr(row, 'trend_text', 'trendText');
+      const read_text = pickStr(row, 'read_text', 'readText');
+      const meaning_text = pickStr(row, 'meaning_text', 'meaningText');
+      if (!trend_text && !read_text && !meaning_text) return null;
+      return {
+        metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
+        template_key: pickStr(row, 'template_key', 'templateKey') || null,
+        trend_text: trend_text || '',
+        read_text: read_text || '',
+        meaning_text: meaning_text || '',
+      };
+    })(),
   ]);
 
   return {
     workingLines: workingRes,
     opportunityLines: oppRes,
     watchlistLines: watchRes.lines,
+    businessTrends: trendsRes,
     watchlistMeta: {
       rowsReturned: watchRes.rowsReturned,
       latestMetricDate: watchRes.latestMetricDate,
@@ -1009,6 +1062,7 @@ export async function fetchBranchTodayPanels(branchId: string, branchLabel: stri
       workingLines: [],
       opportunityLines: [],
       watchlistLines: [],
+      businessTrends: null,
       watchlistMeta: { rowsReturned: 0, latestMetricDate: null, relationName: 'watchlist_today' },
     };
   }
