@@ -488,6 +488,7 @@ async function fetchCompanyPanelsFromDashboardView(
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,
       sort_score: pickNum(r, 'sort_score'),
+      watchlist_text: pickStr(r, 'watchlist_text', 'watchlistText') || null,
     }));
 
   const confidenceRaw = asRecord(root.confidence);
@@ -868,10 +869,11 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
           const r = row as Record<string, unknown>;
           const title = pickStr(r, 'title');
           const description = pickStr(r, 'description');
-          const line = buildWhatsWorkingBranchLine(title, description);
+          const watchlistText = pickStr(r, 'watchlist_text', 'watchlistText');
+          const line = buildWhatsWorkingBranchLine(title, watchlistText || description);
           return {
             line,
-            weak: isWeakWatchlistText(title, description),
+            weak: isWeakWatchlistText(title, description, watchlistText),
           };
         })
         .filter((x) => Boolean(x.line));

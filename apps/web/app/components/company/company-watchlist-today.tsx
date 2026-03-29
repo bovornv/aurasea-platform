@@ -29,11 +29,25 @@ function isWeakWatchlistText(...parts: Array<string | null | undefined>): boolea
   );
 }
 
-function toDisplay(row: WatchlistTodayRow): { title: string; detail: string } {
-  const title = (row.title ?? '').trim() || (row.description ?? '').trim() || '—';
-  const detail = (row.description ?? '').trim();
-  if (detail && normalize(detail) === normalize(title)) return { title, detail: '' };
-  return { title, detail };
+/** title = headline; body = watchlist_text (fallback description); branchLabel = description (Branch: …). */
+function toWatchlistParts(row: WatchlistTodayRow): {
+  title: string;
+  body: string;
+  branchLabel: string;
+  showBranchLabel: boolean;
+} {
+  const desc = (row.description ?? '').trim();
+  const wit = (row.watchlist_text ?? '').trim();
+  const title = (row.title ?? '').trim() || '—';
+  const body = wit || desc;
+  const branchLabel = desc;
+  const showBranchLabel =
+    Boolean(branchLabel) &&
+    Boolean(wit) &&
+    normalize(branchLabel) !== normalize(body);
+  let outBody = body;
+  if (outBody && normalize(outBody) === normalize(title)) outBody = '';
+  return { title, body: outBody, branchLabel, showBranchLabel };
 }
 
 function toDateKey(date: string | null | undefined): string {
@@ -45,20 +59,11 @@ function toSortNum(n: number | null | undefined): number {
   return typeof n === 'number' && Number.isFinite(n) ? n : Number.NEGATIVE_INFINITY;
 }
 
-function withBranchInHeadline(title: string, branchName: string): string {
-  const t = title.trim();
-  const b = branchName.trim();
-  if (!b) return t;
-  if (!t) return b;
-  const nt = normalize(t);
-  const nb = normalize(b);
-  if (nt.includes(nb)) return t;
-  return `${t} — ${b}`;
-}
-
 export function CompanyWatchlistToday({ rows, locale, loading, organizationId = null }: Props) {
   const th = locale === 'th';
-  const meaningful = rows.filter((r) => !isWeakWatchlistText(r.title, r.description));
+  const meaningful = rows.filter(
+    (r) => !isWeakWatchlistText(r.title, r.description, r.watchlist_text),
+  );
   const sortedMeaningful = [...meaningful].sort((a, b) => {
     const dateCmp = toDateKey(b.metric_date).localeCompare(toDateKey(a.metric_date));
     if (dateCmp !== 0) return dateCmp;
@@ -80,7 +85,7 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
   }
 
   if (process.env.NODE_ENV === 'development') {
-    const shown = selectedRows.map(toDisplay);
+    const shown = selectedRows.map(toWatchlistParts);
     const latestMetricDate =
       rows
         .map((r) => (r.metric_date ?? '').trim())
@@ -97,13 +102,13 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
         branch_id: r.branch_id,
         metric_date: r.metric_date,
         title: r.title,
-        detail: r.description || null,
+        watchlist_text: r.watchlist_text || null,
+        description: r.description || null,
       })),
       fallback_used: selectedRows.length === 0,
       final_title_shown: shown.map((x) => x.title).filter(Boolean).slice(0, 3),
-      final_detail_shown: shown.map((x) => x.detail).filter(Boolean).slice(0, 3),
-      selected_title: shown[0]?.title ?? null,
-      selected_detail: shown[0]?.detail ?? null,
+      final_body_shown: shown.map((x) => x.body).filter(Boolean).slice(0, 3),
+      final_branch_label_shown: shown.map((x) => (x.showBranchLabel ? x.branchLabel : '')).filter(Boolean),
     });
   }
 
@@ -123,17 +128,17 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
       }}
     >
       {selectedRows.map((row) => {
-        const parts = toDisplay(row);
+        const parts = toWatchlistParts(row);
         const branchName = (row.branch_name ?? '').trim();
-        const finalTitle = withBranchInHeadline(parts.title, branchName);
         const key = `wl-${row.branch_id || 'org'}-${row.metric_date ?? 'd'}-${normKey(row.title)}`;
         if (process.env.NODE_ENV === 'development') {
           console.log('[watchlist-company-row-render]', {
             organization_id: organizationId,
             branch_id: row.branch_id,
             branch_name: branchName || null,
-            final_title_shown: finalTitle || null,
-            final_detail_shown: parts.detail || null,
+            final_title_shown: parts.title || null,
+            final_body_shown: parts.body || null,
+            final_branch_label_shown: parts.showBranchLabel ? parts.branchLabel : null,
           });
         }
         return (
@@ -160,9 +165,16 @@ export function CompanyWatchlistToday({ rows, locale, loading, organizationId = 
                 boxShadow: '0 0 0 2px rgba(245, 158, 11, 0.25)',
               }}
             />
-            <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ color: '#78350f', fontWeight: 700 }}>{finalTitle}</span>
-              {parts.detail ? <span style={{ color: '#64748b', fontWeight: 500 }}>{parts.detail}</span> : null}
+            <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ color: '#78350f', fontWeight: 700 }}>{parts.title}</span>
+              {parts.body ? (
+                <span style={{ color: '#64748b', fontWeight: 500 }}>{parts.body}</span>
+              ) : null}
+              {parts.showBranchLabel ? (
+                <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500, lineHeight: 1.4 }}>
+                  {parts.branchLabel}
+                </span>
+              ) : null}
             </span>
           </li>
         );

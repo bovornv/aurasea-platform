@@ -21,6 +21,7 @@ export interface WatchlistTodayRow {
   title: string | null;
   description: string | null;
   sort_score: number | null;
+  watchlist_text: string | null;
 }
 
 function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
@@ -81,6 +82,7 @@ export async function fetchWatchlistToday(
       title: pickStr(r, 'title') || null,
       description: pickStr(r, 'description') || null,
       sort_score: pickNum(r, 'sort_score'),
+      watchlist_text: pickStr(r, 'watchlist_text', 'watchlistText') || null,
     };
   });
 }

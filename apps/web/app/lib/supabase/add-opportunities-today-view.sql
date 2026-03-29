@@ -69,22 +69,30 @@ signals AS (
         WHEN l.branch_type = 'accommodation'
           AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5 THEN
           'Add a weekend package'::text
+        WHEN l.branch_type = 'accommodation' THEN
+          'Accelerate room revenue'::text
         WHEN l.branch_type = 'fnb' THEN
-          'Increase avg ticket'::text
+          'Increase average ticket'::text
         ELSE
-          'Raise price slightly'::text
+          'Tune demand and pricing mix'::text
       END
     ) AS title,
-    ('Branch: ' || l.branch_name)::text AS description,
+    (
+      'Branch: '
+      || COALESCE(
+        NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
+        TRIM(BOTH FROM l.branch_id::text)
+      )
+    )::text AS description,
     (
       CASE
         WHEN l.branch_type = 'accommodation'
           AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5 THEN
-          'Strong weekend demand — add a fenced package or rate ladder at ' || l.branch_name || ' to capture upside without broad discounting.'
+          'Strong weekend demand — add a fenced package or rate ladder to capture upside without broad discounting.'::text
         WHEN l.branch_type = 'fnb' THEN
-          'Customer traffic is rising — increase average ticket with bundles, add-ons, and suggestive selling at ' || l.branch_name || '.'
+          'Customer traffic is rising — use bundles, add-ons, and suggestive selling to lift average ticket.'::text
         ELSE
-          'Demand looks healthy — test a small price or mix uplift at ' || l.branch_name || ' while monitoring conversion.'
+          'Demand looks healthy — test a small price or mix uplift while monitoring conversion.'::text
       END
     ) AS opportunity_text,
     (
@@ -104,11 +112,15 @@ signals AS (
     l.branch_name,
     l.metric_date,
     'Capture rising occupancy'::text AS title,
-    ('Branch: ' || l.branch_name)::text AS description,
     (
-      'Week-on-week occupancy is improving at '
-      || l.branch_name
-      || ' — prioritize ADR/package upsells and in-house F&B conversion while demand is building.'
+      'Branch: '
+      || COALESCE(
+        NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
+        TRIM(BOTH FROM l.branch_id::text)
+      )
+    )::text AS description,
+    (
+      'Week-on-week occupancy is improving — prioritize ADR and package upsells plus in-house F&B conversion while demand builds.'
     )::text AS opportunity_text,
     (
       145::numeric
@@ -128,11 +140,15 @@ signals AS (
     l.branch_name,
     l.metric_date,
     'Lift ADR on strong occupancy'::text AS title,
-    ('Branch: ' || l.branch_name)::text AS description,
     (
-      'Occupancy is elevated at '
-      || l.branch_name
-      || ' — protect rate integrity, promote premium room types, and attach F&B experiences to lift RevPAR.'
+      'Branch: '
+      || COALESCE(
+        NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
+        TRIM(BOTH FROM l.branch_id::text)
+      )
+    )::text AS description,
+    (
+      'Occupancy is elevated — protect rate integrity, promote premium room types, and attach F&B experiences to lift RevPAR.'
     )::text AS opportunity_text,
     (
       138::numeric
@@ -152,12 +168,16 @@ signals AS (
     l.branch_id,
     l.branch_name,
     l.metric_date,
-    'Add a weekend package'::text AS title,
-    ('Branch: ' || l.branch_name)::text AS description,
+    'Package weekend room + F&B'::text AS title,
     (
-      'Weekend nights are active at '
-      || l.branch_name
-      || ' with healthy occupancy — package premium room + F&B to capture willingness-to-pay.'
+      'Branch: '
+      || COALESCE(
+        NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
+        TRIM(BOTH FROM l.branch_id::text)
+      )
+    )::text AS description,
+    (
+      'Weekend nights show healthy occupancy — package premium room with F&B to capture willingness-to-pay.'
     )::text AS opportunity_text,
     (
       132::numeric
@@ -195,6 +215,6 @@ SELECT
 FROM best_per_branch b;
 
 COMMENT ON VIEW public.opportunities_today IS
-  'Opportunity-style signals only; one row per branch (best score); accommodation uses occupancy deltas / occupancy %, not only revenue_delta_day.';
+  'One row per branch (best sort_score, latest metric_date); type-aware titles; description = Branch: {name}; opportunity_text = coaching.';
 
 GRANT SELECT ON public.opportunities_today TO anon, authenticated;

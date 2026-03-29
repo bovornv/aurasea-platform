@@ -664,7 +664,8 @@ GRANT EXECUTE ON FUNCTION public.get_alerts_critical(text[]) TO anon, authentica
 --
 -- Single view: public.whats_working_today (no *_candidate / *_v_next in this script; drop legacy aliases separately).
 --
--- Contract: headline = title; grey detail = description (short explanation, not duplicate of title).
+-- Contract (aligned with opportunities/watchlist panel pattern): title = business-type-aware headline
+-- plus explanation after " — " when needed; description = exactly 'Branch: {branch_name}' (fallback to branch_id).
 -- Columns: organization_id, branch_id, branch_name, metric_date, title, description, sort_score.
 -- No highlight_text column.
 --
@@ -738,8 +739,17 @@ tight_per_day AS (
         b.branch_id::uuid AS branch_id,
         b.branch_name::text AS branch_name,
         b.metric_date::date AS metric_date,
-        ('Customer traffic up (+' || ROUND(ABS(b.revenue_delta_day))::text || '%)')::text AS title,
-        'Revenue momentum is strong versus recent days.'::text AS description,
+        (
+            'Customer traffic up (+' || ROUND(ABS(b.revenue_delta_day))::text
+            || '%) — Covers and average ticket potential are building versus recent days.'
+        )::text AS title,
+        (
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM b.branch_name::text), ''),
+                TRIM(BOTH FROM b.branch_id::text)
+            )
+        )::text AS description,
         LEAST(
             299999::numeric,
             250000::numeric
@@ -757,8 +767,17 @@ tight_per_day AS (
         b.branch_id::uuid,
         b.branch_name::text,
         b.metric_date::date,
-        ('Revenue trending up (+' || ROUND(ABS(b.revenue_delta_day))::text || '%)')::text,
-        'Revenue is tracking steadily versus recent days.'::text,
+        (
+            'Room revenue up (+' || ROUND(ABS(b.revenue_delta_day))::text
+            || '%) — ADR and/or occupancy mix is lifting versus recent nights.'
+        )::text,
+        (
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM b.branch_name::text), ''),
+                TRIM(BOTH FROM b.branch_id::text)
+            )
+        )::text,
         LEAST(
             299999::numeric,
             250000::numeric
@@ -776,8 +795,17 @@ tight_per_day AS (
         b.branch_id::uuid,
         b.branch_name::text,
         b.metric_date::date,
-        ('Occupancy improving (+' || ROUND(ABS(b.occupancy_delta_week))::text || '%)')::text,
-        'Recent booking demand is holding steady or improving.'::text,
+        (
+            'Occupancy improving (+' || ROUND(ABS(b.occupancy_delta_week))::text
+            || '%) — Same-weekday occupancy is rising versus last week.'
+        )::text,
+        (
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM b.branch_name::text), ''),
+                TRIM(BOTH FROM b.branch_id::text)
+            )
+        )::text,
         LEAST(
             299999::numeric,
             250000::numeric
@@ -799,18 +827,21 @@ stable_per_day AS (
         b.metric_date::date AS metric_date,
         (
             CASE b.branch_type
-                WHEN 'fnb' THEN 'Revenue flow is consistent'::text
-                WHEN 'accommodation' THEN 'Room demand is stable'::text
-                ELSE 'Business is stable today'::text
+                WHEN 'fnb' THEN
+                    'Revenue flow is consistent — Covers and ticket size are steady versus recent days.'::text
+                WHEN 'accommodation' THEN
+                    'Room demand is stable — Booking pace and occupancy sit in a normal band.'::text
+                ELSE
+                    'Operations are steady — No sharp positive spike in core operating metrics today.'::text
             END
         ) AS title,
         (
-            CASE b.branch_type
-                WHEN 'fnb' THEN 'Revenue is tracking steadily versus recent days.'::text
-                WHEN 'accommodation' THEN 'Recent booking demand is holding steady.'::text
-                ELSE 'Core performance is steady with no major positive disruptions.'::text
-            END
-        ) AS description,
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM b.branch_name::text), ''),
+                TRIM(BOTH FROM b.branch_id::text)
+            )
+        )::text AS description,
         (190000::numeric + (b.metric_date - DATE '1970-01-01')) AS sort_score
     FROM branch_days b
     WHERE NOT EXISTS (
@@ -886,8 +917,16 @@ fallback AS (
         COALESCE(o.sample_branch_id, NULL::text)::uuid AS branch_id,
         COALESCE(o.sample_branch_name, NULL::text)::text AS branch_name,
         o.latest_metric_date::date AS metric_date,
-        'Business is stable today'::text AS title,
-        'Core performance is steady with no major positive disruptions.'::text AS description,
+        (
+            'Business is stable today — Portfolio-level signals show calm operations; branch detail follows sample row.'
+        )::text AS title,
+        (
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM o.sample_branch_name::text), ''),
+                TRIM(BOTH FROM o.sample_branch_id::text)
+            )
+        )::text AS description,
         300::numeric AS sort_score
     FROM org_pool o
     WHERE NOT EXISTS (
@@ -903,8 +942,16 @@ fallback AS (
         COALESCE(o.sample_branch_id, NULL::text)::uuid,
         COALESCE(o.sample_branch_name, NULL::text)::text,
         o.latest_metric_date::date,
-        'Operations are holding steady'::text,
-        'The business is maintaining a steady pace today.'::text,
+        (
+            'Operations are holding steady — No org-wide upside spike detected from branch summary history.'
+        )::text,
+        (
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM o.sample_branch_name::text), ''),
+                TRIM(BOTH FROM o.sample_branch_id::text)
+            )
+        )::text,
         200::numeric
     FROM org_pool o
     WHERE NOT EXISTS (
@@ -920,8 +967,16 @@ fallback AS (
         COALESCE(o.sample_branch_id, NULL::text)::uuid,
         COALESCE(o.sample_branch_name, NULL::text)::text,
         o.latest_metric_date::date,
-        'Revenue flow is consistent'::text,
-        'Revenue is tracking steadily versus recent days.'::text,
+        (
+            'Revenue flow is consistent — Trend lines are flat-to-positive at the sampled branch for this org.'
+        )::text,
+        (
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM o.sample_branch_name::text), ''),
+                TRIM(BOTH FROM o.sample_branch_id::text)
+            )
+        )::text,
         100::numeric
     FROM org_pool o
     WHERE NOT EXISTS (
@@ -985,7 +1040,7 @@ FROM ranked r
 WHERE r.rn <= 3;
 
 COMMENT ON VIEW public.whats_working_today IS
-    'Latest meaningful metric_date per branch from all summary days; tight (bounded) or per-day stable; org weak fallback if no branch rows; top 3 per org.';
+    'Latest meaningful metric_date per branch; title = type-aware headline + explanation; description = Branch: {name}; top 3 per org; explicit sort_score tiers.';
 
 GRANT SELECT ON public.whats_working_today TO anon, authenticated;
 
@@ -993,6 +1048,8 @@ GRANT SELECT ON public.whats_working_today TO anon, authenticated;
 -- Drop with: apps/web/app/lib/supabase/drop-whats-working-alias-views.sql
 
 -- STEP 6e — Opportunities (metrics-only; no priority/problem fallbacks; one row per branch)
+-- Contract: title = business-type-aware headline; description = exactly 'Branch: {name|id}';
+-- opportunity_text = coaching detail (no duplicate of description). sort_score = explicit priority.
 CREATE OR REPLACE VIEW opportunities_today AS
 WITH base AS (
     SELECT
@@ -1059,22 +1116,30 @@ signals AS (
                 WHEN l.branch_type = 'accommodation'
                     AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5 THEN
                     'Add a weekend package'::text
+                WHEN l.branch_type = 'accommodation' THEN
+                    'Accelerate room revenue'::text
                 WHEN l.branch_type = 'fnb' THEN
-                    'Increase avg ticket'::text
+                    'Increase average ticket'::text
                 ELSE
-                    'Raise price slightly'::text
+                    'Tune demand and pricing mix'::text
             END
         ) AS title,
-        ('Branch: ' || l.branch_name)::text AS description,
+        (
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
+                TRIM(BOTH FROM l.branch_id::text)
+            )
+        )::text AS description,
         (
             CASE
                 WHEN l.branch_type = 'accommodation'
                     AND EXTRACT(ISODOW FROM l.metric_date::timestamp) >= 5 THEN
-                    'Strong weekend demand — add a fenced package or rate ladder at ' || l.branch_name || ' to capture upside without broad discounting.'
+                    'Strong weekend demand — add a fenced package or rate ladder to capture upside without broad discounting.'::text
                 WHEN l.branch_type = 'fnb' THEN
-                    'Customer traffic is rising — increase average ticket with bundles, add-ons, and suggestive selling at ' || l.branch_name || '.'
+                    'Customer traffic is rising — use bundles, add-ons, and suggestive selling to lift average ticket.'::text
                 ELSE
-                    'Demand looks healthy — test a small price or mix uplift at ' || l.branch_name || ' while monitoring conversion.'
+                    'Demand looks healthy — test a small price or mix uplift while monitoring conversion.'::text
             END
         ) AS opportunity_text,
         (
@@ -1094,11 +1159,15 @@ signals AS (
         l.branch_name,
         l.metric_date,
         'Capture rising occupancy'::text AS title,
-        ('Branch: ' || l.branch_name)::text AS description,
         (
-            'Week-on-week occupancy is improving at '
-            || l.branch_name
-            || ' — prioritize ADR/package upsells and in-house F&B conversion while demand is building.'
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
+                TRIM(BOTH FROM l.branch_id::text)
+            )
+        )::text AS description,
+        (
+            'Week-on-week occupancy is improving — prioritize ADR and package upsells plus in-house F&B conversion while demand builds.'
         )::text AS opportunity_text,
         (
             145::numeric
@@ -1118,11 +1187,15 @@ signals AS (
         l.branch_name,
         l.metric_date,
         'Lift ADR on strong occupancy'::text AS title,
-        ('Branch: ' || l.branch_name)::text AS description,
         (
-            'Occupancy is elevated at '
-            || l.branch_name
-            || ' — protect rate integrity, promote premium room types, and attach F&B experiences to lift RevPAR.'
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
+                TRIM(BOTH FROM l.branch_id::text)
+            )
+        )::text AS description,
+        (
+            'Occupancy is elevated — protect rate integrity, promote premium room types, and attach F&B experiences to lift RevPAR.'
         )::text AS opportunity_text,
         (
             138::numeric
@@ -1142,12 +1215,16 @@ signals AS (
         l.branch_id,
         l.branch_name,
         l.metric_date,
-        'Add a weekend package'::text AS title,
-        ('Branch: ' || l.branch_name)::text AS description,
+        'Package weekend room + F&B'::text AS title,
         (
-            'Weekend nights are active at '
-            || l.branch_name
-            || ' with healthy occupancy — package premium room + F&B to capture willingness-to-pay.'
+            'Branch: '
+            || COALESCE(
+                NULLIF(TRIM(BOTH FROM l.branch_name::text), ''),
+                TRIM(BOTH FROM l.branch_id::text)
+            )
+        )::text AS description,
+        (
+            'Weekend nights show healthy occupancy — package premium room with F&B to capture willingness-to-pay.'
         )::text AS opportunity_text,
         (
             132::numeric
@@ -1185,13 +1262,13 @@ SELECT
 FROM best_per_branch b;
 
 COMMENT ON VIEW opportunities_today IS
-    'Opportunity-style signals only; one row per branch (best score); accommodation uses occupancy deltas / occupancy %, not only revenue_delta_day.';
+    'One row per branch (best sort_score, then latest metric_date); title type-aware; description = Branch: {name}; opportunity_text = coaching detail.';
 
 GRANT SELECT ON opportunities_today TO anon, authenticated;
 
 -- STEP 6f — Watchlist (early warning, non-urgent downward trends)
--- One row per branch: best signal for that branch, else per-branch fallback with latest metric_date.
--- Contract: headline = title; detail = description. No warning_text column.
+-- One row per (branch_id, metric_date): best signal that day, else fallback for that date.
+-- Signals from full trend on public.today_summary; module_type-aware titles; description = Branch: {name}.
 CREATE OR REPLACE VIEW public.watchlist_today AS
 WITH base AS (
     SELECT
@@ -1215,13 +1292,22 @@ WITH base AS (
             0::numeric
         ) AS rooms_sold,
         b.organization_id::uuid AS organization_id,
-        COALESCE(b.branch_name, b.name) AS branch_name
-    FROM today_summary t
+        COALESCE(b.branch_name, b.name) AS branch_name,
+        CASE
+            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+                'accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'
+            ) THEN 'accommodation'::text
+            WHEN LOWER(COALESCE(b.module_type::text, '')) IN (
+                'fnb', 'restaurant', 'cafe', 'cafe_restaurant'
+            ) THEN 'fnb'::text
+            ELSE COALESCE(LOWER(TRIM(b.module_type::text)), 'unknown')
+        END AS branch_type
+    FROM public.today_summary t
     CROSS JOIN LATERAL (SELECT row_to_json(t)::jsonb AS jb) j
     LEFT JOIN branches b ON b.id::text = TRIM(BOTH FROM t.branch_id::text)
     WHERE b.organization_id IS NOT NULL
 ),
-trend AS (
+trend_lags AS (
     SELECT
         b.*,
         LAG(b.total_revenue, 1) OVER (PARTITION BY b.branch_id ORDER BY b.metric_date) AS rev_l1,
@@ -1232,23 +1318,69 @@ trend AS (
         LAG(b.rooms_sold, 2) OVER (PARTITION BY b.branch_id ORDER BY b.metric_date) AS room_l2
     FROM base b
 ),
-latest AS (
-    SELECT DISTINCT ON (branch_id)
-        organization_id,
-        branch_id,
-        branch_name,
-        metric_date,
-        total_revenue,
-        customers,
-        rooms_sold,
-        rev_l1,
-        rev_l2,
-        cust_l1,
-        cust_l2,
-        room_l1,
-        room_l2
-    FROM trend
-    ORDER BY branch_id, metric_date DESC NULLS LAST
+trend AS (
+    SELECT
+        x.*,
+        LEAST(
+            GREATEST(
+                CASE
+                    WHEN x.rev_l1 IS NOT NULL
+                        AND x.rev_l2 IS NOT NULL
+                        AND x.total_revenue < x.rev_l1
+                        AND x.rev_l1 < x.rev_l2
+                    THEN
+                        (x.rev_l2 - x.total_revenue)
+                        / NULLIF(
+                            GREATEST(ABS(x.rev_l2), ABS(x.rev_l1), ABS(x.total_revenue), 1::numeric),
+                            0::numeric
+                        )
+                    ELSE 0::numeric
+                END,
+                0::numeric
+            ),
+            1::numeric
+        ) AS rev_drop_depth,
+        LEAST(
+            GREATEST(
+                CASE
+                    WHEN x.room_l1 IS NOT NULL
+                        AND x.room_l2 IS NOT NULL
+                        AND x.rooms_sold IS NOT NULL
+                        AND x.rooms_sold < x.room_l1
+                        AND x.room_l1 < x.room_l2
+                    THEN
+                        (x.room_l2 - x.rooms_sold)
+                        / NULLIF(
+                            GREATEST(ABS(x.room_l2), ABS(x.room_l1), ABS(x.rooms_sold), 1::numeric),
+                            0::numeric
+                        )
+                    ELSE 0::numeric
+                END,
+                0::numeric
+            ),
+            1::numeric
+        ) AS room_drop_depth,
+        LEAST(
+            GREATEST(
+                CASE
+                    WHEN x.cust_l1 IS NOT NULL
+                        AND x.cust_l2 IS NOT NULL
+                        AND x.customers IS NOT NULL
+                        AND x.customers < x.cust_l1
+                        AND x.cust_l1 < x.cust_l2
+                    THEN
+                        (x.cust_l2 - x.customers)
+                        / NULLIF(
+                            GREATEST(ABS(x.cust_l2), ABS(x.cust_l1), ABS(x.customers), 1::numeric),
+                            0::numeric
+                        )
+                    ELSE 0::numeric
+                END,
+                0::numeric
+            ),
+            1::numeric
+        ) AS cust_drop_depth
+    FROM trend_lags x
 ),
 signals AS (
     SELECT
@@ -1256,11 +1388,17 @@ signals AS (
         l.branch_id::uuid AS branch_id,
         l.branch_name::text AS branch_name,
         l.metric_date::date AS metric_date,
-        'Revenue softening'::text AS title,
-        ('Total revenue has declined three days in a row at ' || l.branch_name || '.')::text AS description,
-        (120::numeric + COALESCE(l.total_revenue, 0) / 1000::numeric)::numeric AS sort_score
-    FROM latest l
-    WHERE l.rev_l1 IS NOT NULL
+        'Accommodation revenue softening'::text AS title,
+        (
+            'Branch: '
+            || COALESCE(NULLIF(TRIM(BOTH FROM l.branch_name::text), ''), TRIM(BOTH FROM l.branch_id::text))
+        )::text AS description,
+        (58::numeric + l.rev_drop_depth * 19::numeric)::numeric AS sort_score,
+        'Accommodation revenue slipped three days straight — revisit ADR, RevPAR, and occupancy levers.'::text
+            AS watchlist_text
+    FROM trend l
+    WHERE l.branch_type = 'accommodation'
+      AND l.rev_l1 IS NOT NULL
       AND l.rev_l2 IS NOT NULL
       AND l.total_revenue < l.rev_l1
       AND l.rev_l1 < l.rev_l2
@@ -1272,15 +1410,42 @@ signals AS (
         l.branch_id::uuid,
         l.branch_name::text,
         l.metric_date::date,
-        'Customer traffic softening'::text AS title,
-        ('Customer counts have declined three consecutive days at ' || l.branch_name || '.')::text AS description,
-        110::numeric
-    FROM latest l
-    WHERE l.cust_l1 IS NOT NULL
-      AND l.cust_l2 IS NOT NULL
-      AND l.customers IS NOT NULL
-      AND l.customers < l.cust_l1
-      AND l.cust_l1 < l.cust_l2
+        'F&B revenue softening'::text AS title,
+        (
+            'Branch: '
+            || COALESCE(NULLIF(TRIM(BOTH FROM l.branch_name::text), ''), TRIM(BOTH FROM l.branch_id::text))
+        )::text AS description,
+        (58::numeric + l.rev_drop_depth * 19::numeric)::numeric AS sort_score,
+        'F&B revenue is down three running days — scan tickets, covers, and mix before discounting.'::text
+            AS watchlist_text
+    FROM trend l
+    WHERE l.branch_type = 'fnb'
+      AND l.rev_l1 IS NOT NULL
+      AND l.rev_l2 IS NOT NULL
+      AND l.total_revenue < l.rev_l1
+      AND l.rev_l1 < l.rev_l2
+
+    UNION ALL
+
+    SELECT
+        l.organization_id::uuid,
+        l.branch_id::uuid,
+        l.branch_name::text,
+        l.metric_date::date,
+        'Revenue softening'::text AS title,
+        (
+            'Branch: '
+            || COALESCE(NULLIF(TRIM(BOTH FROM l.branch_name::text), ''), TRIM(BOTH FROM l.branch_id::text))
+        )::text AS description,
+        (58::numeric + l.rev_drop_depth * 19::numeric)::numeric AS sort_score,
+        'Revenue has eased three consecutive days — confirm whether demand, price, or mix moved.'::text
+            AS watchlist_text
+    FROM trend l
+    WHERE l.branch_type NOT IN ('accommodation', 'fnb')
+      AND l.rev_l1 IS NOT NULL
+      AND l.rev_l2 IS NOT NULL
+      AND l.total_revenue < l.rev_l1
+      AND l.rev_l1 < l.rev_l2
 
     UNION ALL
 
@@ -1290,58 +1455,95 @@ signals AS (
         l.branch_name::text,
         l.metric_date::date,
         'Rooms sold softening'::text AS title,
-        ('Rooms sold have declined three days in a row at ' || l.branch_name || '.')::text AS description,
-        100::numeric
-    FROM latest l
-    WHERE l.room_l1 IS NOT NULL
+        (
+            'Branch: '
+            || COALESCE(NULLIF(TRIM(BOTH FROM l.branch_name::text), ''), TRIM(BOTH FROM l.branch_id::text))
+        )::text AS description,
+        (52::numeric + l.room_drop_depth * 18::numeric)::numeric AS sort_score,
+        'Sold rooms fell three days in a row — expect occupancy drag unless pickup or group pace improves.'::text
+            AS watchlist_text
+    FROM trend l
+    WHERE l.branch_type = 'accommodation'
+      AND l.room_l1 IS NOT NULL
       AND l.room_l2 IS NOT NULL
       AND l.rooms_sold IS NOT NULL
       AND l.rooms_sold < l.room_l1
       AND l.room_l1 < l.room_l2
+
+    UNION ALL
+
+    SELECT
+        l.organization_id::uuid,
+        l.branch_id::uuid,
+        l.branch_name::text,
+        l.metric_date::date,
+        'Customer traffic softening'::text AS title,
+        (
+            'Branch: '
+            || COALESCE(NULLIF(TRIM(BOTH FROM l.branch_name::text), ''), TRIM(BOTH FROM l.branch_id::text))
+        )::text AS description,
+        (56::numeric + l.cust_drop_depth * 14::numeric)::numeric AS sort_score,
+        'Covers or transactions cooled three straight days — traffic is softening ahead of revenue.'::text
+            AS watchlist_text
+    FROM trend l
+    WHERE l.branch_type = 'fnb'
+      AND l.cust_l1 IS NOT NULL
+      AND l.cust_l2 IS NOT NULL
+      AND l.customers IS NOT NULL
+      AND l.customers < l.cust_l1
+      AND l.cust_l1 < l.cust_l2
 ),
 best_signal AS (
-    SELECT DISTINCT ON (s.branch_id)
+    SELECT DISTINCT ON (s.branch_id, s.metric_date)
         s.organization_id,
         s.branch_id,
         s.branch_name,
         s.metric_date,
         s.title,
         s.description,
-        s.sort_score
+        s.sort_score,
+        s.watchlist_text
     FROM signals s
-    ORDER BY s.branch_id, s.sort_score DESC, s.metric_date DESC NULLS LAST
+    ORDER BY s.branch_id, s.metric_date, s.sort_score DESC NULLS LAST, s.title ASC
 ),
-branch_dim AS (
-    SELECT
-        b.organization_id::uuid AS organization_id,
-        TRIM(BOTH FROM b.id::text)::uuid AS branch_id,
-        COALESCE(
-            NULLIF(TRIM(BOTH FROM b.branch_name::text), ''),
-            NULLIF(TRIM(BOTH FROM b.name::text), ''),
-            TRIM(BOTH FROM b.id::text)
-        )::text AS branch_name
-    FROM branches b
-    WHERE b.organization_id IS NOT NULL
+branch_dates AS (
+    SELECT DISTINCT
+        bd.organization_id,
+        bd.branch_id,
+        bd.branch_name,
+        bd.branch_type,
+        bd.metric_date
+    FROM base bd
+    WHERE bd.organization_id IS NOT NULL
 ),
 fallback AS (
     SELECT
         d.organization_id,
         d.branch_id,
         d.branch_name,
-        l.metric_date::date AS metric_date,
+        d.metric_date,
         'No early warning signals detected'::text AS title,
         (
-            'Revenue, customers, and rooms sold are not showing a three-day softening pattern for '
-            || d.branch_name
-            || '.'
+            'Branch: '
+            || COALESCE(NULLIF(TRIM(BOTH FROM d.branch_name::text), ''), TRIM(BOTH FROM d.branch_id::text))
         )::text AS description,
-        30::numeric AS sort_score
-    FROM branch_dim d
-    LEFT JOIN latest l ON TRIM(BOTH FROM l.branch_id::text) = TRIM(BOTH FROM d.branch_id::text)
+        30::numeric AS sort_score,
+        (
+            CASE
+                WHEN d.branch_type = 'accommodation' THEN
+                    'No three-day slide in rooms, occupancy, or accommodation revenue vs recent days.'::text
+                WHEN d.branch_type = 'fnb' THEN
+                    'No three-day slide in customers, transactions, or F&B revenue vs recent days.'::text
+                ELSE
+                    'No sustained three-day downturn in tracked revenue and volumes.'::text
+            END
+        ) AS watchlist_text
+    FROM branch_dates d
     WHERE NOT EXISTS (
         SELECT 1
         FROM best_signal bs
-        WHERE TRIM(BOTH FROM bs.branch_id::text) = TRIM(BOTH FROM d.branch_id::text)
+        WHERE bs.branch_id = d.branch_id
+          AND bs.metric_date IS NOT DISTINCT FROM d.metric_date
     )
 )
 SELECT
@@ -1351,7 +1553,8 @@ SELECT
     bs.metric_date,
     bs.title,
     bs.description,
-    bs.sort_score
+    bs.sort_score,
+    bs.watchlist_text
 FROM best_signal bs
 UNION ALL
 SELECT
@@ -1361,11 +1564,12 @@ SELECT
     f.metric_date,
     f.title,
     f.description,
-    f.sort_score
+    f.sort_score,
+    f.watchlist_text
 FROM fallback f;
 
 COMMENT ON VIEW public.watchlist_today IS
-    'Early warning via lag(1,2): one row per branch; title + description only.';
+    'Early warning via lag(1,2): one row per (branch_id, metric_date); module_type-aware titles; description = Branch: name; sort_score from relative 3-day depth bands.';
 
 GRANT SELECT ON public.watchlist_today TO anon, authenticated;
 
