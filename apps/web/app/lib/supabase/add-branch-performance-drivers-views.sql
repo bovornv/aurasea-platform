@@ -4,8 +4,11 @@
 -- Sources ONLY: public.daily_metrics + public.today_summary (joined on branch_id + metric_date).
 -- Does not reference accommodation_daily_metrics, fnb_daily_metrics, or today_summary_clean.
 --
--- Accommodation: revenue history from daily_metrics; occupancy/ADR/revpar/rooms/deltas from today_summary.
--- F&B: revenue + customers from daily_metrics; avg_ticket + deltas (+ transactions) from today_summary.
+-- Accommodation: revenue + rooms_sold/rooms_available from daily_metrics; occupancy/ADR/revpar fallbacks
+-- from daily_metrics when today_summary lacks room columns; deltas + health from today_summary when present.
+-- F&B: revenue + customers from daily_metrics; avg_ticket + revenue_delta_day + health from today_summary;
+-- transactions = COALESCE(t.transactions, t.customers, d.customers); fnb_revenue_delta_day = prior-day % from
+-- daily_metrics (today_summary often omits fnb_revenue_delta_day).
 --
 -- Prerequisites: public.daily_metrics, public.today_summary, public.branches
 -- After run: GET /rest/v1/branch_performance_drivers_accommodation?branch_id=eq.{uuid}&order=metric_date.asc
@@ -22,10 +25,10 @@ SELECT DISTINCT ON (d.branch_id, d.metric_date)
   COALESCE(
     t.occupancy_rate,
     CASE
-      WHEN COALESCE(NULLIF(t.rooms_available, 0), NULLIF(d.rooms_available, 0), 0) > 0
+      WHEN COALESCE(NULLIF(d.rooms_available, 0), 0) > 0
       THEN (
-        COALESCE(t.rooms_sold, d.rooms_sold, 0)::numeric
-        / NULLIF(COALESCE(NULLIF(t.rooms_available, 0), NULLIF(d.rooms_available, 0))::numeric, 0)
+        COALESCE(d.rooms_sold, 0)::numeric
+        / NULLIF(d.rooms_available::numeric, 0)
       ) * 100::numeric
       ELSE NULL::numeric
     END
@@ -33,24 +36,22 @@ SELECT DISTINCT ON (d.branch_id, d.metric_date)
   COALESCE(
     t.revpar,
     CASE
-      WHEN COALESCE(NULLIF(t.rooms_available, 0), NULLIF(d.rooms_available, 0), 0) > 0
-      THEN COALESCE(d.revenue, 0)::numeric
-        / NULLIF(COALESCE(NULLIF(t.rooms_available, 0), NULLIF(d.rooms_available, 0))::numeric, 0)
+      WHEN COALESCE(NULLIF(d.rooms_available, 0), 0) > 0
+      THEN COALESCE(d.revenue, 0)::numeric / NULLIF(d.rooms_available::numeric, 0)
       ELSE NULL::numeric
     END
   ) AS revpar,
   COALESCE(
     t.adr,
     CASE
-      WHEN COALESCE(NULLIF(t.rooms_sold, 0), NULLIF(d.rooms_sold, 0), 0) > 0
-      THEN COALESCE(d.revenue, 0)::numeric
-        / NULLIF(COALESCE(NULLIF(t.rooms_sold, 0), NULLIF(d.rooms_sold, 0))::numeric, 0)
+      WHEN COALESCE(NULLIF(d.rooms_sold, 0), 0) > 0
+      THEN COALESCE(d.revenue, 0)::numeric / NULLIF(d.rooms_sold::numeric, 0)
       ELSE NULL::numeric
     END,
     d.adr
   ) AS adr,
-  COALESCE(t.rooms_sold, d.rooms_sold)::bigint AS rooms_sold,
-  COALESCE(t.rooms_available, d.rooms_available)::bigint AS rooms_available,
+  d.rooms_sold::bigint AS rooms_sold,
+  d.rooms_available::bigint AS rooms_available,
   t.revenue_delta_day,
   t.occupancy_delta_week,
   t.health_score
@@ -76,7 +77,7 @@ SELECT DISTINCT ON (d.branch_id, d.metric_date)
   d.metric_date::date AS metric_date,
   COALESCE(d.revenue, 0)::numeric AS revenue,
   COALESCE(d.customers, 0)::numeric AS customers,
-  COALESCE(t.transactions, t.total_customers, t.customers)::numeric AS transactions,
+  COALESCE(t.transactions, t.customers, d.customers)::numeric AS transactions,
   COALESCE(
     t.avg_ticket,
     CASE
@@ -87,11 +88,20 @@ SELECT DISTINCT ON (d.branch_id, d.metric_date)
     d.avg_ticket
   ) AS avg_ticket,
   t.revenue_delta_day,
-  t.fnb_revenue_delta_day,
+  CASE
+    WHEN dp.revenue IS NOT NULL AND dp.revenue::numeric > 0
+    THEN (
+      COALESCE(d.revenue, 0)::numeric - dp.revenue::numeric
+    ) / NULLIF(dp.revenue::numeric, 0) * 100::numeric
+    ELSE NULL::numeric
+  END AS fnb_revenue_delta_day,
   t.health_score
 FROM public.daily_metrics d
 INNER JOIN public.branches b
   ON trim(both FROM b.id::text) = trim(both FROM d.branch_id::text)
+LEFT JOIN public.daily_metrics dp
+  ON trim(both FROM dp.branch_id::text) = trim(both FROM d.branch_id::text)
+  AND dp.metric_date::date = d.metric_date::date - INTERVAL '1 day'
 LEFT JOIN public.today_summary t
   ON trim(both FROM t.branch_id::text) = trim(both FROM d.branch_id::text)
   AND t.metric_date::date = d.metric_date::date
@@ -106,10 +116,10 @@ ORDER BY
   d.created_at DESC NULLS LAST;
 
 COMMENT ON VIEW public.branch_performance_drivers_accommodation IS
-  'Performance driver series: revenue from daily_metrics; occupancy/ADR/revpar/rooms/deltas from today_summary; branch_id+metric_date join.';
+  'Performance driver series: revenue and room counts from daily_metrics; occupancy_rate/revpar/adr prefer today_summary else derived from daily_metrics; deltas from today_summary.';
 
 COMMENT ON VIEW public.branch_performance_drivers_fnb IS
-  'Performance driver series: revenue+customers from daily_metrics; avg_ticket/transactions/deltas from today_summary; branch_id+metric_date join.';
+  'Performance driver series: revenue+customers from daily_metrics; fnb_revenue_delta_day = prior calendar day % vs daily_metrics.revenue; transactions COALESCE(summary.transactions, summary.customers, daily.customers); avg_ticket/revenue_delta_day/health from today_summary.';
 
 GRANT SELECT ON public.branch_performance_drivers_accommodation TO anon, authenticated;
 GRANT SELECT ON public.branch_performance_drivers_fnb TO anon, authenticated;
