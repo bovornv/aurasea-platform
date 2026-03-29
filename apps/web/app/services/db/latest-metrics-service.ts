@@ -898,7 +898,7 @@ export interface CompanyPortfolioTrendSnapshot {
 
 /**
  * Portfolio-level trend summary (client-side aggregation).
- * @deprecated Prefer REST `company_trends_summary` + fetchCompanyTrendsSummary for company Today.
+ * @deprecated Company Today Business Trends uses `business_trends_today` via fetchCompanyBusinessTrendHighlight.
  */
 export async function getCompanyPortfolioTrendSnapshot(
   branchIds: string[],

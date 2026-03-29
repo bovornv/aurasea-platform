@@ -51,9 +51,9 @@ import { CompanyBusinessTrendSummary } from '../../components/company/company-bu
 import { CompanyTodaysPriorities } from '../../components/company/company-todays-priorities';
 import { CompanyDataConfidence } from '../../components/company/company-data-confidence';
 import {
-  fetchCompanyTrendsSummary,
-  type CompanyTrendsSummaryRow,
-} from '../../services/db/company-trends-summary-service';
+  fetchCompanyBusinessTrendHighlight,
+  type CompanyBusinessTrendHighlightRow,
+} from '../../services/db/company-business-trends-highlight-service';
 import type { CompanyTodayDashboardData } from '../../services/db/company-today-dashboard-service';
 function OwnerSummaryContent() {
   // ALL HOOKS MUST BE CALLED FIRST - NO CONDITIONALS, NO EARLY RETURNS
@@ -79,8 +79,8 @@ function OwnerSummaryContent() {
   const [companyTodayLoading, setCompanyTodayLoading] = useState(false);
   const [aiDailySummaryText, setAiDailySummaryText] = useState<string | null>(null);
   const [aiDailySummaryLoading, setAiDailySummaryLoading] = useState(false);
-  const [trendsSummaryRow, setTrendsSummaryRow] = useState<CompanyTrendsSummaryRow | null>(null);
-  const [trendsSummaryLoading, setTrendsSummaryLoading] = useState(false);
+  const [companyBusinessTrendRow, setCompanyBusinessTrendRow] = useState<CompanyBusinessTrendHighlightRow | null>(null);
+  const [companyBusinessTrendLoading, setCompanyBusinessTrendLoading] = useState(false);
   const [companyDashboard, setCompanyDashboard] = useState<CompanyTodayDashboardData | null>(null);
 
   /** After first successful load for this key, avoid flipping panel loaders on refreshTrigger-only updates. */
@@ -293,22 +293,22 @@ function OwnerSummaryContent() {
   useEffect(() => {
     if (!mounted) return;
     if (!organizationIdForData) {
-      setTrendsSummaryRow(null);
-      setTrendsSummaryLoading(false);
+      setCompanyBusinessTrendRow(null);
+      setCompanyBusinessTrendLoading(false);
       return;
     }
     let cancelled = false;
-    setTrendsSummaryLoading(true);
+    setCompanyBusinessTrendLoading(true);
     (async () => {
       const r = await Promise.race([
-        fetchCompanyTrendsSummary(organizationIdForData),
-        new Promise<CompanyTrendsSummaryRow | null>((resolve) =>
+        fetchCompanyBusinessTrendHighlight(organizationIdForData),
+        new Promise<CompanyBusinessTrendHighlightRow | null>((resolve) =>
           setTimeout(() => resolve(null), 14000)
         ),
       ]);
       if (!cancelled) {
-        setTrendsSummaryRow(r);
-        setTrendsSummaryLoading(false);
+        setCompanyBusinessTrendRow(r);
+        setCompanyBusinessTrendLoading(false);
       }
     })();
     return () => {
@@ -692,8 +692,8 @@ function OwnerSummaryContent() {
         <OperatingSection title={locale === 'th' ? 'แนวโน้มธุรกิจ' : 'Business trends'}>
           <MonitoringErrorBoundary componentName="Company business trends">
             <CompanyBusinessTrendSummary
-              row={trendsSummaryRow}
-              loading={trendsSummaryLoading}
+              row={companyBusinessTrendRow}
+              loading={companyBusinessTrendLoading}
               locale={locale}
             />
           </MonitoringErrorBoundary>
