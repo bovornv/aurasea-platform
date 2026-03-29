@@ -275,6 +275,43 @@ function dedupeOpportunityLine(parts: {
   return dedupeRepeatedSegments(title || opp || desc);
 }
 
+/** Branch snapshot: one row per (branch_id, title, opportunity_text), highest sort_score first. */
+function dedupeBranchOpportunityRowsByTitleAndText(
+  branchId: string,
+  rows: Array<{
+    title: string;
+    description: string;
+    opportunityText: string;
+    sort_score: number | null;
+  }>,
+  cap: number
+): Array<{
+  title: string;
+  description: string;
+  opportunityText: string;
+  sort_score: number | null;
+}> {
+  const sorted = [...rows].sort(
+    (a, b) => (b.sort_score ?? Number.NEGATIVE_INFINITY) - (a.sort_score ?? Number.NEGATIVE_INFINITY),
+  );
+  const seen = new Set<string>();
+  const out: Array<{
+    title: string;
+    description: string;
+    opportunityText: string;
+    sort_score: number | null;
+  }> = [];
+  const bid = branchId.trim();
+  for (const row of sorted) {
+    const key = `${bid}|${row.title.trim().toLowerCase().replace(/\s+/g, ' ')}|${row.opportunityText.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 function withCompanyRankAndSegment(rows: TodayPrioritiesRow[], limit: number): TodayPrioritiesRow[] {
   return rows.slice(0, limit).map((r, i) => {
     const rank = i + 1;
@@ -779,12 +816,47 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
     (async () => {
       if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.opportunities_today)) return [];
       const opTable = resolvePostgrestAlertsTable('opportunities_today');
+
+      const { data: headData, error: headError } = await supabase
+        .from(opTable)
+        .select('metric_date')
+        .eq('branch_id', bid)
+        .order('metric_date', { ascending: false })
+        .limit(1);
+
+      if (headError) {
+        logPostgrestAlertsRead('opportunities_today', {
+          branchId: bid,
+          rowCount: 0,
+          error: { message: headError.message, code: String(headError.code ?? '') },
+        });
+        if (isPostgrestObjectMissingError(headError)) {
+          markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.opportunities_today);
+        }
+        return [];
+      }
+
+      const headRows = Array.isArray(headData) ? headData : [];
+      const latestMetricDateRaw = headRows[0] != null ? (headRows[0] as Record<string, unknown>).metric_date : null;
+      const latestMetricDate =
+        latestMetricDateRaw != null ? String(latestMetricDateRaw).slice(0, 10) : '';
+      if (!latestMetricDate) {
+        logPostgrestAlertsRead('opportunities_today', {
+          branchId: bid,
+          rowCount: 0,
+          error: null,
+        });
+        return [];
+      }
+
       const { data, error } = await supabase
         .from(opTable)
         .select(SELECT_OPPORTUNITIES_TODAY_BRANCH)
         .eq('branch_id', bid)
+        .eq('metric_date', latestMetricDate)
         .order('sort_score', { ascending: false })
-        .limit(3);
+        .limit(40);
+
       const opRaw = Array.isArray(data) ? data : [];
       logPostgrestAlertsRead('opportunities_today', {
         branchId: bid,
@@ -798,19 +870,28 @@ async function fetchBranchTodayPanelsCore(branchId: string, branchLabel: string)
         return [];
       }
       if (!Array.isArray(data)) return [];
-      return data
-        .map((row) => {
-          const r = row as Record<string, unknown>;
-          const title = pickStr(r, 'title');
-          const description = pickStr(r, 'description');
-          const opportunityText = pickStr(r, 'opportunity_text', 'opportunityText');
-          return dedupeOpportunityLine({
+
+      const parsed = data.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          title: pickStr(r, 'title'),
+          description: pickStr(r, 'description'),
+          opportunityText: pickStr(r, 'opportunity_text', 'opportunityText'),
+          sort_score: pickNum(r, 'sort_score'),
+        };
+      });
+
+      const deduped = dedupeBranchOpportunityRowsByTitleAndText(bid, parsed, 3);
+
+      return deduped
+        .map((row) =>
+          dedupeOpportunityLine({
             branchId: bid,
-            title,
-            description,
-            opportunityText,
-          });
-        })
+            title: row.title,
+            description: row.description,
+            opportunityText: row.opportunityText,
+          }),
+        )
         .filter(Boolean)
         .slice(0, 3);
     })(),
