@@ -278,13 +278,15 @@ export async function getOperatingStatusData(
 }
 
 /**
- * Branch Today KPI row — sourced from `branch_business_status_api` (slim columns).
- * Hotel occupancy / ADR / RevPAR / rooms come from other sources when needed; often null here.
+ * Latest snapshot from `public.branch_status_current` (Branch Today metric strip + shared KPIs).
  */
 export interface TodaySummaryRow {
   branch_id: string;
   metric_date: string | null;
-  /** Total revenue (renamed from revenue). */
+  organization_id?: string | null;
+  branch_name?: string | null;
+  business_type?: string | null;
+  /** Display revenue: coalesce from row.revenue, revenue_thb. */
   total_revenue: number | null;
   revenue_yesterday: number | null;
   revenue_delta_day: number | null;
@@ -294,11 +296,36 @@ export interface TodaySummaryRow {
   rooms_available: number | null;
   adr: number | null;
   revpar: number | null;
+  profitability: string | null;
+  profitability_symbol: string | null;
   customers: number | null;
   avg_ticket: number | null;
+  avg_cost: number | null;
+  margin: string | null;
+  margin_symbol: string | null;
   health_score: number | null;
   accommodation_revenue?: number | null;
   fnb_revenue?: number | null;
+}
+
+function pickNumFromRow(row: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const k of keys) {
+    const v = row[k];
+    if (v == null || v === '') continue;
+    const n = typeof v === 'number' ? v : Number(String(v).replace(/,/g, ''));
+    if (Number.isFinite(n) && !Number.isNaN(n)) return n;
+  }
+  return null;
+}
+
+function pickStrFromRow(row: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const k of keys) {
+    const v = row[k];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (s !== '') return s;
+  }
+  return null;
 }
 
 const todaySummaryInFlight = new Map<string, Promise<TodaySummaryRow | null>>();
@@ -435,8 +462,7 @@ export async function getBranchTrendSeriesWithFallback(
 }
 
 /**
- * Latest branch KPIs from `branch_business_status_api` (one row per branch).
- * Deduplicates concurrent calls (e.g. React StrictMode double mount).
+ * Latest row from `public.branch_status_current` (one row per branch; optional order for safety).
  */
 export async function getTodaySummary(
   branchId: string,
@@ -463,6 +489,8 @@ export async function getTodaySummary(
       .from(table)
       .select(select)
       .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     logBranchBusinessStatusApiDev('branch_today_summary', {
@@ -487,22 +515,31 @@ export async function getTodaySummary(
 
     if (!data) return null;
     const row = data as Record<string, unknown>;
-    const revThb = row.revenue_thb != null ? Number(row.revenue_thb) : null;
+    const bid = pickStrFromRow(row, 'branch_id') ?? branchId;
+    const totalRev = pickNumFromRow(row, 'revenue', 'revenue_thb');
     return {
-      branch_id: branchId,
+      branch_id: bid,
       metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
-      total_revenue: revThb,
+      organization_id: pickStrFromRow(row, 'organization_id'),
+      branch_name: pickStrFromRow(row, 'branch_name'),
+      business_type: pickStrFromRow(row, 'business_type'),
+      total_revenue: totalRev,
       revenue_yesterday: null,
-      revenue_delta_day: null,
-      occupancy_rate: null,
+      revenue_delta_day: pickNumFromRow(row, 'revenue_delta_day'),
+      occupancy_rate: pickNumFromRow(row, 'occupancy_rate'),
       occupancy_delta_week: null,
-      rooms_sold: null,
-      rooms_available: null,
-      adr: null,
-      revpar: null,
-      customers: row.customers != null ? Number(row.customers) : null,
-      avg_ticket: row.avg_ticket != null ? Number(row.avg_ticket) : null,
-      health_score: row.health_score != null ? Number(row.health_score) : null,
+      rooms_sold: pickNumFromRow(row, 'rooms_sold'),
+      rooms_available: pickNumFromRow(row, 'rooms_available'),
+      adr: pickNumFromRow(row, 'adr'),
+      revpar: pickNumFromRow(row, 'revpar'),
+      profitability: pickStrFromRow(row, 'profitability'),
+      profitability_symbol: pickStrFromRow(row, 'profitability_symbol'),
+      customers: pickNumFromRow(row, 'customers'),
+      avg_ticket: pickNumFromRow(row, 'avg_ticket'),
+      avg_cost: pickNumFromRow(row, 'avg_cost'),
+      margin: pickStrFromRow(row, 'margin'),
+      margin_symbol: pickStrFromRow(row, 'margin_symbol'),
+      health_score: pickNumFromRow(row, 'health_score'),
       accommodation_revenue: null,
       fnb_revenue: null,
     };

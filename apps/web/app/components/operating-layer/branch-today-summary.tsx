@@ -106,13 +106,13 @@ export interface BranchTodaySummaryProps {
   lastUpdatedDate?: string | null;
   accommodation?: BranchTodaySummaryAccommodation | null;
   fnb?: BranchTodaySummaryFnb | null;
-  /** Avg cost: fnb_today_metrics_ui; margin trend: computed from fnb_daily_metrics (revenue − additional_cost_today). */
+  /** Avg cost + margin: from public.branch_status_current (Branch overview passes snapshot row only). */
   fnbProfitability?: {
     avgDailyCost: number | null;
     marginTrend: ProfitabilityTrend | null;
     marginExplanation: string;
   } | null;
-  /** accommodation_profitability_signal: trend arrow + explanation (Today strip). */
+  /** Profitability arrow + copy: from public.branch_status_current (Branch overview). */
   accommodationProfitability?: {
     profitTrend: ProfitabilityTrend | null;
     profitExplanation: string;

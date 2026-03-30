@@ -14,9 +14,30 @@ export function getBranchBusinessStatusApiTable(): string {
 export const SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY =
   'branch_id,organization_id,branch_name,status_label,status_subtitle,health_score,updated_at,metric_date,revenue_thb,customers,avg_ticket';
 
-/** Branch Today summary card — revenue + health + F&B fields (null-safe for accommodation). */
+/** Branch Today metric strip — full row from public.branch_status_current (one row per branch). */
 export const SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY =
-  'branch_id,metric_date,revenue_thb,customers,avg_ticket,health_score';
+  [
+    'organization_id',
+    'branch_id',
+    'branch_name',
+    'business_type',
+    'metric_date',
+    'revenue',
+    'revenue_thb',
+    'occupancy_rate',
+    'rooms_sold',
+    'rooms_available',
+    'adr',
+    'revpar',
+    'profitability',
+    'profitability_symbol',
+    'customers',
+    'avg_ticket',
+    'avg_cost',
+    'margin',
+    'margin_symbol',
+    'health_score',
+  ].join(',');
 
 export const SELECT_BRANCH_BUSINESS_STATUS_API_ANOMALY =
   'branch_id,metric_date,revenue_thb,health_score';

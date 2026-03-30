@@ -37,7 +37,6 @@ import { OperatingHeader } from '../../components/operating-layer/operating-head
 import { OperatingSection } from '../../components/operating-layer/operating-section';
 import { DailyPrompt } from '../../components/operating-layer/daily-prompt';
 import { BranchTodaySummary } from '../../components/operating-layer/branch-today-summary';
-import { addDays } from '../../utils/today-summary-utils';
 import { OperatingFooterTrust } from '../../components/operating-layer/operating-footer-trust';
 import { getHospitalityLabels } from '../../utils/hospitality-labels';
 import {
@@ -46,8 +45,6 @@ import {
   getTodaySummary,
   getBranchTrendSeriesWithFallback,
   getAccommodationTodayMetricsUi,
-  getAccommodationProfitabilitySignal,
-  type AccommodationProfitabilitySignal,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
   type TodaySummaryRow,
@@ -84,10 +81,6 @@ import {
 import type { ExtendedAlertContract } from '../../services/monitoring-service';
 import type { AlertContract } from '../../../../../core/sme-os/contracts/alerts';
 import type { DailyMetric } from '../../models/daily-metrics';
-import {
-  computeFnbMarginTrendFromDailyPair,
-  getFnbCurrentAndPrevDailyMetric,
-} from '../../utils/fnb-daily-margin';
 import {
   fetchCompanyStatusCurrentByBranchId,
   type CompanyLatestBusinessStatusV3Row,
@@ -159,8 +152,6 @@ export default function BranchOverviewPage() {
   const [branchSectionLoading, setBranchSectionLoading] = useState(false);
   const [driverTrendSeries, setDriverTrendSeries] = useState<BranchTrendSeries | null>(null);
   const [accTodayUiRow, setAccTodayUiRow] = useState<AccommodationTodayMetricsUiRow | null>(null);
-  const [accommodationProfitSignal, setAccommodationProfitSignal] =
-    useState<AccommodationProfitabilitySignal | null>(null);
   const [companyStatusCurrentRow, setCompanyStatusCurrentRow] =
     useState<CompanyLatestBusinessStatusV3Row | null>(null);
 
@@ -434,7 +425,6 @@ export default function BranchOverviewPage() {
     setFreshnessLoaded(false);
     if (branch.moduleType !== 'accommodation') {
       setAccTodayUiRow(null);
-      setAccommodationProfitSignal(null);
     }
     if (branch.moduleType === 'fnb') {
       setOperatingStatusData(null);
@@ -447,7 +437,6 @@ export default function BranchOverviewPage() {
         getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
         getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
         getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
-        getAccommodationProfitabilitySignal(branch.id).then(setAccommodationProfitSignal);
         fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
       }
     }
@@ -482,7 +471,6 @@ export default function BranchOverviewPage() {
       setFreshnessDatesFromRaw([]);
       setFreshnessLoaded(false);
       setAccTodayUiRow(null);
-      setAccommodationProfitSignal(null);
       setCompanyStatusCurrentRow(null);
       return;
     }
@@ -502,7 +490,6 @@ export default function BranchOverviewPage() {
           getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
           getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
           getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
-          getAccommodationProfitabilitySignal(branch.id).then(setAccommodationProfitSignal);
           fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
         }
         if (branch.moduleType === 'fnb') {
@@ -850,52 +837,46 @@ export default function BranchOverviewPage() {
         revenue: fnbOperatingStatus?.revenue,
         customers: fnbOperatingStatus?.customers,
         revenue_delta_day:
-          companyStatusCurrentRow?.revenue_delta_day != null &&
-          Number.isFinite(companyStatusCurrentRow.revenue_delta_day)
-            ? companyStatusCurrentRow.revenue_delta_day
-            : todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
-              ? todaySummaryRow.revenue_delta_day
-              : null,
+          todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
+            ? todaySummaryRow.revenue_delta_day
+            : null,
       }, loc);
     }
     if (syn.length > 0) return syn;
     return defaultBranchPrioritiesFallback(branch.id, branch.branchName, biz, loc);
-  }, [branchPriorities, branch, accTodayUiRow, fnbOperatingStatus, todaySummaryRow, companyStatusCurrentRow, locale]);
+  }, [branchPriorities, branch, accTodayUiRow, fnbOperatingStatus, todaySummaryRow, locale]);
 
   const branchPriorityNext = useMemo(() => branchPrioritiesForUi.slice(1, 4), [branchPrioritiesForUi]);
   const branchPriorityFirst = branchPrioritiesForUi[0] ?? null;
 
   const revenueNow = useMemo(() => {
+    const ts = todaySummaryRow;
+    if (ts?.total_revenue != null && Number.isFinite(ts.total_revenue)) return Number(ts.total_revenue);
     const c = companyStatusCurrentRow;
     if (c?.revenue_thb != null && Number.isFinite(c.revenue_thb)) return Number(c.revenue_thb);
-    const ts = todaySummaryRow as any;
     const fnb = fnbOperatingStatus as any;
     const acc = operatingStatusData as any;
     return Number(
-      ts?.total_revenue ??
-        ts?.revenue ??
-        fnb?.revenue_thb ??
-        fnb?.revenue ??
-        acc?.revenue_thb ??
-        acc?.revenue ??
-        0
+      fnb?.revenue_thb ?? fnb?.revenue ?? acc?.revenue_thb ?? acc?.revenue ?? 0
     );
   }, [companyStatusCurrentRow, todaySummaryRow, fnbOperatingStatus, operatingStatusData]);
 
   const customersNow = useMemo(() => {
+    const ts = todaySummaryRow;
+    if (ts?.customers != null && Number.isFinite(ts.customers)) return Number(ts.customers);
     const c = companyStatusCurrentRow;
     if (c?.customers != null && Number.isFinite(c.customers)) return Number(c.customers);
-    const ts = todaySummaryRow as any;
     const fnb = fnbOperatingStatus as any;
-    return Number(ts?.customers ?? fnb?.customers ?? fnb?.total_customers ?? 0);
+    return Number(fnb?.customers ?? fnb?.total_customers ?? 0);
   }, [companyStatusCurrentRow, todaySummaryRow, fnbOperatingStatus]);
 
   const roomsSoldNow = useMemo(() => {
+    const ts = todaySummaryRow;
+    if (ts?.rooms_sold != null && Number.isFinite(ts.rooms_sold)) return Number(ts.rooms_sold);
     const c = companyStatusCurrentRow;
     if (c?.utilized != null && Number.isFinite(c.utilized)) return Number(c.utilized);
-    const ts = todaySummaryRow as any;
     const acc = operatingStatusData as any;
-    return Number(ts?.utilized ?? ts?.rooms_sold ?? acc?.rooms_sold ?? 0);
+    return Number(acc?.rooms_sold ?? 0);
   }, [companyStatusCurrentRow, todaySummaryRow, operatingStatusData]);
 
   const hasRevenueActivity = useMemo(
@@ -1034,14 +1015,14 @@ export default function BranchOverviewPage() {
   const generatedMetricOpportunity = useMemo<OpportunityDisplayItem | null>(() => {
     if (!branch?.id) return null;
     if (branch.moduleType === 'accommodation') {
-      const occ = companyStatusCurrentRow?.occupancy_pct;
+      const occ = todaySummaryRow?.occupancy_rate ?? companyStatusCurrentRow?.occupancy_pct;
       if (occ != null && occ < 60) {
         return {
           title: 'Occupancy low',
           detail: 'Occupancy level is low today. Consider OTA boosts, last-minute packages, and pricing fences.',
         };
       }
-      const revpar = companyStatusCurrentRow?.revpar_thb;
+      const revpar = todaySummaryRow?.revpar ?? companyStatusCurrentRow?.revpar_thb;
       if (revpar != null && revpar > 0) {
         return {
           title: 'Lift RevPAR',
@@ -1053,7 +1034,7 @@ export default function BranchOverviewPage() {
         detail: 'Keep base pricing steady and push value-added bundles to convert demand without rate erosion.',
       };
     }
-    const avgTicket = companyStatusCurrentRow?.avg_ticket_thb;
+    const avgTicket = todaySummaryRow?.avg_ticket ?? companyStatusCurrentRow?.avg_ticket_thb;
     if (avgTicket != null && avgTicket > 0) {
       return {
         title: 'Increase avg ticket',
@@ -1064,7 +1045,17 @@ export default function BranchOverviewPage() {
       title: 'Strengthen conversion',
       detail: 'Prioritize high-intent demand windows with targeted offers to improve conversion quality.',
     };
-  }, [branch?.id, branch?.moduleType, branch?.branchName, companyStatusCurrentRow?.occupancy_pct, companyStatusCurrentRow?.revpar_thb, companyStatusCurrentRow?.avg_ticket_thb]);
+  }, [
+    branch?.id,
+    branch?.moduleType,
+    branch?.branchName,
+    todaySummaryRow?.occupancy_rate,
+    todaySummaryRow?.revpar,
+    todaySummaryRow?.avg_ticket,
+    companyStatusCurrentRow?.occupancy_pct,
+    companyStatusCurrentRow?.revpar_thb,
+    companyStatusCurrentRow?.avg_ticket_thb,
+  ]);
 
   const opportunityFallbackDebug = useMemo(() => {
     const direct = cleanSectionText(branchOpportunitiesRows);
@@ -1451,7 +1442,7 @@ export default function BranchOverviewPage() {
     return actions;
   }, [topRevenueLeaks, mergedBranchAlerts, locale]);
 
-  const canonicalSharedHealthScore = companyStatusCurrentRow?.health_score ?? null;
+  const canonicalSharedHealthScore = todaySummaryRow?.health_score ?? companyStatusCurrentRow?.health_score ?? null;
 
   // Determine health status label from canonical company_status_current only
   const healthStatus = useMemo(() => {
@@ -1473,20 +1464,6 @@ export default function BranchOverviewPage() {
     return sorted[0] ?? null;
   }, [dailyMetricsForTrends]);
 
-  /** Margin ↑/↓/→ from fnb_daily_metrics only (revenue + additional_cost_today); not fnb_profitability_signal */
-  const fnbMarginFromDaily = useMemo(() => {
-    if (branch?.moduleType !== 'fnb') {
-      return { marginTrend: null, marginExplanation: '' };
-    }
-    const referenceRaw = fnbOperatingStatus?.metric_date ?? latestDailyMetric?.date ?? null;
-    const { current, previous } = getFnbCurrentAndPrevDailyMetric(dailyMetricsForTrends ?? [], referenceRaw);
-    return computeFnbMarginTrendFromDailyPair({
-      current,
-      previous,
-      locale: locale === 'th' ? 'th' : 'en',
-    });
-  }, [branch?.moduleType, dailyMetricsForTrends, fnbOperatingStatus?.metric_date, latestDailyMetric?.date, locale]);
-
   const mapCompanySymbolToTrend = useCallback((symbol: string | null | undefined): 'up' | 'down' | 'flat' | null => {
     if (!symbol) return null;
     const s = String(symbol).trim().toLowerCase();
@@ -1498,257 +1475,92 @@ export default function BranchOverviewPage() {
     return null;
   }, []);
 
-  // Today summary for compact one-line (accommodation: revenue vs yesterday; no occupancy WoW; F&B: vs yesterday)
+  /** Branch Today metric strip — public.branch_status_current only (via getTodaySummary). */
   const todaySummary = useMemo(() => {
+    const row = todaySummaryRow;
     const isFnb = branch?.moduleType === 'fnb';
     const isAccommodation = branch?.moduleType === 'accommodation';
-    const canonical = companyStatusCurrentRow;
-    const latestDateRaw =
-      (isFnb ? fnbOperatingStatus?.metric_date : operatingStatusData?.metric_date) ??
-      latestDailyMetric?.date ??
-      null;
-    // Normalize to YYYY-MM-DD so addDays() and metricsByDate lookup match (Supabase may return ISO string)
-    const latestDate =
-      latestDateRaw && typeof latestDateRaw === 'string'
-        ? latestDateRaw.slice(0, 10)
-        : latestDateRaw;
-    const metricsByDate = new Map<string, DailyMetric>();
-    (dailyMetricsForTrends ?? []).forEach((m) => {
-      const key = m.date != null ? String(m.date).slice(0, 10) : '';
-      if (key) metricsByDate.set(key, m);
-    });
-    const datesDesc = [...metricsByDate.keys()].sort((a, b) => b.localeCompare(a));
-    // Use the latest date that exists in the feed so prev-day lookups always hit the map (fixes invisible deltas)
-    const referenceDate = datesDesc[0] ?? latestDate ?? null;
-    const prevDayDate = referenceDate ? addDays(referenceDate, -1) : null;
-    // F&B: previous day metric (with fallback so delta can show)
-    const prevMetric =
-      !isAccommodation && prevDayDate
-        ? metricsByDate.get(prevDayDate) ??
-          (() => {
-            const fallback = datesDesc.find((d) => d < (referenceDate ?? ''));
-            return fallback ? metricsByDate.get(fallback) ?? null : null;
-          })()
+    if (!row || (!isFnb && !isAccommodation)) return { accommodation: null, fnb: null };
+
+    const rev = row.total_revenue;
+    const revenueDeltaPct =
+      row.revenue_delta_day != null && Number.isFinite(row.revenue_delta_day)
+        ? row.revenue_delta_day
         : null;
-    // Previous-day metric: exact yesterday first, else closest date before reference (so revenue delta shows with 2+ days)
-    const prevDayMetricExact =
-      prevDayDate && referenceDate
-        ? metricsByDate.get(prevDayDate) ??
-          (() => {
-            const fallback = datesDesc.find((d) => d < referenceDate);
-            return fallback ? metricsByDate.get(fallback) ?? null : null;
-          })()
-        : null;
-    const prevRevDay = prevDayMetricExact?.revenue ?? null;
 
     if (isAccommodation) {
-      const ui = accTodayUiRow;
-      const c = canonical;
-      if (c) {
-        const rev = c.revenue_thb ?? c.revenue ?? null;
-        const occ = c.occupancy_pct ?? c.occupancy_rate ?? null;
-        const roomsSold =
-          c.utilized != null && Number.isFinite(c.utilized)
-            ? c.utilized
-            : ui?.rooms_sold != null
-              ? Number(ui.rooms_sold)
-              : operatingStatusData?.rooms_sold ?? latestDailyMetric?.roomsSold ?? null;
-        const totalRooms =
-          c.capacity != null && Number.isFinite(c.capacity)
-            ? c.capacity
-            : ui?.rooms_available != null
-              ? Number(ui.rooms_available)
-              : branch?.totalRooms ?? latestDailyMetric?.roomsAvailable ?? null;
-        const adr = c.adr_thb ?? c.adr ?? null;
-        const revpar = c.revpar_thb ?? c.revpar ?? null;
-        const revenueDeltaPct =
-          c.revenue_delta_day != null && Number.isFinite(c.revenue_delta_day)
-            ? c.revenue_delta_day
-            : ui?.revenue_delta != null && Number.isFinite(Number(ui.revenue_delta))
-              ? Number(ui.revenue_delta)
-              : todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
-                ? todaySummaryRow.revenue_delta_day
-                : rev != null && prevRevDay != null && prevRevDay > 0
-                  ? ((rev - prevRevDay) / prevRevDay) * 100
-                  : null;
-        const healthForSummary = c.health_score ?? null;
-        return {
-          accommodation: {
-            occupancyRate: occ,
-            roomsSold,
-            totalRooms,
-            revenue: rev,
-            revenueDeltaPct,
-            adr,
-            revpar,
-            healthScore: healthForSummary,
-          },
-          fnb: null,
-        };
-      }
-
-      const hasUi =
-        ui != null &&
-        (ui.metric_date != null ||
-          ui.revenue != null ||
-          ui.rooms_sold != null ||
-          ui.rooms_available != null ||
-          ui.health_score != null);
-
-      if (hasUi) {
-        const rev = null;
-        const occ = null;
-        const roomsSold = ui!.rooms_sold != null ? Number(ui!.rooms_sold) : null;
-        const totalRooms = ui!.rooms_available != null ? Number(ui!.rooms_available) : null;
-        const adr = null;
-        const revpar = null;
-        const revenueDeltaPct =
-          ui!.revenue_delta != null && Number.isFinite(Number(ui!.revenue_delta))
-            ? Number(ui!.revenue_delta)
-            : todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
-              ? todaySummaryRow.revenue_delta_day
-              : rev != null && prevRevDay != null && prevRevDay > 0
-                ? ((rev - prevRevDay) / prevRevDay) * 100
-                : null;
-        const healthForSummary = null;
-        return {
-          accommodation: {
-            occupancyRate: occ,
-            roomsSold,
-            totalRooms,
-            revenue: rev,
-            revenueDeltaPct,
-            adr,
-            revpar,
-            healthScore: healthForSummary,
-          },
-          fnb: null,
-        };
-      }
-
-      const rev = null;
-      const roomsSold = operatingStatusData?.rooms_sold ?? latestDailyMetric?.roomsSold ?? null;
-      const totalRooms = branch?.totalRooms ?? latestDailyMetric?.roomsAvailable ?? null;
-      const occ = null;
-      const revenueDeltaPctDay =
-        todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
-          ? todaySummaryRow.revenue_delta_day
-          : rev != null && prevRevDay != null && prevRevDay > 0
-            ? ((rev - prevRevDay) / prevRevDay) * 100
-            : null;
-      const adr = null;
-      const revpar = null;
-      const healthForSummary = null;
       return {
         accommodation: {
-          occupancyRate: occ,
-          roomsSold: roomsSold ?? null,
-          totalRooms: totalRooms ?? null,
+          occupancyRate: row.occupancy_rate,
+          roomsSold: row.rooms_sold,
+          totalRooms: row.rooms_available,
           revenue: rev,
-          revenueDeltaPct: revenueDeltaPctDay,
-          adr,
-          revpar,
-          healthScore: healthForSummary,
+          revenueDeltaPct,
+          adr: row.adr,
+          revpar: row.revpar,
+          healthScore: row.health_score,
         },
         fnb: null,
       };
     }
 
-    if (isFnb) {
-      const c = canonical;
-      const rev = c?.revenue_thb ?? c?.revenue ?? null;
-      const customers = c?.customers ?? null;
-      const avgTicket = c?.avg_ticket_thb ?? c?.avg_ticket ?? null;
-      const prevRev = prevMetric?.revenue ?? null;
-      const prevCust = prevMetric?.customers ?? null;
-      const revenueDeltaPct =
-        c?.revenue_delta_day != null && Number.isFinite(c.revenue_delta_day)
-          ? c.revenue_delta_day
-          : rev != null && prevRev != null && prevRev > 0
-            ? ((rev - prevRev) / prevRev) * 100
-            : null;
-      const customersDeltaPct =
-        customers != null && prevCust != null && prevCust > 0
-          ? ((customers - prevCust) / prevCust) * 100
-          : null;
-      return {
-        accommodation: null,
-        fnb: {
-          revenue: rev,
-          revenueDeltaPct,
-          customers,
-          customersDeltaPct,
-          avgTicket,
-          healthScore: c?.health_score ?? null,
-        },
-      };
-    }
-
-    return { accommodation: null, fnb: null };
-  }, [
-    branch?.moduleType,
-    branch?.totalRooms,
-    operatingStatusData,
-    fnbOperatingStatus,
-    latestDailyMetric,
-    dailyMetricsForTrends,
-    todaySummaryRow,
-    accTodayUiRow,
-    companyStatusCurrentRow,
-  ]);
+    return {
+      accommodation: null,
+      fnb: {
+        revenue: rev,
+        revenueDeltaPct,
+        customers: row.customers,
+        customersDeltaPct: null,
+        avgTicket: row.avg_ticket,
+        healthScore: row.health_score,
+      },
+    };
+  }, [branch?.moduleType, todaySummaryRow]);
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'development' || !branch?.id || !companyStatusCurrentRow) return;
+    if (process.env.NODE_ENV !== 'development' || !branch?.id || !todaySummaryRow) return;
     const mismatches: Array<{ metric: string; oldSource: string; oldValue: unknown; canonicalValue: unknown }> = [];
     const pushMismatch = (metric: string, oldSource: string, oldValue: unknown, canonicalValue: unknown) => {
       if (canonicalValue == null || oldValue == null) return;
       if (oldValue === canonicalValue) return;
       mismatches.push({ metric, oldSource, oldValue, canonicalValue });
     };
+    const c = todaySummaryRow;
 
-    if (branch.moduleType === 'accommodation') {
-      pushMismatch('health_score', 'accommodation_today_metrics_ui.health_score', accTodayUiRow?.health_score ?? null, companyStatusCurrentRow.health_score);
-      pushMismatch('revenue_thb', 'accommodation_today_metrics_ui.revenue', accTodayUiRow?.revenue ?? null, companyStatusCurrentRow.revenue_thb);
-      pushMismatch('occupancy_pct', 'accommodation_latest_metrics.occupancy_rate', operatingStatusData?.occupancy_rate ?? null, companyStatusCurrentRow.occupancy_pct);
-      pushMismatch('adr_thb', 'accommodation_today_metrics_ui.adr', accTodayUiRow?.adr ?? null, companyStatusCurrentRow.adr_thb);
-      pushMismatch('revpar_thb', 'accommodation_today_metrics_ui.revpar', accTodayUiRow?.revpar ?? null, companyStatusCurrentRow.revpar_thb);
-      pushMismatch(
-        'profitability_symbol',
-        'accommodation_profitability_signal.trend',
-        accommodationProfitSignal?.trend ?? null,
-        companyStatusCurrentRow.profitability_symbol
-      );
-    } else if (branch.moduleType === 'fnb') {
-      pushMismatch('health_score', 'fnb_operating_status.health_score', fnbOperatingStatus?.health_score ?? null, companyStatusCurrentRow.health_score);
-      pushMismatch('revenue_thb', 'fnb_operating_status.revenue', fnbOperatingStatus?.revenue ?? null, companyStatusCurrentRow.revenue_thb);
-      pushMismatch('customers', 'fnb_operating_status.customers', fnbOperatingStatus?.customers ?? null, companyStatusCurrentRow.customers);
-      pushMismatch('avg_ticket_thb', 'fnb_operating_status.avg_ticket', fnbOperatingStatus?.avg_ticket ?? null, companyStatusCurrentRow.avg_ticket_thb);
-      pushMismatch('avg_cost_thb', 'fnb_operating_status.avg_cost', fnbOperatingStatus?.avg_cost ?? null, companyStatusCurrentRow.avg_cost_thb);
-      pushMismatch('margin_symbol', 'fnb_daily_margin.marginTrend', fnbMarginFromDaily.marginTrend ?? null, companyStatusCurrentRow.margin_symbol);
+    if (branch?.moduleType === 'accommodation') {
+      pushMismatch('health_score', 'accommodation_today_metrics_ui.health_score', accTodayUiRow?.health_score ?? null, c.health_score);
+      pushMismatch('revenue', 'accommodation_today_metrics_ui.revenue', accTodayUiRow?.revenue ?? null, c.total_revenue);
+      pushMismatch('occupancy_rate', 'accommodation_latest_metrics.occupancy_rate', operatingStatusData?.occupancy_rate ?? null, c.occupancy_rate);
+      pushMismatch('adr', 'accommodation_today_metrics_ui.adr', accTodayUiRow?.adr ?? null, c.adr);
+      pushMismatch('revpar', 'accommodation_today_metrics_ui.revpar', accTodayUiRow?.revpar ?? null, c.revpar);
+    } else if (branch?.moduleType === 'fnb') {
+      pushMismatch('health_score', 'fnb_operating_status.health_score', fnbOperatingStatus?.health_score ?? null, c.health_score);
+      pushMismatch('revenue', 'fnb_operating_status.revenue', fnbOperatingStatus?.revenue ?? null, c.total_revenue);
+      pushMismatch('customers', 'fnb_operating_status.customers', fnbOperatingStatus?.customers ?? null, c.customers);
+      pushMismatch('avg_ticket', 'fnb_operating_status.avg_ticket', fnbOperatingStatus?.avg_ticket ?? null, c.avg_ticket);
+      pushMismatch('avg_cost', 'fnb_operating_status.avg_cost', fnbOperatingStatus?.avg_cost ?? null, c.avg_cost);
     }
 
     if (mismatches.length === 0) return;
-    console.log('[branch-shared-metric-legacy-source-mismatch]', {
-      branch_id: branch.id,
-      business_type: branch.moduleType ?? 'unknown',
+    console.log('[branch_status_current_vs_legacy_panels]', {
+      branch_id: branch!.id,
+      business_type: branch?.moduleType ?? 'unknown',
       mismatches,
     });
   }, [
     branch?.id,
     branch?.moduleType,
-    companyStatusCurrentRow,
+    todaySummaryRow,
     accTodayUiRow?.health_score,
     accTodayUiRow?.revenue,
     accTodayUiRow?.adr,
     accTodayUiRow?.revpar,
     operatingStatusData?.occupancy_rate,
-    accommodationProfitSignal?.trend,
     fnbOperatingStatus?.health_score,
     fnbOperatingStatus?.revenue,
     fnbOperatingStatus?.customers,
     fnbOperatingStatus?.avg_ticket,
     fnbOperatingStatus?.avg_cost,
-    fnbMarginFromDaily.marginTrend,
   ]);
 
   useEffect(() => {
@@ -2033,14 +1845,7 @@ export default function BranchOverviewPage() {
             branchType={branch.moduleType}
             locale={locale === 'th' ? 'th' : 'en'}
             lastUpdatedDate={
-              companyStatusCurrentRow?.metric_date ??
-              (branch.moduleType === 'accommodation'
-                ? accTodayUiRow?.metric_date
-                : branch.moduleType === 'fnb'
-                  ? fnbOperatingStatus?.metric_date
-                  : null) ??
-              operatingStatusData?.metric_date ??
-              latestDailyMetric?.date ??
+              todaySummaryRow?.metric_date ??
               (lastUpdated ? new Date(lastUpdated).toISOString().slice(0, 10) : null)
             }
             accommodation={todaySummary.accommodation}
@@ -2048,11 +1853,11 @@ export default function BranchOverviewPage() {
             fnbProfitability={
               branch.moduleType === 'fnb'
                 ? {
-                    avgDailyCost: companyStatusCurrentRow?.avg_cost_thb ?? companyStatusCurrentRow?.avg_cost ?? null,
+                    avgDailyCost: todaySummaryRow?.avg_cost ?? null,
                     marginTrend: mapCompanySymbolToTrend(
-                      companyStatusCurrentRow?.margin_symbol ?? companyStatusCurrentRow?.margin
+                      todaySummaryRow?.margin_symbol ?? todaySummaryRow?.margin
                     ),
-                    marginExplanation: fnbMarginFromDaily.marginExplanation,
+                    marginExplanation: todaySummaryRow?.margin ?? '',
                   }
                 : null
             }
@@ -2060,9 +1865,9 @@ export default function BranchOverviewPage() {
               branch.moduleType === 'accommodation'
                 ? {
                     profitTrend: mapCompanySymbolToTrend(
-                      companyStatusCurrentRow?.profitability_symbol ?? companyStatusCurrentRow?.profitability
+                      todaySummaryRow?.profitability_symbol ?? todaySummaryRow?.profitability
                     ),
-                    profitExplanation: accommodationProfitSignal?.explanation ?? '',
+                    profitExplanation: todaySummaryRow?.profitability ?? '',
                   }
                 : null
             }
