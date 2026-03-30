@@ -45,6 +45,8 @@ import {
   getTodaySummary,
   getBranchTrendSeriesWithFallback,
   getAccommodationTodayMetricsUi,
+  isAccommodationModuleType,
+  isFnbModuleType,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
   type TodaySummaryRow,
@@ -442,7 +444,11 @@ export default function BranchOverviewPage() {
     }
     getBranchLearningStatus(branch.id).then(setLearningStatus);
     getTodaySummary(branch.id, {
-      uiSurface: branch.moduleType === 'fnb' ? 'fnb' : branch.moduleType === 'accommodation' ? 'accommodation' : 'unknown',
+      uiSurface: isFnbModuleType(branch.moduleType)
+        ? 'fnb'
+        : isAccommodationModuleType(branch.moduleType)
+          ? 'accommodation'
+          : 'unknown',
     }).then(setTodaySummaryRow);
     getFreshnessDatesFromRawTable(branch.id, branch.moduleType).then((dates) => {
       setFreshnessDatesFromRaw(dates);
@@ -1478,9 +1484,10 @@ export default function BranchOverviewPage() {
   /** Branch Today metric strip — public.branch_status_current only (via getTodaySummary). */
   const todaySummary = useMemo(() => {
     const row = todaySummaryRow;
-    const isFnb = branch?.moduleType === 'fnb';
-    const isAccommodation = branch?.moduleType === 'accommodation';
-    if (!row || (!isFnb && !isAccommodation)) return { accommodation: null, fnb: null };
+    const mt = branch?.moduleType;
+    const isFnb = isFnbModuleType(mt);
+    const isAcc = isAccommodationModuleType(mt);
+    if (!row || (!isFnb && !isAcc)) return { accommodation: null, fnb: null };
 
     const rev = row.total_revenue;
     const revenueDeltaPct =
@@ -1488,7 +1495,7 @@ export default function BranchOverviewPage() {
         ? row.revenue_delta_day
         : null;
 
-    if (isAccommodation) {
+    if (isAcc && !isFnb) {
       return {
         accommodation: {
           occupancyRate: row.occupancy_rate,
@@ -1504,17 +1511,21 @@ export default function BranchOverviewPage() {
       };
     }
 
-    return {
-      accommodation: null,
-      fnb: {
-        revenue: rev,
-        revenueDeltaPct,
-        customers: row.customers,
-        customersDeltaPct: null,
-        avgTicket: row.avg_ticket,
-        healthScore: row.health_score,
-      },
-    };
+    if (isFnb) {
+      return {
+        accommodation: null,
+        fnb: {
+          revenue: rev,
+          revenueDeltaPct,
+          customers: row.customers,
+          customersDeltaPct: null,
+          avgTicket: row.avg_ticket,
+          healthScore: row.health_score,
+        },
+      };
+    }
+
+    return { accommodation: null, fnb: null };
   }, [branch?.moduleType, todaySummaryRow]);
 
   useEffect(() => {
@@ -1527,13 +1538,13 @@ export default function BranchOverviewPage() {
     };
     const c = todaySummaryRow;
 
-    if (branch?.moduleType === 'accommodation') {
+    if (isAccommodationModuleType(branch?.moduleType) && !isFnbModuleType(branch?.moduleType)) {
       pushMismatch('health_score', 'accommodation_today_metrics_ui.health_score', accTodayUiRow?.health_score ?? null, c.health_score);
       pushMismatch('revenue', 'accommodation_today_metrics_ui.revenue', accTodayUiRow?.revenue ?? null, c.total_revenue);
       pushMismatch('occupancy_rate', 'accommodation_latest_metrics.occupancy_rate', operatingStatusData?.occupancy_rate ?? null, c.occupancy_rate);
       pushMismatch('adr', 'accommodation_today_metrics_ui.adr', accTodayUiRow?.adr ?? null, c.adr);
       pushMismatch('revpar', 'accommodation_today_metrics_ui.revpar', accTodayUiRow?.revpar ?? null, c.revpar);
-    } else if (branch?.moduleType === 'fnb') {
+    } else if (isFnbModuleType(branch?.moduleType)) {
       pushMismatch('health_score', 'fnb_operating_status.health_score', fnbOperatingStatus?.health_score ?? null, c.health_score);
       pushMismatch('revenue', 'fnb_operating_status.revenue', fnbOperatingStatus?.revenue ?? null, c.total_revenue);
       pushMismatch('customers', 'fnb_operating_status.customers', fnbOperatingStatus?.customers ?? null, c.customers);
@@ -1840,9 +1851,9 @@ export default function BranchOverviewPage() {
           </div>
         )}
         {/* 1. Top Metrics (primary) — single row only */}
-        {branch?.moduleType === 'accommodation' || branch?.moduleType === 'fnb' ? (
+        {isAccommodationModuleType(branch?.moduleType) || isFnbModuleType(branch?.moduleType) ? (
           <BranchTodaySummary
-            branchType={branch.moduleType}
+            branchType={isFnbModuleType(branch.moduleType) ? 'fnb' : 'accommodation'}
             locale={locale === 'th' ? 'th' : 'en'}
             lastUpdatedDate={
               todaySummaryRow?.metric_date ??
@@ -1851,7 +1862,7 @@ export default function BranchOverviewPage() {
             accommodation={todaySummary.accommodation}
             fnb={todaySummary.fnb}
             fnbProfitability={
-              branch.moduleType === 'fnb'
+              isFnbModuleType(branch.moduleType)
                 ? {
                     avgDailyCost: todaySummaryRow?.avg_cost ?? null,
                     marginTrend: mapCompanySymbolToTrend(
@@ -1862,7 +1873,7 @@ export default function BranchOverviewPage() {
                 : null
             }
             accommodationProfitability={
-              branch.moduleType === 'accommodation'
+              isAccommodationModuleType(branch.moduleType) && !isFnbModuleType(branch.moduleType)
                 ? {
                     profitTrend: mapCompanySymbolToTrend(
                       todaySummaryRow?.profitability_symbol ?? todaySummaryRow?.profitability

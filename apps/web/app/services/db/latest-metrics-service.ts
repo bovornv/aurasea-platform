@@ -15,7 +15,6 @@ import {
 } from '../../lib/supabase/postgrest-missing-resource';
 import {
   logBranchBusinessStatusApiDev,
-  SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY,
   getBranchBusinessStatusApiTable,
   type BranchBusinessStatusApiUiSurface,
 } from './branch-business-status-api-columns';
@@ -342,12 +341,14 @@ export interface BranchTrendSeries {
   avg_ticket?: number[];
 }
 
-function isAccommodationModuleType(mt: string | null | undefined): boolean {
+/** Branch `module_type` values that use the accommodation Today metric strip. */
+export function isAccommodationModuleType(mt: string | null | undefined): boolean {
   const s = (mt ?? '').toLowerCase();
   return ['accommodation', 'hotel', 'hotel_resort', 'rooms', 'hotel_with_cafe'].includes(s);
 }
 
-function isFnbModuleType(mt: string | null | undefined): boolean {
+/** Branch `module_type` values that use the F&B Today metric strip. */
+export function isFnbModuleType(mt: string | null | undefined): boolean {
   const s = (mt ?? '').toLowerCase();
   return ['fnb', 'restaurant', 'cafe', 'cafe_restaurant'].includes(s);
 }
@@ -483,7 +484,9 @@ export async function getTodaySummary(
       return null;
     }
 
-    const select = SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY;
+    // Wildcard avoids PGRST/400 when branch_status_current is missing optional columns
+    // (organization_id, profitability_*, etc.) on some deployments.
+    const select = '*';
     const table = getBranchBusinessStatusApiTable();
     const { data, error } = await supabase
       .from(table)
@@ -516,7 +519,7 @@ export async function getTodaySummary(
     if (!data) return null;
     const row = data as Record<string, unknown>;
     const bid = pickStrFromRow(row, 'branch_id') ?? branchId;
-    const totalRev = pickNumFromRow(row, 'revenue', 'revenue_thb');
+    const totalRev = pickNumFromRow(row, 'revenue', 'revenue_thb', 'total_revenue');
     return {
       branch_id: bid,
       metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
@@ -526,17 +529,17 @@ export async function getTodaySummary(
       total_revenue: totalRev,
       revenue_yesterday: null,
       revenue_delta_day: pickNumFromRow(row, 'revenue_delta_day'),
-      occupancy_rate: pickNumFromRow(row, 'occupancy_rate'),
+      occupancy_rate: pickNumFromRow(row, 'occupancy_rate', 'occupancy_pct'),
       occupancy_delta_week: null,
-      rooms_sold: pickNumFromRow(row, 'rooms_sold'),
-      rooms_available: pickNumFromRow(row, 'rooms_available'),
-      adr: pickNumFromRow(row, 'adr'),
-      revpar: pickNumFromRow(row, 'revpar'),
+      rooms_sold: pickNumFromRow(row, 'rooms_sold', 'utilized'),
+      rooms_available: pickNumFromRow(row, 'rooms_available', 'capacity'),
+      adr: pickNumFromRow(row, 'adr', 'adr_thb'),
+      revpar: pickNumFromRow(row, 'revpar', 'revpar_thb'),
       profitability: pickStrFromRow(row, 'profitability'),
       profitability_symbol: pickStrFromRow(row, 'profitability_symbol'),
-      customers: pickNumFromRow(row, 'customers'),
-      avg_ticket: pickNumFromRow(row, 'avg_ticket'),
-      avg_cost: pickNumFromRow(row, 'avg_cost'),
+      customers: pickNumFromRow(row, 'customers', 'total_customers'),
+      avg_ticket: pickNumFromRow(row, 'avg_ticket', 'avg_ticket_thb'),
+      avg_cost: pickNumFromRow(row, 'avg_cost', 'avg_cost_thb'),
       margin: pickStrFromRow(row, 'margin'),
       margin_symbol: pickStrFromRow(row, 'margin_symbol'),
       health_score: pickNumFromRow(row, 'health_score'),

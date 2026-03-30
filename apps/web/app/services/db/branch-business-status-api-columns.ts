@@ -14,7 +14,10 @@ export function getBranchBusinessStatusApiTable(): string {
 export const SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY =
   'branch_id,organization_id,branch_name,status_label,status_subtitle,health_score,updated_at,metric_date,revenue_thb,customers,avg_ticket';
 
-/** Branch Today metric strip — full row from public.branch_status_current (one row per branch). */
+/**
+ * Documented column set for public.branch_status_current (Branch Today strip).
+ * Client uses select('*') in getTodaySummary so missing optional columns do not break PostgREST.
+ */
 export const SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY =
   [
     'organization_id',
