@@ -7,9 +7,9 @@
  * Writes are routed by branch type:
  * - hotel / accommodation → accommodation_daily_metrics
  * - restaurant / fnb → fnb_daily_metrics
- * Pass metric.branchType (or infer from metric fields). READS use daily_metrics (view) for analytics.
+ * Pass metric.branchType (or infer from metric fields). READS use branch_daily_metrics for analytics.
  */
-const DAILY_METRICS_READ = 'daily_metrics';
+const DAILY_METRICS_READ = 'branch_daily_metrics';
 const TABLE_FNB = 'fnb_daily_metrics';
 const TABLE_ACCOMMODATION = 'accommodation_daily_metrics';
 
@@ -377,7 +377,7 @@ export async function getLastEntryDate(
 
 /**
  * Get daily metrics for a branch
- * Unified service: Returns data from single daily_metrics table
+ * Unified service: Returns data from public.branch_daily_metrics (canonical read view)
  * 
  * Data Guard: Returns empty array if no data (no fallback to simulation)
  */
@@ -617,7 +617,7 @@ function saveDailyMetricToLocalStorage(metric: DailyMetricInput): boolean {
   if (typeof window === 'undefined') return false;
   
   try {
-    const key = `daily_metrics_${metric.branchId}`;
+    const key = `branch_daily_metrics_${metric.branchId}`;
     const existing = getDailyMetricsFromLocalStorage(metric.branchId);
     
     // Remove existing entry for same date
@@ -662,7 +662,7 @@ function getDailyMetricsFromLocalStorage(
   if (typeof window === 'undefined') return [];
   
   try {
-    const key = `daily_metrics_${branchId}`;
+    const key = `branch_daily_metrics_${branchId}`;
     const stored = localStorage.getItem(key);
     
     if (!stored) return [];

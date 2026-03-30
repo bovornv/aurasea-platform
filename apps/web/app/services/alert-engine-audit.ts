@@ -147,14 +147,16 @@ async function auditAlert(
   }
 
   // Check data source
-  result.usesDailyMetrics = ruleCode.includes('daily_metrics') ||
-                           ruleCode.includes('dailyMetrics') ||
-                           ruleCode.includes('DailyMetric');
+  result.usesDailyMetrics =
+    ruleCode.includes('branch_daily_metrics') ||
+    ruleCode.includes('daily_metrics') ||
+    ruleCode.includes('dailyMetrics') ||
+    ruleCode.includes('DailyMetric');
   result.usesWeeklyMetrics = ruleCode.includes('weekly_metrics') ||
                              ruleCode.includes('weeklyMetrics') ||
                              ruleCode.includes('WeeklyMetric');
   if (result.usesWeeklyMetrics) {
-    result.issues.push('Uses deprecated weekly_metrics - should use daily_metrics');
+    result.issues.push('Uses deprecated weekly_metrics - should use branch_daily_metrics / daily metrics pipeline');
   }
 
   // Check for formula

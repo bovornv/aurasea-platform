@@ -1,6 +1,6 @@
 /**
  * Company Today — `branch_business_status_api` + alerts_* (canonical metrics: `public.today_summary`).
- * When views/RPC are missing in PostgREST, we remember per-session and fall back to branches + daily_metrics.
+ * When views/RPC are missing in PostgREST, we remember per-session and fall back to branches + branch_daily_metrics.
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -436,7 +436,7 @@ function logSupabaseStructured(
   });
 }
 
-/** Latest daily_metrics row per branch → shape compatible with normalizeBusinessRow. */
+/** Latest branch_daily_metrics row per branch → shape compatible with normalizeBusinessRow. */
 async function fetchBusinessStatusFallbackRows(
   supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
   organizationId: string | null,
@@ -467,7 +467,7 @@ async function fetchBusinessStatusFallbackRows(
   }
 
   const { data: dmRows, error: dErr } = await supabase
-    .from('daily_metrics')
+    .from('branch_daily_metrics')
     .select('*')
     .in('branch_id', branchIds);
   if (dErr || !Array.isArray(dmRows)) return [];

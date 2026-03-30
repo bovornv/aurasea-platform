@@ -1,6 +1,6 @@
 /**
  * Service for querying branch metrics information
- * - Last Updated: MAX(metric_date) from daily_metrics and fnb_daily_metrics
+ * - Last Updated: MAX(metric_date) from branch_daily_metrics and fnb_daily_metrics
  * - Data Coverage: COUNT(DISTINCT metric_date) in last 30 days from both tables
  */
 
@@ -10,7 +10,7 @@ type MetricRow = { metric_date?: string };
 
 /**
  * Get the latest metric_date for a branch
- * PART 1.2: Query both daily_metrics and fnb_daily_metrics, return the latest
+ * PART 1.2: Query branch_daily_metrics and fnb_daily_metrics, return the latest
  */
 export async function getLastUpdatedDate(
   branchId: string
@@ -25,11 +25,10 @@ export async function getLastUpdatedDate(
       return { lastUpdated: null, error: 'Supabase client not available' };
     }
 
-    // PART 1.2: Query MAX(metric_date) from both daily_metrics and fnb_daily_metrics
+    // PART 1.2: Query MAX(metric_date) from branch_daily_metrics and fnb_daily_metrics
     const [dailyMetricsResult, fnbMetricsResult] = await Promise.all([
-      // Query daily_metrics (accommodation)
       supabase
-        .from('daily_metrics')
+        .from('branch_daily_metrics')
         .select('metric_date')
         .eq('branch_id', branchId)
         .order('metric_date', { ascending: false })
@@ -51,7 +50,7 @@ export async function getLastUpdatedDate(
 
     const dailyData = dailyMetricsResult.data as MetricRow | null;
     const fnbData = fnbMetricsResult.data as MetricRow | null;
-    // Process daily_metrics result
+    // Process branch_daily_metrics result
     if (!dailyMetricsResult.error && dailyData?.metric_date) {
       dates.push(new Date(dailyData.metric_date));
     }

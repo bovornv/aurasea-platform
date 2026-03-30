@@ -1,0 +1,49 @@
+-- =============================================================================
+-- Drop legacy public.daily_metrics (after cutover to public.branch_daily_metrics)
+-- =============================================================================
+-- Preconditions:
+--   - public.branch_daily_metrics exists; run add-branch-daily-metrics-rls.sql (grants + RLS) and
+--     super-admin-rls.sql if you use super-admin bypass.
+--   - All dependent public views use branch_daily_metrics (repo: add-branch-performance-drivers-views.sql,
+--     fix-company-status-current-and-today-dashboard.sql).
+--   - App/clients query branch_daily_metrics only (AuraSea: daily-metrics-service DAILY_METRICS_READ, etc.).
+--
+-- Does NOT use DROP ... CASCADE. If this fails with 2BP01 (dependent objects), find and rewire the
+-- dependent view/materialized view first, then retry.
+--
+-- If public.daily_metrics is still a base TABLE (not a view), use DROP TABLE after migrating data;
+-- this script only drops a VIEW.
+-- =============================================================================
+
+DROP VIEW IF EXISTS public.daily_metrics;
+
+-- -----------------------------------------------------------------------------
+-- Verification checklist (run manually)
+-- -----------------------------------------------------------------------------
+-- 1) No public views still reference daily_metrics as a relation:
+--    SELECT DISTINCT c.relname AS view_name
+--    FROM pg_depend d
+--    JOIN pg_rewrite r ON r.oid = d.objid
+--    JOIN pg_class c ON c.oid = r.ev_class
+--    JOIN pg_class ref ON ref.oid = d.refobjid
+--    JOIN pg_namespace n ON n.oid = ref.relnamespace
+--    WHERE n.nspname = 'public'
+--      AND ref.relname = 'daily_metrics'
+--      AND c.relkind = 'v';
+--    Expect: 0 rows.
+--
+-- 2) No public functions reference daily_metrics in source (approximate):
+--    SELECT p.proname
+--    FROM pg_proc p
+--    JOIN pg_namespace n ON n.oid = p.pronamespace
+--    WHERE n.nspname = 'public'
+--      AND pg_get_functiondef(p.oid) ILIKE '%daily_metrics%'
+--      AND pg_get_functiondef(p.oid) NOT ILIKE '%fnb_daily_metrics%'
+--      AND pg_get_functiondef(p.oid) NOT ILIKE '%accommodation_daily_metrics%';
+--    Inspect results; exclude false positives (comments, other names).
+--
+-- 3) PostgREST: GET /rest/v1/branch_daily_metrics?select=branch_id,metric_date&limit=1
+--    Expect: 200 (or RLS-empty), not 404.
+--
+-- 4) GET /rest/v1/daily_metrics?limit=1 → expect 404 after drop (clients must be updated).
+-- -----------------------------------------------------------------------------

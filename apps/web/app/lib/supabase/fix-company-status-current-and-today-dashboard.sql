@@ -1,7 +1,7 @@
 -- =============================================================================
 -- company_status_current + today_company_dashboard (NO CASCADE on drops)
 -- =============================================================================
--- Prerequisites: public.today_summary, public.daily_metrics, public.branches,
+-- Prerequisites: public.today_summary, public.branch_daily_metrics, public.branches,
 --   public.branch_performance_drivers_accommodation, public.branch_performance_drivers_fnb
 --   (run add-branch-performance-drivers-views.sql if those views are missing).
 --
@@ -9,16 +9,13 @@
 -- Recreate: company_status_current → today_company_dashboard.
 --
 -- company_status_current: latest metric_date per branch (DISTINCT ON branch_id).
--- Sources: public.today_summary (spine), public.daily_metrics, optional driver views,
+-- Sources: public.today_summary (spine), public.branch_daily_metrics, optional driver views,
 --          public.branches for org/name/type.
 --
 -- Exposes canonical names + legacy aliases (revenue_thb, occupancy_pct, …) for REST.
 -- =============================================================================
 
-DROP VIEW IF EXISTS public.today_company_dashboard;
-DROP VIEW IF EXISTS public.company_status_current;
-
-CREATE VIEW public.company_status_current AS
+CREATE OR REPLACE VIEW public.company_status_current AS
 WITH j AS (
   SELECT DISTINCT ON (trim(both FROM t.branch_id::text))
     t.branch_id,
@@ -59,7 +56,7 @@ x AS (
     pa.rooms_available AS pa_rooms_avail,
     pf.avg_ticket AS pf_avg_ticket
   FROM j
-  LEFT JOIN public.daily_metrics dm
+  LEFT JOIN public.branch_daily_metrics dm
     ON trim(both FROM dm.branch_id::text) = trim(both FROM j.branch_id::text)
     AND dm.metric_date::date = j.metric_date
   LEFT JOIN public.branch_performance_drivers_accommodation pa
@@ -296,11 +293,11 @@ SELECT
 FROM c;
 
 COMMENT ON VIEW public.company_status_current IS
-  'Latest branch-day snapshot: today_summary + daily_metrics + optional performance driver views; one row per branch; canonical + legacy column names.';
+  'Latest branch-day snapshot: today_summary + branch_daily_metrics + optional performance driver views; one row per branch; canonical + legacy column names.';
 
 GRANT SELECT ON public.company_status_current TO anon, authenticated;
 
-CREATE VIEW public.today_company_dashboard AS
+CREATE OR REPLACE VIEW public.today_company_dashboard AS
 WITH orgs AS (
   SELECT DISTINCT c.organization_id::uuid AS organization_id
   FROM public.company_status_current c

@@ -1,4 +1,6 @@
 -- =============================================================================
+-- DEPRECATED for new deployments: canonical read model is public.branch_daily_metrics.
+-- Drop legacy public.daily_metrics after rewiring (drop-public-daily-metrics.sql).
 -- Recreate public.daily_metrics as a UNION view (fixes PostgREST 502 / broken view)
 -- =============================================================================
 -- Prerequisites:

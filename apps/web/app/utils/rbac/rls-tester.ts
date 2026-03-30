@@ -1,6 +1,6 @@
 /**
  * Supabase RLS tester for RBAC.
- * testRLSAccess(branchId): attempts to fetch daily_metrics for another branch.
+ * testRLSAccess(branchId): attempts to fetch branch_daily_metrics for another branch.
  * If fetch succeeds, logs [CRITICAL_RLS_BREACH].
  * Do NOT modify alert or health engine logic.
  */
@@ -16,7 +16,7 @@ export interface RLSTestResult {
 }
 
 /**
- * Attempts to fetch daily_metrics for the given branchId.
+ * Attempts to fetch branch_daily_metrics for the given branchId.
  * When used as "other branch" test: if the current user should not have access to branchId
  * and rows are returned, this indicates an RLS breach.
  * Returns { allowed: false, breach: true } when data was returned but should not be visible.
@@ -33,7 +33,7 @@ export async function testRLSAccess(branchId: string): Promise<RLSTestResult> {
 
   try {
     const { data, error } = await supabase
-      .from('daily_metrics')
+      .from('branch_daily_metrics')
       .select('id, branch_id, metric_date')
       .eq('branch_id', branchId)
       .limit(5);
@@ -66,7 +66,7 @@ export async function testRLSAccess(branchId: string): Promise<RLSTestResult> {
 }
 
 /**
- * Test that the current user CANNOT read daily_metrics for a branch they don't have access to.
+ * Test that the current user CANNOT read branch_daily_metrics for a branch they don't have access to.
  * Call with an "other" branchId (not in the user's accessibleBranchIds).
  * If rows are returned, log [CRITICAL_RLS_BREACH].
  */
@@ -79,7 +79,7 @@ export async function testRLSIsolationForBranch(
 
   if (!isAllowedBranch && (result.rowCount ?? 0) > 0) {
     console.error(
-      `[CRITICAL_RLS_BREACH] User received ${result.rowCount} daily_metrics row(s) for branch ${otherBranchId} which they should not access.`
+      `[CRITICAL_RLS_BREACH] User received ${result.rowCount} branch_daily_metrics row(s) for branch ${otherBranchId} which they should not access.`
     );
     return { ...result, breach: true };
   }

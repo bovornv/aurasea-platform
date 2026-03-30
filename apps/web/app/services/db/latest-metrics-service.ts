@@ -332,7 +332,7 @@ function startDateStrForDays(days: number): string {
 }
 
 /**
- * Branch Performance Drivers: public.branch_performance_drivers_* (daily_metrics ∪ today_summary in SQL only).
+ * Branch Performance Drivers: public.branch_performance_drivers_* (branch_daily_metrics ∪ today_summary in SQL only).
  */
 export async function getBranchTrendSeries(
   branchId: string,

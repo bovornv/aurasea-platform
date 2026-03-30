@@ -379,6 +379,7 @@ CREATE POLICY "Only owners can delete branches"
   );
 
 -- Daily metrics: Users can only access metrics for accessible branches
+-- Canonical read model: public.branch_daily_metrics — use add-branch-daily-metrics-rls.sql (policies mirror this block).
 DROP POLICY IF EXISTS "Users can read their organization's daily metrics" ON daily_metrics;
 CREATE POLICY "Users can read accessible daily metrics"
   ON daily_metrics FOR SELECT

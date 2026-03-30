@@ -93,6 +93,18 @@ CREATE POLICY "Super admins update daily metrics"
   ON daily_metrics FOR UPDATE
   USING (public.is_super_admin());
 
+-- Branch daily metrics (canonical read view): super admin read only (skip if view not created yet)
+DO $bdm$
+BEGIN
+  IF to_regclass('public.branch_daily_metrics') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Super admins read all branch daily metrics" ON public.branch_daily_metrics';
+    EXECUTE 'CREATE POLICY "Super admins read all branch daily metrics"
+      ON public.branch_daily_metrics FOR SELECT
+      USING (public.is_super_admin())';
+  END IF;
+END
+$bdm$;
+
 -- Invitations: super admin full access
 DROP POLICY IF EXISTS "Super admins read all invitations" ON invitations;
 CREATE POLICY "Super admins read all invitations"

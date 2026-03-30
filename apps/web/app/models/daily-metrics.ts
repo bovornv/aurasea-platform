@@ -1,7 +1,7 @@
 /**
  * Unified Daily Metrics Model
  * 
- * Standardized architecture: All business types use daily_metrics table
+ * Writes: accommodation_daily_metrics / fnb_daily_metrics. Reads (analytics): public.branch_daily_metrics.
  * Supports both Accommodation and F&B modules
  */
 
@@ -110,7 +110,7 @@ export function calculateTop3MenuSharePct(metric: DailyMetric | DailyMetricInput
 
 /**
  * Database format (for Supabase)
- * Unified daily_metrics table with all canonical fields
+ * Row shape from public.branch_daily_metrics (read) / split write tables
  */
 export interface DailyMetricDb {
   id: string;

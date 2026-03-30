@@ -258,7 +258,7 @@ export default function BranchOverviewPage() {
     return Array.from(byId.values());
   }, [branch?.id, branchAlerts]);
 
-  // PHASE 3: Calculate performance trends from daily_metrics
+  // PHASE 3: Calculate performance trends from branch_daily_metrics (via getDailyMetrics)
   // Compare last 7 days vs previous 7 days (requires minimum 14 days)
   const [dailyMetricsForTrends, setDailyMetricsForTrends] = useState<DailyMetric[] | null>(null);
   

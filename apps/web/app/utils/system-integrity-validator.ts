@@ -233,12 +233,12 @@ async function validateBranchLevel(
   const autoFixed: string[] = [];
 
   try {
-    // Check 1: Latest daily_metrics exists
+    // Check 1: Latest branch_daily_metrics (via getDailyMetrics) exists
     const dailyMetrics = await getDailyMetrics(branchId, 30);
     if (dailyMetrics.length === 0) {
       warnings.push({
         level: 'branch',
-        component: 'daily_metrics',
+        component: 'branch_daily_metrics',
         check: 'latest_metrics_exists',
         message: `Branch ${branchId} has no daily metrics`,
         details: { branchId },
@@ -253,7 +253,7 @@ async function validateBranchLevel(
     if (last30Days.length < 10) {
       warnings.push({
         level: 'branch',
-        component: 'daily_metrics',
+        component: 'branch_daily_metrics',
         check: 'sufficient_history',
         message: `Branch ${branchId} has only ${last30Days.length} days of data (need 10+)`,
         details: { branchId, days: last30Days.length },
@@ -512,7 +512,7 @@ async function validateTrendCalculations(
     const { getHealthScoreTrend } = require('../../../../core/sme-os/engine/services/health-score-trend-service');
 
     for (const branch of branches) {
-      // Check trend uses daily_metrics only (validated by checking data source)
+      // Check trend uses branch_daily_metrics (via getDailyMetrics) only
       const trend30 = getHealthScoreTrend(businessGroupId, 30, branch.id);
       const trend90 = getHealthScoreTrend(businessGroupId, 90, branch.id);
 
