@@ -1491,8 +1491,8 @@ export default function BranchOverviewPage() {
 
     const rev = row.total_revenue;
     const revenueDeltaPct =
-      row.revenue_delta_day != null && Number.isFinite(row.revenue_delta_day)
-        ? row.revenue_delta_day
+      row.revenue_change_pct_day != null && Number.isFinite(row.revenue_change_pct_day)
+        ? row.revenue_change_pct_day
         : null;
 
     if (isAcc && !isFnb) {
@@ -1865,21 +1865,13 @@ export default function BranchOverviewPage() {
               isFnbModuleType(branch.moduleType)
                 ? {
                     avgDailyCost: todaySummaryRow?.avg_cost ?? null,
-                    marginTrend: mapCompanySymbolToTrend(
-                      todaySummaryRow?.margin_symbol ?? todaySummaryRow?.margin
-                    ),
-                    marginExplanation: todaySummaryRow?.margin ?? '',
+                    marginSymbol: todaySummaryRow?.margin_symbol ?? null,
                   }
                 : null
             }
-            accommodationProfitability={
+            accommodationProfitabilitySymbol={
               isAccommodationModuleType(branch.moduleType) && !isFnbModuleType(branch.moduleType)
-                ? {
-                    profitTrend: mapCompanySymbolToTrend(
-                      todaySummaryRow?.profitability_symbol ?? todaySummaryRow?.profitability
-                    ),
-                    profitExplanation: todaySummaryRow?.profitability ?? '',
-                  }
+                ? (todaySummaryRow?.profitability_symbol ?? null)
                 : null
             }
             collectingLabel={locale === 'th' ? 'กำลังรวบรวมข้อมูล...' : 'Collecting data...'}

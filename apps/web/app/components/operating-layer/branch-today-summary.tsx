@@ -109,14 +109,11 @@ export interface BranchTodaySummaryProps {
   /** Avg cost + margin: from public.branch_status_current (Branch overview passes snapshot row only). */
   fnbProfitability?: {
     avgDailyCost: number | null;
-    marginTrend: ProfitabilityTrend | null;
-    marginExplanation: string;
+    /** Margin symbol from branch_status_current.margin_symbol (▲/▼/—). */
+    marginSymbol: string | null;
   } | null;
-  /** Profitability arrow + copy: from public.branch_status_current (Branch overview). */
-  accommodationProfitability?: {
-    profitTrend: ProfitabilityTrend | null;
-    profitExplanation: string;
-  } | null;
+  /** Profitability symbol from branch_status_current.profitability_symbol (▲/▼/—). */
+  accommodationProfitabilitySymbol?: string | null;
   collectingLabel?: string;
   /** Freshness from getDataFreshnessStatus. When non-null, chip is always shown (same status as Enter Data page). */
   freshness?: { label: string; color: StatusChipColor } | null;
@@ -134,7 +131,7 @@ export function BranchTodaySummary({
   accommodation,
   fnb,
   fnbProfitability = null,
-  accommodationProfitability = null,
+  accommodationProfitabilitySymbol = null,
   collectingLabel = 'Collecting data...',
   freshness = null,
 }: BranchTodaySummaryProps) {
@@ -150,6 +147,7 @@ export function BranchTodaySummary({
   const labelAvgCost = isTh ? 'ต้นทุนเฉลี่ย' : 'Avg Cost';
   const labelMargin = isTh ? 'มาร์จิ้น' : 'Margin';
   const insufficientData = isTh ? 'ข้อมูลไม่เพียงพอ' : 'Insufficient data';
+  const noYesterday = isTh ? 'ไม่มีข้อมูลเมื่อวาน' : 'no yesterday comparison';
 
   const rowStyle: React.CSSProperties = {
     display: 'flex',
@@ -196,9 +194,13 @@ export function BranchTodaySummary({
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelRevenue}</span>
               <span style={valueStyle}>{revStr}</span>
-              {revDelta != null && Number.isFinite(revDelta) && (
+              {revDelta != null && Number.isFinite(revDelta) ? (
                 <span style={revDelta >= 0 ? deltaPos : deltaNeg}>
-                  {' '}({revDelta >= 0 ? '+' : ''}{revDelta.toFixed(0)}% {vsYesterday})
+                  {' '}({revDelta >= 0 ? '+' : ''}{Math.round(revDelta)}% {isTh ? 'เทียบเมื่อวาน' : 'from yesterday'})
+                </span>
+              ) : (
+                <span style={trendFlat}>
+                  {' '}({noYesterday})
                 </span>
               )}
             </span>
@@ -223,13 +225,10 @@ export function BranchTodaySummary({
               <span style={valueStyle}>{revparStr}</span>
             </span>
             <span style={sepStyle}>{sep}</span>
-            <ProfitTrendMetric
-              label={labelProfitability}
-              trend={accommodationProfitability?.profitTrend ?? null}
-              explanation={accommodationProfitability?.profitExplanation ?? ''}
-              insufficientText={insufficientData}
-              segmentStyle={segmentStyle}
-            />
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelProfitability}</span>
+              <span style={valueStyle}>{(accommodationProfitabilitySymbol ?? '—').trim() || '—'}</span>
+            </span>
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelHealth}</span>
@@ -261,9 +260,13 @@ export function BranchTodaySummary({
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelRevenue}</span>
               <span style={valueStyle}>{revStr}</span>
-              {f.revenueDeltaPct != null && Number.isFinite(f.revenueDeltaPct) && (
+              {f.revenueDeltaPct != null && Number.isFinite(f.revenueDeltaPct) ? (
                 <span style={f.revenueDeltaPct >= 0 ? deltaPos : deltaNeg}>
-                  {' '}({f.revenueDeltaPct >= 0 ? '+' : ''}{f.revenueDeltaPct.toFixed(0)}% {vsYesterday})
+                  {' '}({f.revenueDeltaPct >= 0 ? '+' : ''}{Math.round(f.revenueDeltaPct)}% {isTh ? 'เทียบเมื่อวาน' : 'from yesterday'})
+                </span>
+              ) : (
+                <span style={trendFlat}>
+                  {' '}({noYesterday})
                 </span>
               )}
             </span>
@@ -283,13 +286,10 @@ export function BranchTodaySummary({
               <span style={valueStyle}>{avgCostStr}</span>
             </span>
             <span style={sepStyle}>{sep}</span>
-            <ProfitTrendMetric
-              label={labelMargin}
-              trend={fnbProfitability?.marginTrend ?? null}
-              explanation={fnbProfitability?.marginExplanation ?? ''}
-              insufficientText={insufficientData}
-              segmentStyle={segmentStyle}
-            />
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelMargin}</span>
+              <span style={valueStyle}>{(fnbProfitability?.marginSymbol ?? '—').trim() || '—'}</span>
+            </span>
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelHealth}</span>

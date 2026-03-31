@@ -287,6 +287,8 @@ export interface TodaySummaryRow {
   business_type?: string | null;
   /** Display revenue: coalesce from row.revenue, revenue_thb. */
   total_revenue: number | null;
+  /** Day-over-day percent vs previous available day (branch_status_current). */
+  revenue_change_pct_day?: number | null;
   revenue_yesterday: number | null;
   revenue_delta_day: number | null;
   occupancy_rate: number | null;
@@ -519,6 +521,8 @@ export async function getTodaySummary(
     if (!data) return null;
     const row = data as Record<string, unknown>;
     const bid = pickStrFromRow(row, 'branch_id') ?? branchId;
+    // Per requirement: Revenue amount for Today strip comes from branch_status_current.revenue.
+    // Keep loose fallbacks for deployments that still expose revenue_thb/total_revenue only.
     const totalRev = pickNumFromRow(row, 'revenue', 'revenue_thb', 'total_revenue');
     return {
       branch_id: bid,
@@ -527,6 +531,7 @@ export async function getTodaySummary(
       branch_name: pickStrFromRow(row, 'branch_name'),
       business_type: pickStrFromRow(row, 'business_type'),
       total_revenue: totalRev,
+      revenue_change_pct_day: pickNumFromRow(row, 'revenue_change_pct_day'),
       revenue_yesterday: null,
       revenue_delta_day: pickNumFromRow(row, 'revenue_delta_day'),
       occupancy_rate: pickNumFromRow(row, 'occupancy_rate', 'occupancy_pct'),
