@@ -80,22 +80,29 @@ import {
   fetchCompanyStatusCurrentByBranchId,
   type CompanyLatestBusinessStatusV3Row,
 } from '../../services/db/company-latest-business-status-v3-service';
+import { PriorityItemBody } from '../../components/priority/priority-item-body';
 
-function BranchTodayPriorityCard({ row, locale }: { row: TodayBranchPriorityRow; locale: string }) {
+function BranchTodayPriorityCard({
+  row,
+  locale,
+  hideFinancials,
+}: {
+  row: TodayBranchPriorityRow;
+  locale: string;
+  hideFinancials?: boolean;
+}) {
   const th = locale === 'th';
-  const title =
-    (row.title || row.short_title || '').trim() || (th ? 'ประเด็นสำคัญ' : 'Priority');
+  const rawTitle = (row.title || row.short_title || '').trim();
   const action =
     (row.description || row.action_text || '').trim() ||
     (th ? 'ทบทวนแผนปฏิบัติการ' : 'Review action plan');
   return (
-    <div style={{ lineHeight: 1.55 }}>
-      <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{title}</div>
-      <div style={{ fontSize: 14, color: '#475569', marginTop: 6 }}>
-        <span aria-hidden>→ </span>
-        {action}
-      </div>
-    </div>
+    <PriorityItemBody
+      titleRaw={rawTitle}
+      description={action}
+      locale={locale}
+      hideFinancials={hideFinancials}
+    />
   );
 }
 
@@ -132,7 +139,7 @@ export default function BranchOverviewPage() {
   // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
   const [freshnessDatesFromRaw, setFreshnessDatesFromRaw] = useState<string[]>([]);
   const [freshnessLoaded, setFreshnessLoaded] = useState(false);
-  // Today's Priorities: today_branch_priorities (current branch)
+  // Today's Priorities: branch_priorities_current (current branch)
   const [branchPriorities, setBranchPriorities] = useState<TodayBranchPriorityRow[]>([]);
   const [branchPrioritiesLoading, setBranchPrioritiesLoading] = useState(true);
   const [branchWhatsWorkingRows, setBranchWhatsWorkingRows] = useState<string[]>([]);
@@ -1918,7 +1925,7 @@ export default function BranchOverviewPage() {
                   >
                     {locale === 'th' ? '🔥 แก้ก่อน' : '🔥 Fix This First'}
                   </div>
-                  <BranchTodayPriorityCard row={branchPriorityFirst} locale={locale} />
+                  <BranchTodayPriorityCard row={branchPriorityFirst} locale={locale} hideFinancials={hideFinancials} />
                 </div>
               ) : null}
               {branchPriorityNext.length > 0 ? (
@@ -1940,7 +1947,7 @@ export default function BranchOverviewPage() {
                       <li
                         key={`priority-${row.branch_id}-${row.metric_date ?? ''}-${row.rank ?? ''}-${row.alert_type ?? ''}-${row.sort_score ?? ''}-${row.title ?? ''}`}
                       >
-                        <BranchTodayPriorityCard row={row} locale={locale} />
+                        <BranchTodayPriorityCard row={row} locale={locale} hideFinancials={hideFinancials} />
                       </li>
                     ))}
                   </ul>

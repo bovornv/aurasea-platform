@@ -14,6 +14,8 @@ export const POSTGREST_RESOURCE_KEYS = {
   today_priorities_view: 'table:today_priorities_view',
   /** Canonical branch priorities snapshot (latest metric_date per branch); branch Today section reads only this. */
   branch_priorities_current: 'table:branch_priorities_current',
+  /** Company Today priorities rollup; same logical shape as today_priorities_company_view when present. */
+  company_priorities_current: 'table:company_priorities_current',
   today_priorities_company_view: 'table:today_priorities_company_view',
   today_company_dashboard: 'table:today_company_dashboard',
   company_latest_business_status_v3: 'table:company_latest_business_status_v3',

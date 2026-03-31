@@ -1,21 +1,13 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { formatCurrency } from '../../utils/formatting';
 import type { TodayPrioritiesRow } from '../../services/db/today-priorities-service';
+import { PriorityItemBody } from '../priority/priority-item-body';
 
 interface Props {
   rows: TodayPrioritiesRow[];
   locale: string;
   loading?: boolean;
-}
-
-function impactSuffix(th: boolean, impactLabel: string | null | undefined): string {
-  const x = (impactLabel || 'at risk').toLowerCase();
-  if (x === 'opportunity') {
-    return th ? 'โอกาส' : 'opportunity';
-  }
-  return th ? 'เสี่ยง' : 'at risk';
 }
 
 function segmentOf(row: TodayPrioritiesRow): 'fix_first' | 'next_moves' | 'more' {
@@ -29,7 +21,6 @@ function segmentOf(row: TodayPrioritiesRow): 'fix_first' | 'next_moves' | 'more'
 
 export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
   const th = locale === 'th';
-  const numLocale = th ? 'th-TH' : 'en-US';
 
   const title = th ? 'ลำดับความสำคัญวันนี้' : "Today's Priorities";
   const emptyMsg = th ? 'ทุกอย่างโอเค — ไม่มีลำดับความสำคัญวันนี้' : 'All good — no priorities today';
@@ -55,52 +46,22 @@ export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
   };
 
   function renderRow(row: TodayPrioritiesRow, idx: number, keyPrefix: string) {
-    const rank = row.rank ?? idx + 1;
     const branch = row.branch_name?.trim() || row.branch_id || (th ? 'สาขา' : 'Branch');
-    const headline =
-      (row.title?.trim() ||
-        row.short_title?.trim() ||
-        `${(row.alert_type || 'alert').replace(/_/g, ' ')} — ${branch}`) || branch;
-    const amt = row.impact_thb ?? row.impact_estimate_thb;
-    const hasImpact = amt != null && Number.isFinite(Number(amt)) && Number(amt) > 0;
-    const amtStr = hasImpact ? formatCurrency(Number(amt), numLocale) : '';
-    const riskWord = impactSuffix(th, row.impact_label);
-    const impactInTitle = /\(฿[\d,]/.test(headline);
-    const titleLine = impactInTitle
-      ? `${rank}. ${headline}`
-      : hasImpact
-        ? `${rank}. ${headline} (฿${amtStr} ${riskWord})`
-        : `${rank}. ${headline}`;
+    const rawTitle =
+      row.title?.trim() ||
+      row.short_title?.trim() ||
+      `${(row.alert_type || 'alert').replace(/_/g, ' ')} — ${branch}`;
     const action = (row.description ?? row.action_text ?? '').trim() || actionFallback;
     const key = `${keyPrefix}-${row.branch_id}-${row.alert_type}-${idx}`;
 
     return (
       <li key={key}>
-        <p
-          style={{
-            margin: 0,
-            fontSize: '15px',
-            lineHeight: 1.45,
-            fontWeight: 700,
-            color: '#0f172a',
-          }}
-        >
-          {titleLine}
-        </p>
-        <p
-          style={{
-            margin: '6px 0 0 0',
-            fontSize: '13px',
-            lineHeight: 1.45,
-            fontWeight: 500,
-            color: '#64748b',
-          }}
-        >
-          <span aria-hidden style={{ marginRight: '0.25rem' }}>
-            →
-          </span>
-          {action}
-        </p>
+        <PriorityItemBody
+          titleRaw={rawTitle}
+          description={action}
+          locale={locale}
+          headlineFallback={branch}
+        />
       </li>
     );
   }

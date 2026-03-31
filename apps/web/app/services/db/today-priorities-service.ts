@@ -1,6 +1,6 @@
 /**
- * Company: GET /rest/v1/today_priorities_company_view?organization_id=eq.{uuid}&order=rank.asc&limit=5
- * Branch: GET /rest/v1/today_priorities_view?branch_id=eq.{uuid}&business_type=eq.{type}
+ * Company Today: GET /rest/v1/company_priorities_current?organization_id=eq.{uuid}&order=rank.asc&limit=5
+ * (Legacy fallback name in DB may still be today_priorities_company_view — app uses company_priorities_current.)
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -79,18 +79,18 @@ function mapPriorityRow(r: Record<string, unknown>): TodayPrioritiesRow {
   };
 }
 
-/** Cross-branch top signals for Company Today (max 5, org-ranked). */
+/** Cross-branch top signals for Company Today (max 5, org-ranked). Source: public.company_priorities_current. */
 export async function fetchCompanyTodayPriorities(
   organizationId: string | null,
   limit: number = 5
 ): Promise<TodayPrioritiesRow[]> {
   if (!organizationId?.trim() || !isSupabaseAvailable()) return [];
-  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.today_priorities_company_view)) return [];
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.company_priorities_current)) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
   const cap = Math.min(5, Math.max(1, limit));
-  const table = resolvePostgrestPhase1Table('today_priorities_company_view');
+  const table = 'company_priorities_current';
   const { data, error } = await supabase
     .from(table)
     .select('*')
@@ -99,17 +99,19 @@ export async function fetchCompanyTodayPriorities(
     .limit(cap);
 
   const rawForLog = Array.isArray(data) ? data : [];
-  logPostgrestPhase1Read('today_priorities_company_view', {
-    organizationId: organizationId.trim(),
-    rowCount: rawForLog.length,
-    error: error ? { message: error.message, code: String(error.code ?? '') } : null,
-  });
+  if (process.env.NODE_ENV === 'development') {
+    logPostgrestPhase1Read('today_priorities_company_view', {
+      organizationId: organizationId.trim(),
+      rowCount: rawForLog.length,
+      error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+    });
+  }
 
   if (error) {
     if (isPostgrestObjectMissingError(error)) {
-      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.today_priorities_company_view);
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.company_priorities_current);
     } else if (process.env.NODE_ENV === 'development') {
-      console.warn('[today_priorities_company_view]', error.message);
+      console.warn('[company_priorities_current]', error.message);
     }
     return [];
   }
