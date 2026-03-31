@@ -4,6 +4,7 @@
  */
 import { fetchCompanyTodayBundle, type CompanyTodayBundle } from './company-today-data-service';
 import { fetchCompanyDataConfidence, type CompanyDataConfidenceRow } from './company-data-confidence-service';
+import { fetchCompanyStatusSummary, type CompanyStatusSummaryRow } from './company-status-summary-service';
 import { fetchCompanyTodayPriorities, type TodayPrioritiesRow } from './today-priorities-service';
 import {
   defaultBranchPrioritiesFallback,
@@ -55,6 +56,7 @@ export interface CompanyTodayDashboardData {
   opportunities: OpportunitiesTodayRow[];
   watchlist: WatchlistTodayRow[];
   dataConfidence: CompanyDataConfidenceRow | null;
+  companyStatusSummary: CompanyStatusSummaryRow | null;
   /** Latest business status table — canonical `company_status_current`. */
   latestBusinessStatus: CompanyLatestBusinessStatusV3Row[];
 }
@@ -569,10 +571,16 @@ export async function fetchCompanyTodayDashboard(
           opportunities: [] as OpportunitiesTodayRow[],
           watchlist: [] as WatchlistTodayRow[],
           dataConfidence: null as CompanyDataConfidenceRow | null,
+          companyStatusSummary: null as CompanyStatusSummaryRow | null,
         };
       }
       const fromDashboard = await fetchCompanyPanelsFromDashboardView(orgId, prioLim, panelLim);
-      if (fromDashboard) return fromDashboard;
+      if (fromDashboard) {
+        return {
+          ...fromDashboard,
+          companyStatusSummary: await fetchCompanyStatusSummary(orgId),
+        };
+      }
       // Fallback path until `today_company_dashboard` is deployed.
       // What's Working is loaded separately via `fetchWhatsWorkingToday` (v_next) in the outer bundle — not from panels here.
       const [priorities, opportunities, watchlist, dataConfidence] = await Promise.all([
@@ -587,6 +595,7 @@ export async function fetchCompanyTodayDashboard(
         opportunities,
         watchlist,
         dataConfidence,
+        companyStatusSummary: await fetchCompanyStatusSummary(orgId),
       };
     })();
 
@@ -597,12 +606,14 @@ export async function fetchCompanyTodayDashboard(
           ? fetchCompanyLatestBusinessStatusV3(orgId, [])
           : Promise.resolve([] as CompanyLatestBusinessStatusV3Row[]);
 
-    const [bundle, panels, latestBusinessStatus, canonicalWatchlist, canonicalWhatsWorking] = await Promise.all([
+    const companyStatusSummaryPromise = orgId ? fetchCompanyStatusSummary(orgId) : Promise.resolve(null);
+    const [bundle, panels, latestBusinessStatus, canonicalWatchlist, canonicalWhatsWorking, companyStatusSummary] = await Promise.all([
       bundlePromise,
       panelsPromise,
       latestStatusPromise,
       orgId ? fetchWatchlistToday(orgId, 20) : Promise.resolve([] as WatchlistTodayRow[]),
       orgId ? fetchWhatsWorkingToday(orgId, Math.max(panelLim, 20)) : Promise.resolve([] as WhatsWorkingTodayRow[]),
+      companyStatusSummaryPromise,
     ]);
 
     // Company status table keeps its existing source for non-health fields.
@@ -687,6 +698,7 @@ export async function fetchCompanyTodayDashboard(
       // Canonical source for company Watchlist: watchlist_today.
       watchlist: canonicalWatchlistWithBranchNames,
       dataConfidence: panels.dataConfidence,
+      companyStatusSummary: panels.companyStatusSummary ?? companyStatusSummary,
       latestBusinessStatus,
     };
   })().finally(() => {

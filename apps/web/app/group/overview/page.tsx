@@ -261,6 +261,7 @@ function OwnerSummaryContent() {
                   opportunities: [],
                   watchlist: [],
                   dataConfidence: null,
+                  companyStatusSummary: null,
                   latestBusinessStatus: [],
                 }),
               DASHBOARD_TIMEOUT_MS
@@ -681,6 +682,7 @@ function OwnerSummaryContent() {
             <MonitoringErrorBoundary componentName="Company Business Status">
               <CompanyBusinessStatusTables
                 rows={companyDashboard?.latestBusinessStatus ?? []}
+                summary={companyDashboard?.companyStatusSummary ?? null}
                 locale={locale}
               />
             </MonitoringErrorBoundary>

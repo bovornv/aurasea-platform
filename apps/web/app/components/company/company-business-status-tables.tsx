@@ -3,6 +3,7 @@
 import { useMemo, type CSSProperties } from 'react';
 import type { CompanyLatestBusinessStatusV3Row } from '../../services/db/company-latest-business-status-v3-service';
 import { formatCurrency } from '../../utils/formatting';
+import type { CompanyStatusSummaryRow } from '../../services/db/company-status-summary-service';
 
 const STICKY_HEALTH_W = 84;
 
@@ -51,6 +52,12 @@ const tdArrow: CSSProperties = { ...tdBase, textAlign: 'center' };
 
 function numLocale(locale: string): string { return locale === 'th' ? 'th-TH' : 'en-US'; }
 function missingLabel(locale: string): string { return locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'; }
+
+function CellNum({ value, locale }: { value: number | null; locale: string }) {
+  const fb = missingLabel(locale);
+  if (value == null || !Number.isFinite(value)) return <span style={{ color: '#9ca3af' }}>{fb}</span>;
+  return <span>{Math.round(value).toLocaleString(numLocale(locale))}</span>;
+}
 
 function daysSinceMetricDate(metricDate: string | null): number | null {
   if (!metricDate?.trim()) return null;
@@ -103,7 +110,7 @@ function SymbolCell({ symbol, locale }: { symbol: string | null; locale: string 
 function CellMoney({ value, locale }: { value: number | null; locale: string }) {
   const fb = missingLabel(locale);
   if (value == null || !Number.isFinite(value)) return <span style={{ color: '#9ca3af' }}>{fb}</span>;
-  return <span>฿{formatCurrency(value, numLocale(locale))}</span>;
+  return <span>{formatCurrency(value, numLocale(locale))}</span>;
 }
 
 function CellPercent({ value, locale, suffix = '%' }: { value: number | null; locale: string; suffix?: string }) {
@@ -118,9 +125,9 @@ function CellInt({ value, locale }: { value: number | null; locale: string }) {
   return <span>{Math.round(value).toLocaleString(numLocale(locale))}</span>;
 }
 
-interface Props { rows: CompanyLatestBusinessStatusV3Row[]; locale?: string; }
+interface Props { rows: CompanyLatestBusinessStatusV3Row[]; summary?: CompanyStatusSummaryRow | null; locale?: string; }
 
-export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
+export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th' }: Props) {
   const { accommodationRows, fnbRows } = useMemo(() => {
     const acc = rows.filter((r) => r.business_type === 'accommodation');
     const fnb = rows.filter((r) => r.business_type === 'fnb');
@@ -142,26 +149,73 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
   const branchHeader = isTh ? 'สาขา' : 'Branch name';
   const emptyAcc = isTh ? 'ไม่มีข้อมูลที่พัก' : 'No accommodation rows.';
   const emptyFnb = isTh ? 'ไม่มีข้อมูล F&B' : 'No F&B rows.';
+  const summaryLabel = isTh ? 'สรุประดับบริษัท' : 'Company summary';
+  const v = (n: number | null | undefined) => (n == null || !Number.isFinite(Number(n)) ? null : Number(n));
 
   return (
     <div>
+      {/* Company summary block (no freshness line here) */}
+      {summary ? (
+        <div
+          style={{
+            border: '1px solid #e5e7eb',
+            borderRadius: 12,
+            padding: '12px 14px',
+            background: '#fff',
+            marginBottom: 10,
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: '0.03em', textTransform: 'uppercase' as const }}>
+            {summaryLabel}
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'baseline' }}>
+            <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+              {isTh ? 'Revenue total' : 'Revenue total'}:{' '}
+              <span style={{ fontWeight: 700 }}><CellNum value={v(summary.revenue_agg)} locale={locale} /></span>
+            </span>
+            <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+              {isTh ? 'Branches updated' : 'Branches updated'}:{' '}
+              <span style={{ fontWeight: 700 }}>
+                {`${Math.round(v(summary.updated_branches_count) ?? 0)}/${Math.round(v(summary.branches_count) ?? 0)}`}
+              </span>
+            </span>
+            <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+              {isTh ? 'Rooms/Occupancy' : 'Rooms/Occupancy'}:{' '}
+              <span style={{ fontWeight: 700 }}>
+                {`${Math.round(v(summary.rooms_sold_agg) ?? 0)}/${Math.round(v(summary.rooms_available_agg) ?? 0)}`}{' '}
+                <span style={{ color: '#64748b', fontWeight: 600 }}>
+                  {v(summary.occupancy_rate_weighted) != null ? `(${Math.round(v(summary.occupancy_rate_weighted) ?? 0)})` : ''}
+                </span>
+              </span>
+            </span>
+            <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+              {isTh ? 'Customers/Avg ticket' : 'Customers/Avg ticket'}:{' '}
+              <span style={{ fontWeight: 700 }}>
+                {Math.round(v(summary.customers_agg) ?? 0).toLocaleString(numLocale(locale))}{' '}
+                {v(summary.avg_ticket_weighted) != null ? `(${Math.round(v(summary.avg_ticket_weighted) ?? 0).toLocaleString(numLocale(locale))})` : ''}
+              </span>
+            </span>
+          </div>
+        </div>
+      ) : null}
+
       {subTitle(isTh ? 'ที่พัก' : 'Accommodation')}
       {accommodationRows.length === 0 ? (
         <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{emptyAcc}</p>
       ) : (
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: '0.25rem' }}>
           <table style={tableStyle}>
-            <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue (฿)</th><th style={thNum}>Occupancy (%)</th><th style={thNum}>ADR (฿)</th><th style={thNum}>RevPAR (฿)</th><th style={thArrow}>{isTh ? 'กำไร' : 'Profitability'}</th></tr></thead>
+            <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue</th><th style={thNum}>Occupancy</th><th style={thNum}>Rooms</th><th style={thNum}>ADR</th><th style={thNum}>RevPAR</th></tr></thead>
             <tbody>
               {accommodationRows.map((r) => (
                 <tr key={`${r.branch_id}-accommodation`}>
                   <td style={stickyHealthTd}><HealthBadge score={r.health_score} /></td>
                   <td style={stickyBranchTd}><BranchNameCell row={r} locale={locale} /></td>
                   <td style={tdNum}><CellMoney value={r.revenue} locale={locale} /></td>
-                  <td style={tdNum}><CellPercent value={r.occupancy_rate} locale={locale} /></td>
+                  <td style={tdNum}><CellPercent value={r.occupancy_rate} locale={locale} suffix="" /></td>
+                  <td style={tdNum}><span>{`${Math.round(r.rooms_sold ?? 0)}/${Math.round(r.rooms_available ?? 0)}`}</span></td>
                   <td style={tdNum}><CellMoney value={r.adr} locale={locale} /></td>
                   <td style={tdNum}><CellMoney value={r.revpar} locale={locale} /></td>
-                  <td style={tdArrow}><SymbolCell symbol={r.profitability_symbol} locale={locale} /></td>
                 </tr>
               ))}
             </tbody>
@@ -175,7 +229,7 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
       ) : (
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <table style={tableStyle}>
-            <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue (฿)</th><th style={thNum}>Customers</th><th style={thNum}>Avg ticket (฿)</th><th style={thNum}>Avg Cost (฿)</th><th style={thArrow}>{isTh ? 'มาร์จิ้น' : 'Margin'}</th></tr></thead>
+            <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue</th><th style={thNum}>Customers</th><th style={thNum}>Avg ticket</th><th style={thNum}>Avg Cost</th><th style={thArrow}>{isTh ? 'มาร์จิ้น' : 'Margin'}</th></tr></thead>
             <tbody>
               {fnbRows.map((r) => (
                 <tr key={`${r.branch_id}-fnb`}>

@@ -19,6 +19,8 @@ const SELECT_CURRENT =
     'metric_date',
     'health_score',
     'revenue',
+    'rooms_sold',
+    'rooms_available',
     'occupancy_rate',
     'adr',
     'revpar',
@@ -46,6 +48,8 @@ export interface CompanyLatestBusinessStatusV3Row {
   revenue_delta_day?: number | null;
   revenue_yesterday?: number | null;
   occupancy_pct?: number | null;
+  rooms_sold?: number | null;
+  rooms_available?: number | null;
   occupancy_rate: number | null;
   occupancy_delta_week?: number | null;
   utilized?: number | null;
@@ -107,6 +111,8 @@ function mapRow(r: Record<string, unknown>): CompanyLatestBusinessStatusV3Row | 
     metric_date: md || null,
     health_score: pickNum(r, 'health_score', 'healthScore'),
     revenue: pickNum(r, 'revenue'),
+    rooms_sold: pickNum(r, 'rooms_sold'),
+    rooms_available: pickNum(r, 'rooms_available'),
     revenue_thb: pickNum(r, 'revenue_thb', 'revenueThb', 'revenue'),
     revenue_delta_day: pickNum(r, 'revenue_delta_day', 'revenueDeltaDay'),
     revenue_yesterday: pickNum(r, 'revenue_yesterday', 'revenueYesterday'),
