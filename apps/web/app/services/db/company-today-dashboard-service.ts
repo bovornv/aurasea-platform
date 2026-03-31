@@ -360,8 +360,8 @@ function branchMetaFromBundle(
 }
 
 /**
- * When org-scoped SQL priorities are empty, mirror branch Today: per-branch `today_priorities_view`,
- * then the same synthetic + default fallbacks as branch overview.
+ * When org-scoped SQL priorities are empty, mirror branch Today: per-branch `branch_priorities_current`,
+ * then the same synthetic + default fallbacks as branch overview (fallbacks only when branch view is empty).
  */
 async function fillCompanyPrioritiesFromBranchesAndUi(
   organizationId: string,

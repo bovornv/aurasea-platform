@@ -67,14 +67,7 @@ import {
 } from '../../services/db/branch-metrics-info-service';
 import { getBranchRecommendationsFromKpi } from '../../services/db/kpi-analytics-service';
 import { useAnomalySignals } from '../../hooks/use-anomaly-signals';
-import {
-  defaultBranchPrioritiesFallback,
-  fetchTodayBranchPriorities,
-  resolveBusinessTypeForPriorities,
-  syntheticAccommodationPrioritiesFromTodayUi,
-  syntheticFnbPrioritiesFromTodayUi,
-  type TodayBranchPriorityRow,
-} from '../../services/db/today-branch-priorities-service';
+import { fetchTodayBranchPriorities, type TodayBranchPriorityRow } from '../../services/db/today-branch-priorities-service';
 import { normalizeWhatsWorkingTitle } from '../../services/db/whats-working-today-service';
 import {
   fetchBranchTodayPanels,
@@ -456,8 +449,8 @@ export default function BranchOverviewPage() {
     });
     fetchTodayBranchPriorities(
       branch.id,
-      resolveBusinessTypeForPriorities(branch.moduleType, branch.modules),
-      4,
+      undefined,
+      100,
       locale === 'th' ? 'th' : 'en'
     )
       .then((rows) => {
@@ -829,31 +822,8 @@ export default function BranchOverviewPage() {
     return null;
   }, [driverChartData, isAccommodation, isFnb, locale]);
 
-  const branchPrioritiesForUi = useMemo(() => {
-    if (branchPriorities.length > 0) return branchPriorities;
-    if (!branch) return [];
-    const biz = resolveBusinessTypeForPriorities(branch.moduleType, branch.modules);
-    const loc = locale === 'th' ? 'th' : 'en';
-    let syn: TodayBranchPriorityRow[] = [];
-    if (biz === 'accommodation') {
-      syn = syntheticAccommodationPrioritiesFromTodayUi(branch.id, branch.branchName, accTodayUiRow, loc);
-    } else {
-      syn = syntheticFnbPrioritiesFromTodayUi(branch.id, branch.branchName, {
-        metric_date: fnbOperatingStatus?.metric_date,
-        revenue: fnbOperatingStatus?.revenue,
-        customers: fnbOperatingStatus?.customers,
-        revenue_delta_day:
-          todaySummaryRow?.revenue_delta_day != null && Number.isFinite(todaySummaryRow.revenue_delta_day)
-            ? todaySummaryRow.revenue_delta_day
-            : null,
-      }, loc);
-    }
-    if (syn.length > 0) return syn;
-    return defaultBranchPrioritiesFallback(branch.id, branch.branchName, biz, loc);
-  }, [branchPriorities, branch, accTodayUiRow, fnbOperatingStatus, todaySummaryRow, locale]);
-
-  const branchPriorityNext = useMemo(() => branchPrioritiesForUi.slice(1, 4), [branchPrioritiesForUi]);
-  const branchPriorityFirst = branchPrioritiesForUi[0] ?? null;
+  const branchPriorityNext = useMemo(() => branchPriorities.slice(1), [branchPriorities]);
+  const branchPriorityFirst = branchPriorities[0] ?? null;
 
   const revenueNow = useMemo(() => {
     const ts = todaySummaryRow;
@@ -1911,7 +1881,7 @@ export default function BranchOverviewPage() {
           </div>
         ) : null}
 
-        {/* 3. Today's Priorities — today_priorities_view: Fix This First + Next Best Moves */}
+        {/* 3. Today's Priorities — branch_priorities_current: Fix This First + Next Best Moves */}
         <div
           style={{
             marginTop: learningStatus != null ? 0 : 24,
@@ -1926,7 +1896,7 @@ export default function BranchOverviewPage() {
           </h2>
           {branchPrioritiesLoading ? (
             <div style={{ fontSize: 13, color: '#6b7280' }}>{locale === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
-          ) : branchPrioritiesForUi.length === 0 ? (
+          ) : branchPriorities.length === 0 ? (
             <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.55 }}>
               {locale === 'th'
                 ? 'ไม่พบลำดับความสำคัญสำหรับวันนี้'
@@ -1968,7 +1938,7 @@ export default function BranchOverviewPage() {
                   <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
                     {branchPriorityNext.map((row) => (
                       <li
-                        key={`priority-${row.branch_id}-${row.metric_date}-${row.sort_score ?? ''}-${row.title ?? ''}`}
+                        key={`priority-${row.branch_id}-${row.metric_date ?? ''}-${row.rank ?? ''}-${row.alert_type ?? ''}-${row.sort_score ?? ''}-${row.title ?? ''}`}
                       >
                         <BranchTodayPriorityCard row={row} locale={locale} />
                       </li>

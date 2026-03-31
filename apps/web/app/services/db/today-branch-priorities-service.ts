@@ -1,7 +1,7 @@
 /**
  * Branch Today — Today's Priorities
- * GET /rest/v1/today_priorities_view?branch_id=eq.{id}&business_type=eq.{type}
- *   &order=sort_score.desc&limit=4
+ * GET /rest/v1/branch_priorities_current?branch_id=eq.{id}
+ *   &order=rank.asc.nullslast&order=sort_score.desc.nullslast&limit={cap}
  */
 import { ModuleType } from '../../models/business-group';
 import { occupancyPercentFromMetric } from '../../utils/accommodation-economics';
@@ -13,10 +13,6 @@ import {
   markPostgrestResourceMissing,
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
-import {
-  logPostgrestPhase1Read,
-  resolvePostgrestPhase1Table,
-} from '../../lib/supabase/postgrest-phase1-cutover';
 
 /**
  * Must match SQL today_priorities_ranked.business_type (non-F&B branches → accommodation).
@@ -216,6 +212,9 @@ export interface TodayBranchPriorityRow {
   branch_id: string;
   business_type: 'accommodation' | 'fnb' | string;
   metric_date: string | null;
+  /** From branch_priorities_current.alert_type when present */
+  alert_type?: string | null;
+  rank?: number | null;
   title: string | null;
   description: string | null;
   short_title: string | null;
@@ -250,10 +249,13 @@ function mapRow(row: Record<string, unknown>, branchId: string): TodayBranchPrio
   const title = pickStr(row, 'title', 'short_title', 'shortTitle');
   const description = pickStr(row, 'description', 'action_text', 'actionText');
   const impact = pickNum(row, 'impact_thb', 'impact_estimate_thb', 'impact');
+  const rankVal = pickNum(row, 'rank', 'priority_rank');
   return {
     branch_id: pickStr(row, 'branch_id', 'branchId') || branchId,
     business_type: pickStr(row, 'business_type', 'businessType') || 'unknown',
     metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : null,
+    alert_type: pickStr(row, 'alert_type', 'alertType') || null,
+    rank: rankVal,
     title: title || null,
     description: description || null,
     short_title: title || pickStr(row, 'short_title', 'shortTitle') || null,
@@ -267,40 +269,41 @@ function mapRow(row: Record<string, unknown>, branchId: string): TodayBranchPrio
 
 export async function fetchTodayBranchPriorities(
   branchId: string | null,
-  businessType: 'accommodation' | 'fnb' | null | undefined,
-  limit: number = 4,
-  locale: 'en' | 'th' = 'en'
+  _businessType: 'accommodation' | 'fnb' | null | undefined,
+  limit: number = 100,
+  _locale: 'en' | 'th' = 'en'
 ): Promise<TodayBranchPriorityRow[]> {
   if (!branchId?.trim() || !isSupabaseAvailable()) return [];
-  const bt = businessType === 'fnb' || businessType === 'accommodation' ? businessType : 'accommodation';
-  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.today_priorities_view)) {
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_priorities_current)) {
     return [];
   }
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
-  const cap = Math.min(10, Math.max(1, limit));
-  const table = resolvePostgrestPhase1Table('today_priorities_view');
+  const cap = Math.min(500, Math.max(1, limit));
+  const table = 'branch_priorities_current';
   const { data, error } = await supabase
     .from(table)
     .select('*')
     .eq('branch_id', branchId.trim())
-    .eq('business_type', bt)
-    .order('sort_score', { ascending: false })
+    .order('rank', { ascending: true, nullsFirst: false })
+    .order('sort_score', { ascending: false, nullsFirst: false })
     .limit(cap);
 
   const rawForLog = Array.isArray(data) ? data : [];
-  logPostgrestPhase1Read('today_priorities_view', {
-    branchId: branchId.trim(),
-    rowCount: rawForLog.length,
-    error: error ? { message: error.message, code: String(error.code ?? '') } : null,
-  });
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[branch_priorities_current]', {
+      branchId: branchId.trim(),
+      rowCount: rawForLog.length,
+      error: error ? { message: error.message, code: String(error.code ?? '') } : null,
+    });
+  }
 
   if (error) {
     if (isPostgrestObjectMissingError(error)) {
-      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.today_priorities_view);
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_priorities_current);
     } else if (process.env.NODE_ENV === 'development') {
-      console.warn('[today_priorities_view branch]', error.message);
+      console.warn('[branch_priorities_current]', error.message);
     }
     return [];
   }
