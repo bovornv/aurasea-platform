@@ -87,10 +87,10 @@ export async function getLatestAnomalySignal(
     const row = data as {
       branch_id: string;
       metric_date?: string | null;
-      revenue_thb?: number | null;
+      revenue?: number | null;
       health_score?: number | null;
     };
-    const rev = row.revenue_thb;
+    const rev = row.revenue;
     return {
       branch_id: row.branch_id,
       metric_date: row.metric_date != null ? String(row.metric_date).slice(0, 10) : '',

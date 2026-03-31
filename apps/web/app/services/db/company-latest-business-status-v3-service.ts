@@ -10,6 +10,8 @@ import {
   POSTGREST_RESOURCE_KEYS,
 } from '../../lib/supabase/postgrest-missing-resource';
 
+// Keep this select list aligned to the *current* public.branch_status_current schema only.
+// If a column is removed from the DB, it must be removed here to avoid PostgREST 400.
 const SELECT_CURRENT =
   [
     'organization_id',
@@ -17,11 +19,11 @@ const SELECT_CURRENT =
     'branch_name',
     'business_type',
     'metric_date',
-    'health_score',
     'revenue',
+    'revenue_change_pct_day',
+    'occupancy_rate',
     'rooms_sold',
     'rooms_available',
-    'occupancy_rate',
     'adr',
     'revpar',
     'profitability',
@@ -31,6 +33,7 @@ const SELECT_CURRENT =
     'avg_cost',
     'margin',
     'margin_symbol',
+    'health_score',
   ].join(',');
 
 export type CompanyBusinessTypeV3 = 'accommodation' | 'fnb';
@@ -111,28 +114,16 @@ function mapRow(r: Record<string, unknown>): CompanyLatestBusinessStatusV3Row | 
     metric_date: md || null,
     health_score: pickNum(r, 'health_score', 'healthScore'),
     revenue: pickNum(r, 'revenue'),
+    occupancy_rate: pickNum(r, 'occupancy_rate'),
+    adr: pickNum(r, 'adr'),
+    revpar: pickNum(r, 'revpar'),
     rooms_sold: pickNum(r, 'rooms_sold'),
     rooms_available: pickNum(r, 'rooms_available'),
-    revenue_thb: pickNum(r, 'revenue_thb', 'revenueThb', 'revenue'),
-    revenue_delta_day: pickNum(r, 'revenue_delta_day', 'revenueDeltaDay'),
-    revenue_yesterday: pickNum(r, 'revenue_yesterday', 'revenueYesterday'),
-    occupancy_pct: pickNum(r, 'occupancy_pct', 'occupancyPct', 'occupancy_rate', 'occupancyRate'),
-    occupancy_rate: pickNum(r, 'occupancy_rate'),
-    occupancy_delta_week: pickNum(r, 'occupancy_delta_week', 'occupancyDeltaWeek'),
-    utilized: pickNum(r, 'utilized'),
-    capacity: pickNum(r, 'capacity'),
-    adr: pickNum(r, 'adr'),
-    adr_thb: pickNum(r, 'adr_thb', 'adrThb', 'adr'),
-    revpar: pickNum(r, 'revpar'),
-    revpar_thb: pickNum(r, 'revpar_thb', 'revparThb', 'revpar'),
     profitability_symbol: profSym || prof || null,
     profitability: prof || profSym || null,
     customers: pickNum(r, 'customers'),
-    transactions: pickNum(r, 'transactions'),
     avg_ticket: pickNum(r, 'avg_ticket'),
-    avg_ticket_thb: pickNum(r, 'avg_ticket_thb', 'avgTicketThb', 'avg_ticket', 'avgTicket'),
     avg_cost: pickNum(r, 'avg_cost'),
-    avg_cost_thb: pickNum(r, 'avg_cost_thb', 'avgCostThb', 'avg_cost', 'avgCost'),
     margin_symbol: marginSym || margin || null,
     margin: margin || marginSym || null,
   };

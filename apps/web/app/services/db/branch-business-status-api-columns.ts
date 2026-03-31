@@ -12,7 +12,28 @@ export function getBranchBusinessStatusApiTable(): string {
 
 /** Company Today owner tables — all API columns needed for normalization + org filter. */
 export const SELECT_BRANCH_BUSINESS_STATUS_API_COMPANY =
-  'branch_id,organization_id,branch_name,status_label,status_subtitle,health_score,updated_at,metric_date,revenue_thb,customers,avg_ticket';
+  [
+    'organization_id',
+    'branch_id',
+    'branch_name',
+    'business_type',
+    'metric_date',
+    'revenue',
+    'revenue_change_pct_day',
+    'health_score',
+    'occupancy_rate',
+    'rooms_sold',
+    'rooms_available',
+    'adr',
+    'revpar',
+    'profitability',
+    'profitability_symbol',
+    'customers',
+    'avg_ticket',
+    'avg_cost',
+    'margin',
+    'margin_symbol',
+  ].join(',');
 
 /**
  * Documented column set for public.branch_status_current (Branch Today strip).
@@ -26,7 +47,7 @@ export const SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY =
     'business_type',
     'metric_date',
     'revenue',
-    'revenue_thb',
+    'revenue_change_pct_day',
     'occupancy_rate',
     'rooms_sold',
     'rooms_available',
@@ -43,7 +64,7 @@ export const SELECT_BRANCH_BUSINESS_STATUS_API_TODAY_SUMMARY =
   ].join(',');
 
 export const SELECT_BRANCH_BUSINESS_STATUS_API_ANOMALY =
-  'branch_id,metric_date,revenue_thb,health_score';
+  'branch_id,metric_date,revenue,health_score';
 
 export const SELECT_BRANCH_BUSINESS_STATUS_API_HEALTH_ONLY = 'health_score';
 
