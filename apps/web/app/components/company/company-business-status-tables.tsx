@@ -128,6 +128,12 @@ function CellMoney({ value, locale }: { value: number | null; locale: string }) 
   return <span>{formatCurrency(value, numLocale(locale))}</span>;
 }
 
+function CellMoneyBaht({ value, locale }: { value: number | null; locale: string }) {
+  const fb = missingLabel(locale);
+  if (value == null || !Number.isFinite(value)) return <span style={{ color: '#9ca3af' }}>{fb}</span>;
+  return <span>฿{formatCurrency(value, numLocale(locale))}</span>;
+}
+
 function CellPercent({ value, locale, suffix = '%' }: { value: number | null; locale: string; suffix?: string }) {
   const fb = missingLabel(locale);
   if (value == null || !Number.isFinite(value)) return <span style={{ color: '#9ca3af' }}>{fb}</span>;
@@ -198,7 +204,7 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
             style={{
               marginTop: 8,
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, minmax(180px, 1fr))',
+              gridTemplateColumns: 'repeat(2, minmax(220px, 1fr))',
               gap: 10,
               alignItems: 'baseline',
             }}
@@ -214,27 +220,6 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
               {isTh ? 'Branches updated' : 'Branches updated'}:{' '}
               <span style={{ fontWeight: 800 }}>
                 {(fmtInt(summary.updated_branches_count, locale) ?? dash)}/{(fmtInt(summary.branches_count, locale) ?? dash)}
-              </span>
-            </div>
-
-            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              {isTh ? 'Rooms/Occupancy' : 'Rooms/Occupancy'}:{' '}
-              <span style={{ fontWeight: 800 }}>
-                {(fmtInt(summary.rooms_sold_agg, locale) ?? dash)}/{(fmtInt(summary.rooms_available_agg, locale) ?? dash)}
-                {' '}
-                <span style={{ color: '#64748b', fontWeight: 700 }}>
-                  ({fmtPct(summary.occupancy_rate_weighted) ?? dash})
-                </span>
-              </span>
-            </div>
-
-            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              {isTh ? 'Customers/Avg ticket' : 'Customers/Avg ticket'}:{' '}
-              <span style={{ fontWeight: 800 }}>
-                {fmtInt(summary.customers_agg, locale) ?? dash}{' '}
-                <span style={{ color: '#64748b', fontWeight: 700 }}>
-                  ({fmtMoney(summary.avg_ticket_weighted, locale) ?? dash})
-                </span>
               </span>
             </div>
           </div>
@@ -253,11 +238,11 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
                 <tr key={`${r.branch_id}-accommodation`}>
                   <td style={stickyHealthTd}><HealthBadge score={r.health_score} /></td>
                   <td style={stickyBranchTd}><BranchNameCell row={r} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.revenue} locale={locale} /></td>
-                  <td style={tdNum}><CellPercent value={r.occupancy_rate} locale={locale} suffix="" /></td>
+                  <td style={tdNum}><CellMoneyBaht value={r.revenue} locale={locale} /></td>
+                  <td style={tdNum}><CellPercent value={r.occupancy_rate} locale={locale} /></td>
                   <td style={tdNum}><span>{`${Math.round(r.rooms_sold ?? 0)}/${Math.round(r.rooms_available ?? 0)}`}</span></td>
-                  <td style={tdNum}><CellMoney value={r.adr} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.revpar} locale={locale} /></td>
+                  <td style={tdNum}><CellMoneyBaht value={r.adr} locale={locale} /></td>
+                  <td style={tdNum}><CellMoneyBaht value={r.revpar} locale={locale} /></td>
                   <td style={tdArrow}><SymbolCell symbol={r.profitability_symbol} locale={locale} /></td>
                 </tr>
               ))}
@@ -278,10 +263,10 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
                 <tr key={`${r.branch_id}-fnb`}>
                   <td style={stickyHealthTd}><HealthBadge score={r.health_score} /></td>
                   <td style={stickyBranchTd}><BranchNameCell row={r} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.revenue} locale={locale} /></td>
+                  <td style={tdNum}><CellMoneyBaht value={r.revenue} locale={locale} /></td>
                   <td style={tdNum}><CellInt value={r.customers} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.avg_ticket} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.avg_cost} locale={locale} /></td>
+                  <td style={tdNum}><CellMoneyBaht value={r.avg_ticket} locale={locale} /></td>
+                  <td style={tdNum}><CellMoneyBaht value={r.avg_cost} locale={locale} /></td>
                   <td style={tdArrow}><SymbolCell symbol={r.margin_symbol} locale={locale} /></td>
                 </tr>
               ))}
