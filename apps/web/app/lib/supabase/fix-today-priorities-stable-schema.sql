@@ -354,31 +354,55 @@ enriched AS (
     (
       CASE
         WHEN NULLIF(TRIM(BOTH FROM r.branch_name), '') IS NOT NULL THEN
-          TRIM(BOTH FROM REPLACE(r.alert_type_raw, '_'::text, ' '::text))
+          (
+            CASE r.alert_type_raw
+              WHEN 'Revenue Drop'::text THEN 'Revenue down vs yesterday'::text
+              WHEN 'Low Occupancy'::text THEN 'Occupancy down vs last week'::text
+              WHEN 'Occupancy low (level)'::text THEN 'Occupancy below target'::text
+              WHEN 'ADR under pressure'::text THEN 'ADR under pressure'::text
+              WHEN 'Customer traffic low (level)'::text THEN 'Covers below target'::text
+              WHEN 'F&B customers down vs prior day'::text THEN 'Covers down vs prior day'::text
+              WHEN 'F&B ticket down vs prior day'::text THEN 'Average ticket down vs prior day'::text
+              WHEN 'F&B cost ratio worsening (30d)'::text THEN 'Cost ratio up (trailing 30d)'::text
+              ELSE TRIM(BOTH FROM REPLACE(r.alert_type_raw, '_'::text, ' '::text))
+            END
+          )
           || ' — '::text
           || TRIM(BOTH FROM r.branch_name)
-        ELSE NULLIF(TRIM(BOTH FROM REPLACE(r.alert_type_raw, '_'::text, ' '::text)), ''::text)
+        ELSE (
+          CASE r.alert_type_raw
+            WHEN 'Revenue Drop'::text THEN 'Revenue down vs yesterday'::text
+            WHEN 'Low Occupancy'::text THEN 'Occupancy down vs last week'::text
+            WHEN 'Occupancy low (level)'::text THEN 'Occupancy below target'::text
+            WHEN 'ADR under pressure'::text THEN 'ADR under pressure'::text
+            WHEN 'Customer traffic low (level)'::text THEN 'Covers below target'::text
+            WHEN 'F&B customers down vs prior day'::text THEN 'Covers down vs prior day'::text
+            WHEN 'F&B ticket down vs prior day'::text THEN 'Average ticket down vs prior day'::text
+            WHEN 'F&B cost ratio worsening (30d)'::text THEN 'Cost ratio up (trailing 30d)'::text
+            ELSE NULLIF(TRIM(BOTH FROM REPLACE(r.alert_type_raw, '_'::text, ' '::text)), ''::text)
+          END
+        )
       END
     ) AS title_base,
     (
       CASE
         WHEN r.alert_type_raw = 'Revenue Drop' THEN
-          'Revenue is down vs yesterday. Check pricing, channel mix, and packages; log context in Enter Data.'::text
+          'Revenue fell compared with yesterday. Adjust pricing, channel mix, or same-day promotions to close the gap.'::text
         WHEN r.alert_type_raw = 'Low Occupancy' THEN
-          'Occupancy is down vs last week. Review rate fences, packages, and availability; validate in Trends.'::text
+          'Occupancy slipped versus last week. Tighten rate fences, refresh packages, and release held inventory where it helps.'::text
         WHEN r.alert_type_raw = 'Occupancy low (level)' THEN
-          'Occupancy level is low today. Consider OTA boosts, last-minute packages, and pricing fences.'::text
+          'Today''s occupancy is below a healthy level. Use last-minute rates, OTAs, and short-stay offers to lift demand.'::text
         WHEN r.alert_type_raw = 'ADR under pressure' THEN
-          'ADR looks soft vs RevPAR signal. Review discounting, room mix, and channel leakage.'::text
+          'ADR is weak relative to RevPAR—often heavy discounting or a budget-heavy room mix. Tighten promotions and rebalance room types.'::text
         WHEN r.alert_type_raw = 'Customer traffic low (level)' THEN
-          'Customer count is low today. Review promos, operating hours, and top-sellers; validate in Trends.'::text
+          'Covers are low today. Align hours, local promos, and menu highlights with expected traffic.'::text
         WHEN r.alert_type_raw = 'F&B customers down vs prior day' THEN
-          'Covers dropped vs your last logged day. Review traffic drivers, hours, and local demand; validate in Trends.'::text
+          'Guest count dropped versus the prior day. Look at traffic sources, staffing, and whether opening hours match demand.'::text
         WHEN r.alert_type_raw = 'F&B ticket down vs prior day' THEN
-          'Average ticket fell vs prior day. Review mix, upsell, and promo depth; log context in Enter Data.'::text
+          'Average ticket fell versus the prior day. Push bundles, add-ons, and suggestive selling at checkout.'::text
         WHEN r.alert_type_raw = 'F&B cost ratio worsening (30d)' THEN
-          'Trailing 30d cost/revenue rose vs the prior 30d window. Review COGS, waste, and fixed cost inputs in Enter Data.'::text
-        ELSE 'Review today signals in Trends and log context in Enter Data.'::text
+          'Cost as a share of revenue rose versus the prior 30-day window. Cut waste, renegotiate COGS, and align fixed costs with volume.'::text
+        ELSE 'This signal needs a focused response—watch the trend and adjust pricing, mix, or cost levers over the next few days.'::text
       END
     ) AS description,
     (
