@@ -53,6 +53,21 @@ const tdArrow: CSSProperties = { ...tdBase, textAlign: 'center' };
 function numLocale(locale: string): string { return locale === 'th' ? 'th-TH' : 'en-US'; }
 function missingLabel(locale: string): string { return locale === 'th' ? 'ไม่มีข้อมูล' : 'No data'; }
 
+function fmtInt(n: number | null | undefined, locale: string): string | null {
+  if (n == null || !Number.isFinite(Number(n))) return null;
+  return Math.round(Number(n)).toLocaleString(numLocale(locale));
+}
+
+function fmtMoney(n: number | null | undefined, locale: string): string | null {
+  if (n == null || !Number.isFinite(Number(n))) return null;
+  return `฿${formatCurrency(Math.round(Number(n)), numLocale(locale))}`;
+}
+
+function fmtPct(n: number | null | undefined): string | null {
+  if (n == null || !Number.isFinite(Number(n))) return null;
+  return `${Math.round(Number(n))}%`;
+}
+
 function CellNum({ value, locale }: { value: number | null; locale: string }) {
   const fb = missingLabel(locale);
   if (value == null || !Number.isFinite(value)) return <span style={{ color: '#9ca3af' }}>{fb}</span>;
@@ -150,7 +165,7 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
   const emptyAcc = isTh ? 'ไม่มีข้อมูลที่พัก' : 'No accommodation rows.';
   const emptyFnb = isTh ? 'ไม่มีข้อมูล F&B' : 'No F&B rows.';
   const summaryLabel = isTh ? 'สรุประดับบริษัท' : 'Company summary';
-  const v = (n: number | null | undefined) => (n == null || !Number.isFinite(Number(n)) ? null : Number(n));
+  const dash = '—';
 
   return (
     <div>
@@ -161,40 +176,67 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
             border: '1px solid #e5e7eb',
             borderRadius: 12,
             padding: '12px 14px',
-            background: '#fff',
+            background: '#ffffff',
             marginBottom: 10,
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: '0.03em', textTransform: 'uppercase' as const }}>
-            {summaryLabel}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: '0.03em', textTransform: 'uppercase' as const }}>
+              {summaryLabel}
+            </div>
           </div>
-          <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'baseline' }}>
-            <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+
+          <div
+            style={{
+              marginTop: 8,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, minmax(180px, 1fr))',
+              gap: 10,
+              alignItems: 'baseline',
+            }}
+          >
+            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
               {isTh ? 'Revenue total' : 'Revenue total'}:{' '}
-              <span style={{ fontWeight: 700 }}><CellNum value={v(summary.revenue_agg)} locale={locale} /></span>
-            </span>
-            <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
-              {isTh ? 'Branches updated' : 'Branches updated'}:{' '}
-              <span style={{ fontWeight: 700 }}>
-                {`${Math.round(v(summary.updated_branches_count) ?? 0)}/${Math.round(v(summary.branches_count) ?? 0)}`}
+              <span style={{ fontWeight: 800 }}>
+                {fmtMoney(summary.revenue_agg, locale) ?? dash}
               </span>
-            </span>
-            <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+            </div>
+
+            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
+              {isTh ? 'Branches updated' : 'Branches updated'}:{' '}
+              <span style={{ fontWeight: 800 }}>
+                {(fmtInt(summary.updated_branches_count, locale) ?? dash)}/{(fmtInt(summary.branches_count, locale) ?? dash)}
+              </span>
+            </div>
+
+            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
               {isTh ? 'Rooms/Occupancy' : 'Rooms/Occupancy'}:{' '}
-              <span style={{ fontWeight: 700 }}>
-                {`${Math.round(v(summary.rooms_sold_agg) ?? 0)}/${Math.round(v(summary.rooms_available_agg) ?? 0)}`}{' '}
-                <span style={{ color: '#64748b', fontWeight: 600 }}>
-                  {v(summary.occupancy_rate_weighted) != null ? `(${Math.round(v(summary.occupancy_rate_weighted) ?? 0)})` : ''}
+              <span style={{ fontWeight: 800 }}>
+                {(fmtInt(summary.rooms_sold_agg, locale) ?? dash)}/{(fmtInt(summary.rooms_available_agg, locale) ?? dash)}
+                {' '}
+                <span style={{ color: '#64748b', fontWeight: 700 }}>
+                  ({fmtPct(summary.occupancy_rate_weighted) ?? dash})
                 </span>
               </span>
-            </span>
-            <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+            </div>
+
+            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
               {isTh ? 'Customers/Avg ticket' : 'Customers/Avg ticket'}:{' '}
-              <span style={{ fontWeight: 700 }}>
-                {Math.round(v(summary.customers_agg) ?? 0).toLocaleString(numLocale(locale))}{' '}
-                {v(summary.avg_ticket_weighted) != null ? `(${Math.round(v(summary.avg_ticket_weighted) ?? 0).toLocaleString(numLocale(locale))})` : ''}
+              <span style={{ fontWeight: 800 }}>
+                {fmtInt(summary.customers_agg, locale) ?? dash}{' '}
+                <span style={{ color: '#64748b', fontWeight: 700 }}>
+                  ({fmtMoney(summary.avg_ticket_weighted, locale) ?? dash})
+                </span>
               </span>
-            </span>
+            </div>
           </div>
         </div>
       ) : null}
@@ -205,7 +247,7 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
       ) : (
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: '0.25rem' }}>
           <table style={tableStyle}>
-            <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue</th><th style={thNum}>Occupancy</th><th style={thNum}>Rooms</th><th style={thNum}>ADR</th><th style={thNum}>RevPAR</th></tr></thead>
+            <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue</th><th style={thNum}>Occupancy</th><th style={thNum}>Rooms</th><th style={thNum}>ADR</th><th style={thNum}>RevPAR</th><th style={thArrow}>{isTh ? 'กำไร' : 'Profitability'}</th></tr></thead>
             <tbody>
               {accommodationRows.map((r) => (
                 <tr key={`${r.branch_id}-accommodation`}>
@@ -216,6 +258,7 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
                   <td style={tdNum}><span>{`${Math.round(r.rooms_sold ?? 0)}/${Math.round(r.rooms_available ?? 0)}`}</span></td>
                   <td style={tdNum}><CellMoney value={r.adr} locale={locale} /></td>
                   <td style={tdNum}><CellMoney value={r.revpar} locale={locale} /></td>
+                  <td style={tdArrow}><SymbolCell symbol={r.profitability_symbol} locale={locale} /></td>
                 </tr>
               ))}
             </tbody>
