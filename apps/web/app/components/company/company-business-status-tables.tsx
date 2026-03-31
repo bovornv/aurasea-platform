@@ -92,7 +92,11 @@ function SymbolCell({ symbol, locale }: { symbol: string | null; locale: string 
   const fb = missingLabel(locale);
   const s = (symbol ?? '').trim();
   if (!s) return <span style={{ color: '#9ca3af', fontWeight: 500 }}>{fb}</span>;
-  const color = s === '↑' ? '#059669' : s === '↓' ? '#dc2626' : s === '→' ? '#64748b' : '#0f172a';
+  const color =
+    s === '↑' || s === '▲' ? '#059669'
+    : s === '↓' || s === '▼' ? '#dc2626'
+    : s === '→' || s === '—' ? '#64748b'
+    : '#0f172a';
   return <span style={{ color, fontWeight: 700, fontSize: '16px', lineHeight: 1 }}>{s}</span>;
 }
 
@@ -120,9 +124,16 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
   const { accommodationRows, fnbRows } = useMemo(() => {
     const acc = rows.filter((r) => r.business_type === 'accommodation');
     const fnb = rows.filter((r) => r.business_type === 'fnb');
-    const byHealth = (a: CompanyLatestBusinessStatusV3Row, b: CompanyLatestBusinessStatusV3Row) => (a.health_score ?? 999) - (b.health_score ?? 999);
-    acc.sort(byHealth);
-    fnb.sort(byHealth);
+    const byHealthThenName = (a: CompanyLatestBusinessStatusV3Row, b: CompanyLatestBusinessStatusV3Row) => {
+      const ah = a.health_score;
+      const bh = b.health_score;
+      if (ah == null && bh != null) return 1;
+      if (ah != null && bh == null) return -1;
+      if (ah != null && bh != null && ah !== bh) return bh - ah; // desc
+      return String(a.branch_name ?? '').localeCompare(String(b.branch_name ?? ''));
+    };
+    acc.sort(byHealthThenName);
+    fnb.sort(byHealthThenName);
     return { accommodationRows: acc, fnbRows: fnb };
   }, [rows]);
 
@@ -146,10 +157,10 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
                 <tr key={`${r.branch_id}-accommodation`}>
                   <td style={stickyHealthTd}><HealthBadge score={r.health_score} /></td>
                   <td style={stickyBranchTd}><BranchNameCell row={r} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.revenue_thb} locale={locale} /></td>
-                  <td style={tdNum}><CellPercent value={r.occupancy_pct} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.adr_thb} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.revpar_thb} locale={locale} /></td>
+                  <td style={tdNum}><CellMoney value={r.revenue} locale={locale} /></td>
+                  <td style={tdNum}><CellPercent value={r.occupancy_rate} locale={locale} /></td>
+                  <td style={tdNum}><CellMoney value={r.adr} locale={locale} /></td>
+                  <td style={tdNum}><CellMoney value={r.revpar} locale={locale} /></td>
                   <td style={tdArrow}><SymbolCell symbol={r.profitability_symbol} locale={locale} /></td>
                 </tr>
               ))}
@@ -170,10 +181,10 @@ export function CompanyBusinessStatusTables({ rows, locale = 'th' }: Props) {
                 <tr key={`${r.branch_id}-fnb`}>
                   <td style={stickyHealthTd}><HealthBadge score={r.health_score} /></td>
                   <td style={stickyBranchTd}><BranchNameCell row={r} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.revenue_thb} locale={locale} /></td>
+                  <td style={tdNum}><CellMoney value={r.revenue} locale={locale} /></td>
                   <td style={tdNum}><CellInt value={r.customers} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.avg_ticket_thb} locale={locale} /></td>
-                  <td style={tdNum}><CellMoney value={r.avg_cost_thb} locale={locale} /></td>
+                  <td style={tdNum}><CellMoney value={r.avg_ticket} locale={locale} /></td>
+                  <td style={tdNum}><CellMoney value={r.avg_cost} locale={locale} /></td>
                   <td style={tdArrow}><SymbolCell symbol={r.margin_symbol} locale={locale} /></td>
                 </tr>
               ))}

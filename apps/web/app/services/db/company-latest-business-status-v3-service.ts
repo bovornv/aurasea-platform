@@ -1,6 +1,6 @@
 /**
  * Company Today — Latest business status (canonical current source).
- * GET /rest/v1/company_status_current
+ * GET /rest/v1/branch_status_current
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -19,26 +19,14 @@ const SELECT_CURRENT =
     'metric_date',
     'health_score',
     'revenue',
-    'revenue_thb',
-    'revenue_delta_day',
-    'revenue_yesterday',
     'occupancy_rate',
-    'occupancy_pct',
-    'occupancy_delta_week',
-    'utilized',
-    'capacity',
     'adr',
-    'adr_thb',
     'revpar',
-    'revpar_thb',
     'profitability',
     'profitability_symbol',
     'customers',
-    'transactions',
     'avg_ticket',
-    'avg_ticket_thb',
     'avg_cost',
-    'avg_cost_thb',
     'margin',
     'margin_symbol',
   ].join(',');
@@ -53,27 +41,27 @@ export interface CompanyLatestBusinessStatusV3Row {
   metric_date: string | null;
   health_score: number | null;
   revenue: number | null;
-  revenue_thb: number | null;
-  revenue_delta_day: number | null;
-  revenue_yesterday: number | null;
-  occupancy_pct: number | null;
+  /** Legacy/compat aliases (some call sites still reference these). */
+  revenue_thb?: number | null;
+  revenue_delta_day?: number | null;
+  revenue_yesterday?: number | null;
+  occupancy_pct?: number | null;
   occupancy_rate: number | null;
-  occupancy_delta_week: number | null;
-  utilized: number | null;
-  capacity: number | null;
+  occupancy_delta_week?: number | null;
+  utilized?: number | null;
+  capacity?: number | null;
   adr: number | null;
-  adr_thb: number | null;
+  adr_thb?: number | null;
   revpar: number | null;
-  revpar_thb: number | null;
+  revpar_thb?: number | null;
   profitability_symbol: string | null;
   profitability: string | null;
   customers: number | null;
-  transactions: number | null;
+  transactions?: number | null;
   avg_ticket: number | null;
-  avg_ticket_thb: number | null;
-  /** Alias of avg_cost_thb when REST returns avg_cost. */
+  avg_ticket_thb?: number | null;
   avg_cost: number | null;
-  avg_cost_thb: number | null;
+  avg_cost_thb?: number | null;
   margin_symbol: string | null;
   margin: string | null;
 }
@@ -118,26 +106,26 @@ function mapRow(r: Record<string, unknown>): CompanyLatestBusinessStatusV3Row | 
     business_type,
     metric_date: md || null,
     health_score: pickNum(r, 'health_score', 'healthScore'),
-    revenue: pickNum(r, 'revenue', 'revenue_thb', 'revenueThb'),
+    revenue: pickNum(r, 'revenue'),
     revenue_thb: pickNum(r, 'revenue_thb', 'revenueThb', 'revenue'),
     revenue_delta_day: pickNum(r, 'revenue_delta_day', 'revenueDeltaDay'),
     revenue_yesterday: pickNum(r, 'revenue_yesterday', 'revenueYesterday'),
     occupancy_pct: pickNum(r, 'occupancy_pct', 'occupancyPct', 'occupancy_rate', 'occupancyRate'),
-    occupancy_rate: pickNum(r, 'occupancy_rate', 'occupancyRate', 'occupancy_pct', 'occupancyPct'),
+    occupancy_rate: pickNum(r, 'occupancy_rate'),
     occupancy_delta_week: pickNum(r, 'occupancy_delta_week', 'occupancyDeltaWeek'),
     utilized: pickNum(r, 'utilized'),
     capacity: pickNum(r, 'capacity'),
-    adr: pickNum(r, 'adr', 'adr_thb', 'adrThb'),
+    adr: pickNum(r, 'adr'),
     adr_thb: pickNum(r, 'adr_thb', 'adrThb', 'adr'),
-    revpar: pickNum(r, 'revpar', 'revpar_thb', 'revparThb'),
+    revpar: pickNum(r, 'revpar'),
     revpar_thb: pickNum(r, 'revpar_thb', 'revparThb', 'revpar'),
     profitability_symbol: profSym || prof || null,
     profitability: prof || profSym || null,
     customers: pickNum(r, 'customers'),
     transactions: pickNum(r, 'transactions'),
-    avg_ticket: pickNum(r, 'avg_ticket', 'avgTicket', 'avg_ticket_thb', 'avgTicketThb'),
+    avg_ticket: pickNum(r, 'avg_ticket'),
     avg_ticket_thb: pickNum(r, 'avg_ticket_thb', 'avgTicketThb', 'avg_ticket', 'avgTicket'),
-    avg_cost: pickNum(r, 'avg_cost', 'avgCost', 'avg_cost_thb', 'avgCostThb'),
+    avg_cost: pickNum(r, 'avg_cost'),
     avg_cost_thb: pickNum(r, 'avg_cost_thb', 'avgCostThb', 'avg_cost', 'avgCost'),
     margin_symbol: marginSym || margin || null,
     margin: margin || marginSym || null,
@@ -155,9 +143,10 @@ export async function fetchCompanyLatestBusinessStatusV3(
   if (!supabase) return [];
 
   let query = supabase
-    .from('company_status_current')
+    .from('branch_status_current')
     .select(SELECT_CURRENT)
     .eq('organization_id', oid)
+    .order('health_score', { ascending: false, nullsFirst: false })
     .order('branch_name', { ascending: true });
 
   const ids = [...new Set(branchIds.map((x) => x.trim()).filter(Boolean))];
@@ -170,7 +159,7 @@ export async function fetchCompanyLatestBusinessStatusV3(
     if (isPostgrestObjectMissingError(error)) {
       markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.company_latest_business_status_v3);
     } else if (process.env.NODE_ENV === 'development') {
-      console.warn('[company_status_current]', error.message);
+      console.warn('[branch_status_current]', error.message);
     }
     return [];
   }
@@ -190,7 +179,7 @@ export async function fetchCompanyStatusCurrentByBranchId(
   if (!supabase) return null;
 
   const { data, error } = await supabase
-    .from('company_status_current')
+    .from('branch_status_current')
     .select(SELECT_CURRENT)
     .eq('branch_id', bid)
     .order('metric_date', { ascending: false })
@@ -199,7 +188,7 @@ export async function fetchCompanyStatusCurrentByBranchId(
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[company_status_current by branch]', error.message);
+      console.warn('[branch_status_current by branch]', error.message);
     }
     return null;
   }
