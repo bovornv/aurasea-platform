@@ -1887,41 +1887,6 @@ export default function BranchOverviewPage() {
                 ? `กำลังเรียนรู้ (${Math.min(30, learningStatus.learning_days)}/30 วัน)`
                 : `Learning (${Math.min(30, learningStatus.learning_days)}/30 days)`}
             </span>
-            <span style={{ color: '#9ca3af', fontSize: 10 }}>●</span>
-            <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>
-              {learningStatus.learning_days < 7
-                ? locale === 'th'
-                  ? 'ต่ำ'
-                  : 'Low'
-                : learningStatus.learning_days <= 20
-                  ? locale === 'th'
-                    ? 'ปานกลาง'
-                    : 'Medium'
-                  : locale === 'th'
-                    ? 'สูง'
-                    : 'High'}
-            </span>
-            {Math.min(30, learningStatus.learning_days) < 30 && (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  width: 80,
-                  height: 4,
-                  borderRadius: 2,
-                  backgroundColor: '#e5e7eb',
-                  overflow: 'hidden',
-                  flexShrink: 0,
-                }}
-              >
-                <span
-                  style={{
-                    width: `${Math.min(100, (Math.min(30, learningStatus.learning_days) / 30) * 100)}%`,
-                    height: '100%',
-                    backgroundColor: '#9ca3af',
-                  }}
-                />
-              </span>
-            )}
           </div>
         ) : null}
 
