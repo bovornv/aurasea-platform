@@ -1,5 +1,7 @@
 /**
- * GET /rest/v1/company_data_confidence?select=*&organization_id=eq.{uuid}
+ * Company confidence (learning maturity) — sourced from `public.company_learning_status`.
+ *
+ * Kept API shape for UI compatibility (`CompanyDataConfidence` expects data_days/max_days/confidence_level).
  */
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 
@@ -8,6 +10,12 @@ export interface CompanyDataConfidenceRow {
   data_days: number;
   max_days: number;
   confidence_level: string;
+}
+
+function confidenceLevelFromLearningDays(days: number): 'Low' | 'Medium' | 'High' {
+  if (days >= 20) return 'High';
+  if (days >= 7) return 'Medium';
+  return 'Low';
 }
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
@@ -38,14 +46,14 @@ export async function fetchCompanyDataConfidence(
   if (!supabase) return null;
 
   const { data, error } = await supabase
-    .from('company_data_confidence')
+    .from('company_learning_status')
     .select('*')
     .eq('organization_id', organizationId.trim())
     .maybeSingle();
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.warn('[company_data_confidence]', error.message);
+      console.warn('[company_learning_status]', error.message);
     }
     return null;
   }
@@ -55,13 +63,13 @@ export async function fetchCompanyDataConfidence(
   const org = pickStr(r, 'organization_id', 'organizationId');
   if (!org) return null;
 
-  const dataDays = pickNum(r, 'data_days', 'dataDays');
-  const maxDays = pickNum(r, 'max_days', 'maxDays') ?? 30;
-  const level = pickStr(r, 'confidence_level', 'confidenceLevel') || 'Low';
+  const learningDays = pickNum(r, 'learning_days', 'learningDays') ?? 0;
+  const maxDays = pickNum(r, 'max_learning_days', 'maxLearningDays') ?? 30;
+  const level = confidenceLevelFromLearningDays(learningDays);
 
   return {
     organization_id: org,
-    data_days: Math.max(0, Math.min(30, dataDays ?? 0)),
+    data_days: Math.max(0, Math.min(30, learningDays)),
     max_days: maxDays,
     confidence_level: level,
   };
