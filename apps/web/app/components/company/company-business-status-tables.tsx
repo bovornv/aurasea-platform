@@ -174,74 +174,18 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
   const dash = '—';
 
   return (
-    <div>
-      {/* Company summary block (no freshness line here) */}
+    <div className="lbs">
+      {/* Company summary strip (lightweight, not competing with branch lists) */}
       {summary ? (
-        <div
-          style={{
-            border: '1px solid #e5e7eb',
-            borderRadius: 12,
-            padding: '12px 14px',
-            background: '#ffffff',
-            marginBottom: 10,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'space-between',
-              gap: 12,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#64748b', letterSpacing: '0.03em', textTransform: 'uppercase' as const }}>
-              {summaryLabel}
-            </div>
+        <div className="summaryStrip" aria-label={summaryLabel}>
+          <div className="summaryItem">
+            <div className="k">{isTh ? 'Revenue total' : 'Revenue total'}</div>
+            <div className="v">{fmtMoney(summary.revenue_agg, locale) ?? dash}</div>
           </div>
-
-          <div
-            style={{
-              marginTop: 8,
-              display: 'grid',
-              // Desktop: 4 items in one row when space allows. Mobile: wraps into 2x2.
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: 10,
-              alignItems: 'baseline',
-            }}
-          >
-            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              {isTh ? 'Revenue total' : 'Revenue total'}:{' '}
-              <span style={{ fontWeight: 800 }}>
-                {fmtMoney(summary.revenue_agg, locale) ?? dash}
-              </span>
-            </div>
-
-            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              {isTh ? 'Branches updated' : 'Branches updated'}:{' '}
-              <span style={{ fontWeight: 800 }}>
-                {(fmtInt(summary.updated_branches_count, locale) ?? dash)}/{(fmtInt(summary.branches_count, locale) ?? dash)}
-              </span>
-            </div>
-
-            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              {isTh ? 'Rooms/Occupancy' : 'Rooms/Occupancy'}:{' '}
-              <span style={{ fontWeight: 800 }}>
-                {(fmtInt(summary.rooms_sold_agg, locale) ?? dash)}/{(fmtInt(summary.rooms_available_agg, locale) ?? dash)}{' '}
-                <span style={{ color: '#64748b', fontWeight: 700 }}>
-                  ({fmtPct(summary.occupancy_rate_weighted) ?? dash})
-                </span>
-              </span>
-            </div>
-
-            <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              {isTh ? 'Customers/Avg ticket' : 'Customers/Avg ticket'}:{' '}
-              <span style={{ fontWeight: 800 }}>
-                {fmtInt(summary.customers_agg, locale) ?? dash}{' '}
-                <span style={{ color: '#64748b', fontWeight: 700 }}>
-                  ({fmtMoney(summary.avg_ticket_weighted, locale) ?? dash})
-                </span>
-              </span>
+          <div className="summaryItem">
+            <div className="k">{isTh ? 'Branches updated' : 'Branches updated'}</div>
+            <div className="v">
+              {(fmtInt(summary.updated_branches_count, locale) ?? dash)}/{(fmtInt(summary.branches_count, locale) ?? dash)}
             </div>
           </div>
         </div>
@@ -251,50 +195,186 @@ export function CompanyBusinessStatusTables({ rows, summary = null, locale = 'th
       {accommodationRows.length === 0 ? (
         <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{emptyAcc}</p>
       ) : (
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: '0.25rem' }}>
-          <table style={tableStyle}>
-            <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue</th><th style={thNum}>Occupancy</th><th style={thNum}>Rooms</th><th style={thNum}>ADR</th><th style={thNum}>RevPAR</th><th style={thArrow}>{isTh ? 'กำไร' : 'Profitability'}</th></tr></thead>
-            <tbody>
-              {accommodationRows.map((r) => (
-                <tr key={`${r.branch_id}-accommodation`}>
-                  <td style={stickyHealthTd}><HealthBadge score={r.health_score} /></td>
-                  <td style={stickyBranchTd}><BranchNameCell row={r} locale={locale} /></td>
-                  <td style={tdNum}><CellMoneyBaht value={r.revenue} locale={locale} /></td>
-                  <td style={tdNum}><CellPercent value={r.occupancy_rate} locale={locale} /></td>
-                  <td style={tdNum}><span>{`${Math.round(r.rooms_sold ?? 0)}/${Math.round(r.rooms_available ?? 0)}`}</span></td>
-                  <td style={tdNum}><CellMoneyBaht value={r.adr} locale={locale} /></td>
-                  <td style={tdNum}><CellMoneyBaht value={r.revpar} locale={locale} /></td>
-                  <td style={tdArrow}><SymbolCell symbol={r.profitability_symbol} locale={locale} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {/* Desktop/wide: table */}
+          <div className="tableWrap">
+            <table style={tableStyle}>
+              <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue</th><th style={thNum}>Occupancy</th><th style={thNum}>Rooms</th><th style={thNum}>ADR</th><th style={thNum}>RevPAR</th><th style={thArrow}>{isTh ? 'กำไร' : 'Profitability'}</th></tr></thead>
+              <tbody>
+                {accommodationRows.map((r) => (
+                  <tr key={`${r.branch_id}-accommodation`}>
+                    <td style={stickyHealthTd}><HealthBadge score={r.health_score} /></td>
+                    <td style={stickyBranchTd}><BranchNameCell row={r} locale={locale} /></td>
+                    <td style={tdNum}><CellMoneyBaht value={r.revenue} locale={locale} /></td>
+                    <td style={tdNum}><CellPercent value={r.occupancy_rate} locale={locale} /></td>
+                    <td style={tdNum}><span>{`${Math.round(r.rooms_sold ?? 0)}/${Math.round(r.rooms_available ?? 0)}`}</span></td>
+                    <td style={tdNum}><CellMoneyBaht value={r.adr} locale={locale} /></td>
+                    <td style={tdNum}><CellMoneyBaht value={r.revpar} locale={locale} /></td>
+                    <td style={tdArrow}><SymbolCell symbol={r.profitability_symbol} locale={locale} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile/narrow: stacked cards */}
+          <div className="cards">
+            {accommodationRows.map((r) => (
+              <div className="card" key={`${r.branch_id}-accommodation-card`}>
+                <div className="cardTop">
+                  <div className="cardName">{r.branch_name}</div>
+                  <div className="cardHealth"><HealthBadge score={r.health_score} /></div>
+                </div>
+                <div className="cardGrid">
+                  <div><div className="k">Revenue</div><div className="v">{fmtMoney(r.revenue, locale) ?? dash}</div></div>
+                  <div><div className="k">Occupancy</div><div className="v">{fmtPct(r.occupancy_rate) ?? dash}</div></div>
+                  <div><div className="k">Rooms</div><div className="v">{`${fmtInt(r.rooms_sold, locale) ?? dash}/${fmtInt(r.rooms_available, locale) ?? dash}`}</div></div>
+                  <div><div className="k">ADR</div><div className="v">{fmtMoney(r.adr, locale) ?? dash}</div></div>
+                  <div><div className="k">RevPAR</div><div className="v">{fmtMoney(r.revpar, locale) ?? dash}</div></div>
+                  <div><div className="k">{isTh ? 'กำไร' : 'Profitability'}</div><div className="v"><SymbolCell symbol={r.profitability_symbol} locale={locale} /></div></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {subTitle('F&B')}
       {fnbRows.length === 0 ? (
         <p style={{ margin: 0, fontSize: '13px', color: '#6b7280' }}>{emptyFnb}</p>
       ) : (
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={tableStyle}>
-            <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue</th><th style={thNum}>Customers</th><th style={thNum}>Avg ticket</th><th style={thNum}>Avg Cost</th><th style={thArrow}>{isTh ? 'มาร์จิ้น' : 'Margin'}</th></tr></thead>
-            <tbody>
-              {fnbRows.map((r) => (
-                <tr key={`${r.branch_id}-fnb`}>
-                  <td style={stickyHealthTd}><HealthBadge score={r.health_score} /></td>
-                  <td style={stickyBranchTd}><BranchNameCell row={r} locale={locale} /></td>
-                  <td style={tdNum}><CellMoneyBaht value={r.revenue} locale={locale} /></td>
-                  <td style={tdNum}><CellInt value={r.customers} locale={locale} /></td>
-                  <td style={tdNum}><CellMoneyBaht value={r.avg_ticket} locale={locale} /></td>
-                  <td style={tdNum}><CellMoneyBaht value={r.avg_cost} locale={locale} /></td>
-                  <td style={tdArrow}><SymbolCell symbol={r.margin_symbol} locale={locale} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="tableWrap">
+            <table style={tableStyle}>
+              <thead><tr><th style={stickyHealthTh}>{isTh ? 'สุขภาพ' : 'Health'}</th><th style={stickyBranchTh}>{branchHeader}</th><th style={thNum}>Revenue</th><th style={thNum}>Customers</th><th style={thNum}>Avg ticket</th><th style={thNum}>Avg Cost</th><th style={thArrow}>{isTh ? 'มาร์จิ้น' : 'Margin'}</th></tr></thead>
+              <tbody>
+                {fnbRows.map((r) => (
+                  <tr key={`${r.branch_id}-fnb`}>
+                    <td style={stickyHealthTd}><HealthBadge score={r.health_score} /></td>
+                    <td style={stickyBranchTd}><BranchNameCell row={r} locale={locale} /></td>
+                    <td style={tdNum}><CellMoneyBaht value={r.revenue} locale={locale} /></td>
+                    <td style={tdNum}><CellInt value={r.customers} locale={locale} /></td>
+                    <td style={tdNum}><CellMoneyBaht value={r.avg_ticket} locale={locale} /></td>
+                    <td style={tdNum}><CellMoneyBaht value={r.avg_cost} locale={locale} /></td>
+                    <td style={tdArrow}><SymbolCell symbol={r.margin_symbol} locale={locale} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="cards">
+            {fnbRows.map((r) => (
+              <div className="card" key={`${r.branch_id}-fnb-card`}>
+                <div className="cardTop">
+                  <div className="cardName">{r.branch_name}</div>
+                  <div className="cardHealth"><HealthBadge score={r.health_score} /></div>
+                </div>
+                <div className="cardGrid">
+                  <div><div className="k">Revenue</div><div className="v">{fmtMoney(r.revenue, locale) ?? dash}</div></div>
+                  <div><div className="k">Customers</div><div className="v">{fmtInt(r.customers, locale) ?? dash}</div></div>
+                  <div><div className="k">Avg ticket</div><div className="v">{fmtMoney(r.avg_ticket, locale) ?? dash}</div></div>
+                  <div><div className="k">Avg cost</div><div className="v">{fmtMoney(r.avg_cost, locale) ?? dash}</div></div>
+                  <div><div className="k">{isTh ? 'มาร์จิ้น' : 'Margin'}</div><div className="v"><SymbolCell symbol={r.margin_symbol} locale={locale} /></div></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
+
+      <style jsx>{`
+        .summaryStrip {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+          margin: 2px 0 6px;
+          padding: 2px 0 6px;
+          border-bottom: 1px solid #f1f5f9;
+        }
+        .summaryItem {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          min-width: 0;
+        }
+        .summaryItem .k {
+          font-size: 12px;
+          font-weight: 700;
+          color: #64748b;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .summaryItem .v {
+          font-size: 16px;
+          font-weight: 800;
+          color: #0f172a;
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
+        }
+
+        .tableWrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.25rem; }
+        .cards { display: none; }
+
+        .card {
+          border: 1px solid #e5e7eb;
+          border-radius: 12px;
+          padding: 12px 12px;
+          background: #fff;
+          margin-bottom: 10px;
+        }
+        .cardTop {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .cardName {
+          font-size: 14px;
+          font-weight: 700;
+          color: #0f172a;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 72vw;
+        }
+        .cardGrid {
+          margin-top: 10px;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .cardGrid .k {
+          font-size: 11px;
+          font-weight: 700;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
+        }
+        .cardGrid .v {
+          margin-top: 2px;
+          font-size: 14px;
+          font-weight: 800;
+          color: #0f172a;
+          font-variant-numeric: tabular-nums;
+        }
+
+        /* Narrow / mobile: switch tables -> cards */
+        @media (max-width: 860px) {
+          .tableWrap { display: none; }
+          .cards { display: block; }
+          .summaryStrip { grid-template-columns: 1fr; }
+        }
+
+        /* Notepad-ish widths: keep summary compact */
+        @media (max-width: 420px) {
+          .cardGrid { grid-template-columns: 1fr; }
+          .cardName { max-width: 62vw; }
+        }
+      `}</style>
     </div>
   );
 }
