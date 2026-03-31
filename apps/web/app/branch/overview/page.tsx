@@ -1887,6 +1887,27 @@ export default function BranchOverviewPage() {
                 ? `กำลังเรียนรู้ (${Math.min(30, learningStatus.learning_days)}/30 วัน)`
                 : `Learning (${Math.min(30, learningStatus.learning_days)}/30 days)`}
             </span>
+            <span
+              style={{
+                display: 'inline-flex',
+                width: 80,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: '#e5e7eb',
+                overflow: 'hidden',
+                flexShrink: 0,
+              }}
+              title={`${Math.min(30, learningStatus.learning_days)}/30`}
+              aria-label={`Learning progress ${Math.min(30, learningStatus.learning_days)}/30`}
+            >
+              <span
+                style={{
+                  width: `${Math.min(100, (Math.min(30, learningStatus.learning_days) / 30) * 100)}%`,
+                  height: '100%',
+                  backgroundColor: '#9ca3af',
+                }}
+              />
+            </span>
           </div>
         ) : null}
 
