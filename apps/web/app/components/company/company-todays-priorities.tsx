@@ -60,6 +60,7 @@ export function CompanyTodaysPriorities({ rows, locale, loading }: Props) {
           titleRaw={rawTitle}
           description={action}
           locale={locale}
+          impactThb={row.impact_thb}
           headlineFallback={branch}
         />
       </li>

@@ -101,6 +101,7 @@ function BranchTodayPriorityCard({
       titleRaw={rawTitle}
       description={action}
       locale={locale}
+      impactThb={row.impact_thb}
       hideFinancials={hideFinancials}
     />
   );

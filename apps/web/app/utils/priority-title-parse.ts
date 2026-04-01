@@ -1,7 +1,6 @@
 /**
- * Priorities from branch_priorities_current / company_priorities_current embed
- * financial impact in the title, e.g. "Revenue Drop — Cafe (฿1,272)".
- * UI strips the trailing "(฿…)" from the headline and shows it on a separate line.
+ * Priority title cleanup: strip trailing "(฿…)" so the headline is problem-only.
+ * The impact line in UI uses `impact_thb` from the API; this parser is for legacy titles.
  */
 
 /** Trailing Thai-baht amount in parentheses, e.g. (฿1,272) or (฿650) */
@@ -22,4 +21,11 @@ export function parseTrailingBahtImpactFromTitle(title: string | null | undefine
 
 export function priorityEstimatedRevenueAtRiskLabel(locale: string): string {
   return locale === 'th' ? 'ประมาณการรายได้ที่เสี่ยง:' : 'Estimated revenue at risk:';
+}
+
+/** Whole baht with comma grouping, e.g. ฿1,313 (uses en-US grouping per product spec). */
+export function formatImpactThbBaht(impactThb: number): string {
+  const n = Math.round(Number(impactThb));
+  if (!Number.isFinite(n)) return '';
+  return `฿${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
