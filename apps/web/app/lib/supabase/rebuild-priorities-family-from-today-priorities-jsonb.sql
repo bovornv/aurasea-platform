@@ -1,31 +1,23 @@
 -- =============================================================================
--- Rebuild priorities family from public.today_priorities using JSONB only
+-- Priorities pipeline: today_priorities (JSONB) → priorities_engine → ranked → API
 -- =============================================================================
--- public.today_priorities column names vary by deployment. This script does NOT
--- reference fixed columns on today_priorities — only:
---   SELECT to_jsonb(tp) FROM public.today_priorities tp
--- Field values are resolved via JSON key lookups (snake_case + camelCase).
+-- priorities_engine is the canonical normalized layer (to_jsonb(today_priorities) only).
+-- priorities_ranked, branch_priorities_current, company_priorities_current are rebuilt
+-- from priorities_engine with explicit user-facing field mapping.
 --
--- Creates:
---   public.priorities_engine
---   public.priorities_ranked
---   public.branch_priorities_current   (top 2 per branch)
---   public.company_priorities_current  (top 5 per organization)
+-- Branch API mapping (branch_priorities_current):
+--   title         = COALESCE(short_title, title, humanized alert_type)
+--   description   = reason_short || '. ' || action_text (either part optional)
+--   impact_thb    = impact_estimate_thb
+--   impact_label  = COALESCE(impact_label, 'at risk' if money > 0, else 'at risk')
+--   rank          = COALESCE(source_rank from JSON, row_number by sort_score desc)
+--   metric_date   = from branch_status_current (via engine), latest snapshot per branch
 --
--- Derives:
---   business_type from public.branches (module_type), else json business_type
---   metric_date from public.branch_status_current, else json metric_date
---
--- Then drops (NO CASCADE): today_priorities_view, today_priorities_company_view,
--- today_priorities_ranked, today_priorities_clean, today_branch_priorities.
--- KEEPS public.today_priorities.
---
--- If a DROP fails, run the dependency query at the bottom and remove dependents
--- manually (still without CASCADE on this script's targets).
+-- Keeps public.today_priorities. Legacy today_priorities_* drops at end (no CASCADE).
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 1) priorities_engine
+-- 1) priorities_engine — JSON keys + joins (no fixed today_priorities columns)
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE VIEW public.priorities_engine AS
 WITH raw AS (
@@ -101,14 +93,36 @@ SELECT
     NULLIF(trim(both FROM x.j ->> 'title'), ''),
     NULLIF(trim(both FROM x.j ->> 'Title'), ''),
     NULLIF(trim(both FROM x.j ->> 'short_title'), ''),
-    NULLIF(trim(both FROM x.j ->> 'shortTitle'), '')
+    NULLIF(trim(both FROM x.j ->> 'shortTitle'), ''),
+    NULLIF(trim(both FROM x.j ->> 'headline'), ''),
+    NULLIF(trim(both FROM x.j ->> 'Headline'), '')
   ) AS title,
   COALESCE(
     NULLIF(trim(both FROM x.j ->> 'short_title'), ''),
     NULLIF(trim(both FROM x.j ->> 'shortTitle'), ''),
+    NULLIF(trim(both FROM x.j ->> 'headline'), ''),
+    NULLIF(trim(both FROM x.j ->> 'Headline'), ''),
     NULLIF(trim(both FROM x.j ->> 'title'), ''),
-    NULLIF(trim(both FROM x.j ->> 'Title'), '')
+    NULLIF(trim(both FROM x.j ->> 'Title'), ''),
+    NULLIF(
+      initcap(
+        replace(
+          trim(both FROM COALESCE(x.j ->> 'alert_type', x.j ->> 'alertType', 'priority')),
+          '_'::text,
+          ' '::text
+        )
+      ),
+      ''
+    )
   ) AS short_title,
+  COALESCE(
+    NULLIF(trim(both FROM x.j ->> 'reason_short'), ''),
+    NULLIF(trim(both FROM x.j ->> 'reasonShort'), ''),
+    NULLIF(trim(both FROM x.j ->> 'summary'), ''),
+    NULLIF(trim(both FROM x.j ->> 'Summary'), ''),
+    NULLIF(trim(both FROM x.j ->> 'context'), ''),
+    NULLIF(trim(both FROM x.j ->> 'details'), '')
+  ) AS reason_short,
   COALESCE(
     NULLIF(trim(both FROM x.j ->> 'description'), ''),
     NULLIF(trim(both FROM x.j ->> 'Description'), ''),
@@ -118,6 +132,8 @@ SELECT
   COALESCE(
     NULLIF(trim(both FROM x.j ->> 'action_text'), ''),
     NULLIF(trim(both FROM x.j ->> 'actionText'), ''),
+    NULLIF(trim(both FROM x.j ->> 'recommended_action'), ''),
+    NULLIF(trim(both FROM x.j ->> 'recommendedAction'), ''),
     NULLIF(trim(both FROM x.j ->> 'description'), ''),
     NULLIF(trim(both FROM x.j ->> 'Description'), '')
   ) AS action_text,
@@ -125,19 +141,17 @@ SELECT
     NULLIF(replace(trim(both FROM x.j ->> 'impact_thb'), ',', ''), '')::numeric,
     NULLIF(replace(trim(both FROM x.j ->> 'impactThb'), ',', ''), '')::numeric,
     NULLIF(replace(trim(both FROM x.j ->> 'impact_estimate_thb'), ',', ''), '')::numeric,
-    NULLIF(replace(trim(both FROM x.j ->> 'impactEstimateThb'), ',', ''), '')::numeric
+    NULLIF(replace(trim(both FROM x.j ->> 'impactEstimateThb'), ',', ''), '')::numeric,
+    NULLIF(replace(trim(both FROM x.j ->> 'estimated_impact'), ',', ''), '')::numeric
   ) AS impact_thb,
   COALESCE(
     NULLIF(replace(trim(both FROM x.j ->> 'impact_estimate_thb'), ',', ''), '')::numeric,
     NULLIF(replace(trim(both FROM x.j ->> 'impactEstimateThb'), ',', ''), '')::numeric,
     NULLIF(replace(trim(both FROM x.j ->> 'impact_thb'), ',', ''), '')::numeric,
-    NULLIF(replace(trim(both FROM x.j ->> 'impactThb'), ',', ''), '')::numeric
+    NULLIF(replace(trim(both FROM x.j ->> 'impactThb'), ',', ''), '')::numeric,
+    NULLIF(replace(trim(both FROM x.j ->> 'estimated_impact'), ',', ''), '')::numeric
   ) AS impact_estimate_thb,
-  COALESCE(
-    NULLIF(trim(both FROM x.j ->> 'impact_label'), ''),
-    NULLIF(trim(both FROM x.j ->> 'impactLabel'), ''),
-    'at risk'::text
-  ) AS impact_label,
+  NULLIF(trim(both FROM x.j ->> 'impact_label'), '') AS impact_label_raw,
   COALESCE(
     bsc.metric_date::date,
     NULLIF(trim(both FROM x.j ->> 'metric_date'), '')::date,
@@ -153,20 +167,41 @@ SELECT
   COALESCE(
     NULLIF(trim(both FROM x.j ->> 'priority_segment'), ''),
     NULLIF(trim(both FROM x.j ->> 'prioritySegment'), '')
-  ) AS priority_segment
+  ) AS priority_segment,
+  CASE
+    WHEN
+      COALESCE(
+        NULLIF(trim(both FROM x.j ->> 'rank'), ''),
+        NULLIF(trim(both FROM x.j ->> 'Rank'), ''),
+        NULLIF(trim(both FROM x.j ->> 'priority_rank'), ''),
+        NULLIF(trim(both FROM x.j ->> 'priorityRank'), '')
+      ) ~ '^[0-9]+$'
+      THEN COALESCE(
+        NULLIF(trim(both FROM x.j ->> 'rank'), ''),
+        NULLIF(trim(both FROM x.j ->> 'Rank'), ''),
+        NULLIF(trim(both FROM x.j ->> 'priority_rank'), ''),
+        NULLIF(trim(both FROM x.j ->> 'priorityRank'), '')
+      )::integer
+    ELSE NULL::integer
+  END AS source_rank
 FROM joined x
 LEFT JOIN public.branches b ON trim(both FROM b.id::text) = trim(both FROM x.branch_id_txt)
 LEFT JOIN public.branch_status_current bsc ON trim(both FROM bsc.branch_id::text) = trim(both FROM x.branch_id_txt);
 
 COMMENT ON VIEW public.priorities_engine IS
-  'Normalized from today_priorities via to_jsonb(row) + JSON keys; branches + branch_status_current for business_type and metric_date.';
+  'Canonical layer: today_priorities as jsonb + branches + branch_status_current; includes reason_short, source_rank, short_title fallbacks.';
 
 GRANT SELECT ON public.priorities_engine TO anon, authenticated;
 
 -- -----------------------------------------------------------------------------
--- 2) priorities_ranked — per-branch ordering (branch_rank)
+-- 2–4) Drop downstream views then rebuild from priorities_engine
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.priorities_ranked AS
+DROP VIEW IF EXISTS public.company_priorities_current;
+DROP VIEW IF EXISTS public.branch_priorities_current;
+DROP VIEW IF EXISTS public.priorities_ranked;
+
+-- priorities_ranked: per-branch row number; carry all engine columns for mapping
+CREATE VIEW public.priorities_ranked AS
 SELECT
   e.organization_id,
   e.branch_id,
@@ -175,106 +210,241 @@ SELECT
   e.alert_type,
   e.title,
   e.short_title,
+  e.reason_short,
   e.description,
   e.action_text,
   e.impact_thb,
   e.impact_estimate_thb,
-  e.impact_label,
+  e.impact_label_raw,
   e.metric_date,
   e.sort_score,
   e.priority_segment,
+  e.source_rank,
   ROW_NUMBER() OVER (
     PARTITION BY e.branch_id
     ORDER BY
       e.sort_score DESC NULLS LAST,
+      COALESCE(e.source_rank, 2147483647) ASC,
       e.alert_type ASC,
-      COALESCE(e.title, '') ASC
+      COALESCE(e.short_title, e.title, '') ASC
   )::integer AS branch_rank
 FROM public.priorities_engine e
 WHERE e.branch_id IS NOT NULL;
 
 COMMENT ON VIEW public.priorities_ranked IS
-  'Row numbers per branch_id by sort_score DESC; filter branch_rank <= 2 for branch_priorities_current.';
+  'priorities_engine + branch_rank (sort_score desc); source_rank preserved for display rank COALESCE.';
 
 GRANT SELECT ON public.priorities_ranked TO anon, authenticated;
 
--- -----------------------------------------------------------------------------
--- 3) branch_priorities_current — top 2 per branch (API: rank column)
--- -----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.branch_priorities_current AS
+-- branch_priorities_current: latest metric_date per branch, then top 2; mapped fields
+CREATE VIEW public.branch_priorities_current AS
+WITH ranked AS (
+  SELECT * FROM public.priorities_ranked
+),
+latest AS (
+  SELECT
+    r.branch_id,
+    MAX(r.metric_date) AS mx
+  FROM ranked r
+  GROUP BY r.branch_id
+),
+date_scoped AS (
+  SELECT r.*
+  FROM ranked r
+  INNER JOIN latest l ON r.branch_id = l.branch_id
+    AND r.metric_date IS NOT DISTINCT FROM l.mx
+),
+top2 AS (
+  SELECT
+    d.*,
+    ROW_NUMBER() OVER (
+      PARTITION BY d.branch_id
+      ORDER BY
+        d.sort_score DESC NULLS LAST,
+        d.branch_rank ASC
+    )::integer AS pick_rn
+  FROM date_scoped d
+),
+mapped AS (
+  SELECT
+    t.organization_id,
+    t.branch_id,
+    t.branch_name,
+    t.business_type,
+    t.alert_type,
+    COALESCE(
+      NULLIF(trim(both FROM t.short_title), ''),
+      NULLIF(trim(both FROM t.title), ''),
+      initcap(replace(trim(both FROM t.alert_type), '_'::text, ' '::text))
+    ) AS title,
+    NULLIF(
+      trim(
+        both
+        FROM
+          CASE
+            WHEN NULLIF(trim(both FROM t.reason_short), '') IS NOT NULL
+            AND NULLIF(trim(both FROM t.action_text), '') IS NOT NULL THEN
+              trim(both FROM t.reason_short) || '. '::text || trim(both FROM t.action_text)
+            WHEN NULLIF(trim(both FROM t.reason_short), '') IS NOT NULL THEN
+              trim(both FROM t.reason_short)
+            WHEN NULLIF(trim(both FROM t.action_text), '') IS NOT NULL THEN
+              trim(both FROM t.action_text)
+            ELSE COALESCE(NULLIF(trim(both FROM t.description), ''), '')
+          END
+      ),
+      ''
+    ) AS description,
+    t.sort_score,
+    COALESCE(t.source_rank, t.branch_rank)::integer AS rank,
+    COALESCE(
+      NULLIF(trim(both FROM t.impact_label_raw), ''),
+      CASE
+        WHEN COALESCE(t.impact_estimate_thb, t.impact_thb, 0::numeric) > 0::numeric THEN 'at risk'::text
+        ELSE NULL::text
+      END,
+      'at risk'::text
+    ) AS impact_label,
+    t.metric_date,
+    COALESCE(t.impact_estimate_thb, t.impact_thb) AS impact_thb,
+    t.short_title,
+    t.action_text,
+    COALESCE(t.impact_estimate_thb, t.impact_thb) AS impact_estimate_thb
+  FROM top2 t
+  WHERE t.pick_rn <= 2
+)
 SELECT
-  pr.organization_id,
-  pr.branch_id,
-  pr.branch_name,
-  pr.business_type,
-  pr.alert_type,
-  pr.title,
-  pr.description,
-  pr.sort_score,
-  pr.branch_rank AS rank,
-  pr.impact_label,
-  pr.metric_date,
-  COALESCE(pr.impact_thb, pr.impact_estimate_thb) AS impact_thb,
-  pr.short_title,
-  pr.action_text,
-  pr.impact_estimate_thb
-FROM public.priorities_ranked pr
-WHERE pr.branch_rank <= 2;
+  m.organization_id,
+  m.branch_id,
+  m.branch_name,
+  m.business_type,
+  m.alert_type,
+  m.title,
+  m.description,
+  m.sort_score,
+  m.rank,
+  m.impact_label,
+  m.metric_date,
+  m.impact_thb,
+  m.short_title,
+  m.action_text,
+  m.impact_estimate_thb
+FROM mapped m;
 
 COMMENT ON VIEW public.branch_priorities_current IS
-  'Top 2 priorities per branch from priorities_ranked; rank = branch_rank.';
+  'Latest metric_date per branch, top 2 by sort_score; title/description/impact mapped from priorities_engine.';
 
 GRANT SELECT ON public.branch_priorities_current TO anon, authenticated;
 
--- -----------------------------------------------------------------------------
--- 4) company_priorities_current — top 5 per organization
--- -----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.company_priorities_current AS
-WITH org_scoped AS (
+-- company_priorities_current: latest metric_date per organization, top 5; same mapping
+CREATE VIEW public.company_priorities_current AS
+WITH ranked AS (
+  SELECT * FROM public.priorities_ranked
+  WHERE organization_id IS NOT NULL
+),
+org_latest AS (
   SELECT
-    pr.*,
+    r.organization_id,
+    MAX(r.metric_date) AS mx
+  FROM ranked r
+  GROUP BY r.organization_id
+),
+date_scoped AS (
+  SELECT r.*
+  FROM ranked r
+  INNER JOIN org_latest ol ON r.organization_id = ol.organization_id
+    AND r.metric_date IS NOT DISTINCT FROM ol.mx
+),
+org_pick AS (
+  SELECT
+    d.*,
     ROW_NUMBER() OVER (
-      PARTITION BY pr.organization_id
+      PARTITION BY d.organization_id
       ORDER BY
-        pr.sort_score DESC NULLS LAST,
-        pr.branch_id::text ASC,
-        pr.alert_type ASC,
-        COALESCE(pr.title, '') ASC
+        d.sort_score DESC NULLS LAST,
+        d.branch_id::text ASC,
+        d.alert_type ASC,
+        COALESCE(d.short_title, d.title, '') ASC
     )::integer AS org_rank
-  FROM public.priorities_ranked pr
-  WHERE pr.organization_id IS NOT NULL
+  FROM date_scoped d
+),
+mapped AS (
+  SELECT
+    o.organization_id,
+    o.branch_id,
+    o.branch_name,
+    o.business_type,
+    o.alert_type,
+    COALESCE(
+      NULLIF(trim(both FROM o.short_title), ''),
+      NULLIF(trim(both FROM o.title), ''),
+      initcap(replace(trim(both FROM o.alert_type), '_'::text, ' '::text))
+    ) AS title,
+    NULLIF(
+      trim(
+        both
+        FROM
+          CASE
+            WHEN NULLIF(trim(both FROM o.reason_short), '') IS NOT NULL
+            AND NULLIF(trim(both FROM o.action_text), '') IS NOT NULL THEN
+              trim(both FROM o.reason_short) || '. '::text || trim(both FROM o.action_text)
+            WHEN NULLIF(trim(both FROM o.reason_short), '') IS NOT NULL THEN
+              trim(both FROM o.reason_short)
+            WHEN NULLIF(trim(both FROM o.action_text), '') IS NOT NULL THEN
+              trim(both FROM o.action_text)
+            ELSE COALESCE(NULLIF(trim(both FROM o.description), ''), '')
+          END
+      ),
+      ''
+    ) AS description,
+    o.sort_score,
+    o.org_rank AS rank,
+    COALESCE(
+      NULLIF(trim(both FROM o.impact_label_raw), ''),
+      CASE
+        WHEN COALESCE(o.impact_estimate_thb, o.impact_thb, 0::numeric) > 0::numeric THEN 'at risk'::text
+        ELSE NULL::text
+      END,
+      'at risk'::text
+    ) AS impact_label,
+    o.metric_date,
+    COALESCE(o.impact_estimate_thb, o.impact_thb) AS impact_thb,
+    COALESCE(o.impact_estimate_thb, o.impact_thb) AS impact_estimate_thb,
+    o.short_title,
+    o.action_text,
+    CASE
+      WHEN o.org_rank = 1 THEN 'fix_first'::text
+      WHEN o.org_rank BETWEEN 2 AND 4 THEN 'next_moves'::text
+      ELSE 'more'::text
+    END AS priority_segment
+  FROM org_pick o
+  WHERE o.org_rank <= 5
 )
 SELECT
-  o.organization_id,
-  o.branch_id,
-  o.branch_name,
-  o.business_type,
-  o.alert_type,
-  o.title,
-  o.description,
-  o.sort_score,
-  o.org_rank AS rank,
-  o.impact_label,
-  o.metric_date,
-  COALESCE(o.impact_thb, o.impact_estimate_thb) AS impact_thb,
-  COALESCE(o.impact_estimate_thb, o.impact_thb) AS impact_estimate_thb,
-  o.short_title,
-  o.action_text,
-  CASE
-    WHEN o.org_rank = 1 THEN 'fix_first'::text
-    WHEN o.org_rank BETWEEN 2 AND 4 THEN 'next_moves'::text
-    ELSE 'more'::text
-  END AS priority_segment
-FROM org_scoped o
-WHERE o.org_rank <= 5;
+  m.organization_id,
+  m.branch_id,
+  m.branch_name,
+  m.business_type,
+  m.alert_type,
+  m.title,
+  m.description,
+  m.sort_score,
+  m.rank,
+  m.impact_label,
+  m.metric_date,
+  m.impact_thb,
+  m.impact_estimate_thb,
+  m.short_title,
+  m.action_text,
+  m.priority_segment
+FROM mapped m;
 
 COMMENT ON VIEW public.company_priorities_current IS
-  'Top 5 org-wide priorities from priorities_ranked; rank = org_rank; priority_segment for UI.';
+  'Latest metric_date per org, top 5; same field mapping as branch_priorities_current.';
 
 GRANT SELECT ON public.company_priorities_current TO anon, authenticated;
 
 -- -----------------------------------------------------------------------------
--- 5) Drop legacy today_priorities_* views (no CASCADE; keep today_priorities)
+-- 5) Drop legacy today_priorities_* (no CASCADE; keep today_priorities)
 -- -----------------------------------------------------------------------------
 DROP VIEW IF EXISTS public.today_priorities_view;
 DROP VIEW IF EXISTS public.today_priorities_company_view;
@@ -285,35 +455,39 @@ DROP VIEW IF EXISTS public.today_branch_priorities;
 -- =============================================================================
 -- Verification
 -- =============================================================================
+-- BEFORE (run on old definitions, optional):
+--   SELECT
+--     count(*) FILTER (WHERE title IS NULL) AS null_title,
+--     count(*) FILTER (WHERE description IS NULL OR description = '') AS null_desc,
+--     count(*) FILTER (WHERE rank IS NULL) AS null_rank,
+--     count(*) FILTER (WHERE impact_label IS NULL) AS null_lbl,
+--     count(*) FILTER (WHERE impact_thb IS NULL) AS null_impact
+--   FROM public.branch_priorities_current;
+--
+-- AFTER (expect lower nulls when JSON has action/reason/amounts):
+--   SELECT
+--     count(*) FILTER (WHERE title IS NULL OR title = '') AS null_title,
+--     count(*) FILTER (WHERE description IS NULL OR description = '') AS null_desc,
+--     count(*) FILTER (WHERE rank IS NULL) AS null_rank,
+--     count(*) FILTER (WHERE impact_label IS NULL OR impact_label = '') AS null_lbl,
+--     count(*) FILTER (WHERE impact_thb IS NULL) AS null_impact
+--   FROM public.branch_priorities_current;
+--
+--   SELECT
+--     count(*) FILTER (WHERE title IS NULL OR title = '') AS null_title,
+--     count(*) FILTER (WHERE description IS NULL OR description = '') AS null_desc,
+--     count(*) FILTER (WHERE rank IS NULL) AS null_rank,
+--     count(*) FILTER (WHERE impact_label IS NULL OR impact_label = '') AS null_lbl,
+--     count(*) FILTER (WHERE impact_thb IS NULL) AS null_impact
+--   FROM public.company_priorities_current;
+--
 -- Row counts:
---   SELECT 'today_priorities' AS src, count(*) FROM public.today_priorities
---   UNION ALL SELECT 'priorities_engine', count(*) FROM public.priorities_engine
+--   SELECT 'priorities_engine' AS v, count(*) FROM public.priorities_engine
 --   UNION ALL SELECT 'priorities_ranked', count(*) FROM public.priorities_ranked
 --   UNION ALL SELECT 'branch_priorities_current', count(*) FROM public.branch_priorities_current
 --   UNION ALL SELECT 'company_priorities_current', count(*) FROM public.company_priorities_current;
 --
--- Top 2 per branch:
---   SELECT branch_id, count(*) FROM public.branch_priorities_current GROUP BY branch_id HAVING count(*) > 2;
---   (expect 0 rows)
+-- At most 2 rows per branch (after latest-date filter):
+--   SELECT branch_id, count(*) AS n FROM public.branch_priorities_current GROUP BY branch_id HAVING count(*) > 2;
 --
--- Dependencies that block DROP (run before re-running drops if needed):
---   SELECT DISTINCT dependent_ns.nspname || '.' || dependent_view.relname AS dependent_view
---   FROM pg_depend d
---   JOIN pg_rewrite r ON d.objid = r.oid
---   JOIN pg_class dependent_view ON r.ev_class = dependent_view.oid
---   JOIN pg_namespace dependent_ns ON dependent_view.relnamespace = dependent_ns.oid
---   JOIN pg_class source ON d.refobjid = source.oid
---   JOIN pg_namespace source_ns ON source.relnamespace = source_ns.oid
---   WHERE source_ns.nspname = 'public'
---     AND source.relname IN (
---       'today_priorities_view',
---       'today_priorities_company_view',
---       'today_priorities_ranked',
---       'today_priorities_clean',
---       'today_branch_priorities'
---     )
---     AND dependent_view.relname <> source.relname;
---
--- Note: ::numeric casts on empty/non-numeric json strings can invalidate the view
--- definition at SELECT time (not at CREATE time). Keep today_priorities numeric
--- fields numeric or blank, or wrap ingestion to sanitize.
+-- Dependency check if legacy DROP fails: see previous revision of this file.
