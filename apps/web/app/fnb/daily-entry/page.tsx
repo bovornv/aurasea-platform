@@ -122,7 +122,7 @@ export default function FnbDailyEntryPage() {
       const todayStr = getTodayDateString();
       
       const parsedAdditionalCost = additionalCostToday !== null && additionalCostToday >= 0 ? additionalCostToday : 0;
-      const saved = await saveDailyMetric({
+      await saveDailyMetric({
         branchId: branch.id,
         date: todayStr,
         branchType: 'fnb',
@@ -135,17 +135,19 @@ export default function FnbDailyEntryPage() {
         additionalCostToday: parsedAdditionalCost,
       });
 
-      if (saved) {
-        setSuccess(true);
-        setTimeout(() => {
-          router.push(paths.branchOverview || '/branch/overview');
-        }, 2000);
-      } else {
-        setErrors({ submit: locale === 'th' ? 'บันทึกไม่สำเร็จ' : 'Failed to save' });
-      }
+      setSuccess(true);
+      setTimeout(() => {
+        router.push(paths.branchOverview || '/branch/overview');
+      }, 2000);
     } catch (err) {
       console.error('Failed to save F&B daily metric:', err);
-      setErrors({ submit: locale === 'th' ? 'เกิดข้อผิดพลาด' : 'An error occurred' });
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrors({
+        submit:
+          locale === 'th'
+            ? `บันทึกไม่สำเร็จ: ${msg}`
+            : `Save failed: ${msg}`,
+      });
     } finally {
       setSaving(false);
     }

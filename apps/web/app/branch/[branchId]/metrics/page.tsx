@@ -400,7 +400,13 @@ export default function BranchMetricsPage() {
       }, 1500);
     } catch (err) {
       console.error('Failed to save metrics:', err);
-      setErrors({ submit: locale === 'th' ? 'ไม่สามารถบันทึกข้อมูลได้' : 'Failed to save data' });
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrors({
+        submit:
+          locale === 'th'
+            ? `ไม่สามารถบันทึกข้อมูลได้: ${msg}`
+            : `Failed to save data: ${msg}`,
+      });
     } finally {
       setSaving(false);
     }

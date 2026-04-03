@@ -123,6 +123,20 @@ function rejectMockBranchId(branchId: string): void {
   }
 }
 
+/** Surface PostgREST / DB errors (404 table, RLS, constraint) to the UI — not only console. */
+function formatDailyMetricSaveError(
+  error: { message?: string; code?: string; details?: string; hint?: string }
+): string {
+  const parts = [error.message, error.hint, error.details].filter(
+    (s): s is string => typeof s === 'string' && s.trim() !== ''
+  );
+  const base = parts.length > 0 ? parts.join(' — ') : 'Failed to save daily metric';
+  if (error.code && !base.includes(String(error.code))) {
+    return `${base} (${error.code})`;
+  }
+  return base;
+}
+
 /** Clear cached daily metrics for a branch (e.g. before refetching status on page load). */
 export function clearDailyMetricsCacheForBranch(branchId: string): void {
   if (branchId == null || branchId === '') return;
@@ -263,10 +277,11 @@ export async function saveDailyMetric(
         throw new Error('Permission error: You are not assigned to this branch');
       }
       logTransientNetworkOnce(`save:${metric.branchId}`, error, 'DailyMetricsService');
-      if (!isTransientNetworkError(error)) {
-        console.error('[DailyMetricsService] Failed to save daily metric:', error);
+      if (isTransientNetworkError(error)) {
+        return false;
       }
-      return false;
+      console.error('[DailyMetricsService] Failed to save daily metric:', error);
+      throw new Error(formatDailyMetricSaveError(error));
     }
 
     const cacheKeysToDelete: string[] = [];
