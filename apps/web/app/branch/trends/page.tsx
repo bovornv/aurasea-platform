@@ -15,7 +15,7 @@ import { useResolvedBranchData } from '../../hooks/use-resolved-branch-data';
 import { ErrorState } from '../../components/error-state';
 import { useI18n } from '../../hooks/use-i18n';
 import { getBranchKpiMetrics } from '../../services/db/kpi-analytics-service';
-import { getDailyMetrics } from '../../services/db/daily-metrics-service';
+import { getDailyMetrics, getAccommodationDailyMetrics } from '../../services/db/daily-metrics-service';
 import { getBranchTrendSeriesWithFallback } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
@@ -77,7 +77,9 @@ export default function BranchTrendsPage() {
       getBranchKpiMetrics(branch.id, DEFAULT_DAYS),
       getDailyMetrics(branch.id, DEFAULT_DAYS),
       getBranchTrendSeriesWithFallback(branch.id, DEFAULT_DAYS, { moduleType: branch.moduleType }),
-      isAcc ? getDailyMetrics(branch.id, 90) : Promise.resolve([]),
+      // Use getAccommodationDailyMetrics so rooms_on_books_7/14 and variable_cost_per_room
+      // are included. The branch_daily_metrics union view omits these columns.
+      isAcc ? getAccommodationDailyMetrics(branch.id, 90) : Promise.resolve([]),
     ])
       .then(([rows, daily, series, daily90]) => {
         setKpiRows(rows ?? []);

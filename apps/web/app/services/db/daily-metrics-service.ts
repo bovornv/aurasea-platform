@@ -501,6 +501,55 @@ export async function getDailyMetrics(
   }
 }
 
+/**
+ * Get accommodation daily metrics directly from accommodation_daily_metrics.
+ * Use this instead of getDailyMetrics() when you need accommodation-specific columns
+ * (rooms_on_books_7, rooms_on_books_14, variable_cost_per_room) that are NOT
+ * included in the branch_daily_metrics union view.
+ */
+export async function getAccommodationDailyMetrics(
+  branchId: string,
+  days?: number
+): Promise<DailyMetric[]> {
+  if (branchId == null || branchId === '') return [];
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return [];
+
+  try {
+    const supabase = getSupabaseClient();
+    if (!supabase) return [];
+
+    const startDate = days ? (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      return d.toISOString().split('T')[0];
+    })() : undefined;
+
+    let query = supabase
+      .from(TABLE_ACCOMMODATION)
+      .select('*')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: true });
+
+    if (startDate) {
+      query = query.gte('metric_date', startDate);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      logTransientNetworkOnce(`getAccDaily:${branchId}`, error, 'DailyMetricsService');
+      return [];
+    }
+    if (!data || data.length === 0) return [];
+
+    return data.map(dailyMetricFromDb);
+  } catch (error) {
+    logTransientNetworkOnce(`getAccDailyCatch:${branchId}`, error, 'DailyMetricsService');
+    return [];
+  }
+}
+
 /** Status for owner dashboard: has monthly_fixed_cost configured and how many days of data exist. */
 export interface AccommodationMonthlyFixedCostStatus {
   hasValue: boolean;

@@ -406,11 +406,14 @@ export default function BranchOverviewPage() {
 
     const fetchDailyMetrics = async () => {
       try {
-        const { getDailyMetrics } = require('../../services/db/daily-metrics-service');
+        const { getDailyMetrics, getAccommodationDailyMetrics } = require('../../services/db/daily-metrics-service');
         const isAcc = branch.moduleType === 'accommodation';
         const [metrics, metrics90] = await Promise.all([
           getDailyMetrics(branch.id, 40),
-          isAcc ? getDailyMetrics(branch.id, 90) : Promise.resolve([]),
+          // Use getAccommodationDailyMetrics (reads accommodation_daily_metrics directly)
+          // so rooms_on_books_7/14 and variable_cost_per_room are included.
+          // getDailyMetrics reads branch_daily_metrics (union view) which omits these columns.
+          isAcc ? getAccommodationDailyMetrics(branch.id, 90) : Promise.resolve([]),
         ]);
         setDailyMetricsForTrends(metrics);
         setDailyMetrics90(metrics90 ?? []);

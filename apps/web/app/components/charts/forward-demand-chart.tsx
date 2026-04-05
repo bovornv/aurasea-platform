@@ -190,13 +190,12 @@ export function ForwardDemandChart({
     return ticks;
   }, [yMin, yMax, chartH]);
 
-  // X-axis ticks: today, day7, day14
+  // X-axis ticks: today, day7, day14 — two lines: "+7d" above, "Apr 12" below
   const xTicks = [0, 7, 14].map((i) => ({
     i,
     x: toX(i),
-    label: i === 0
-      ? (th ? 'วันนี้' : 'Today')
-      : `+${i}d`,
+    label: i === 0 ? (th ? 'วันนี้' : 'Today') : `+${i}d`,
+    dateLabel: dates[i] ? formatShortDate(dates[i]!, locale) : '',
   }));
 
   // Pace text
@@ -256,8 +255,11 @@ export function ForwardDemandChart({
         {xTicks.map((t) => (
           <g key={t.i}>
             <line x1={t.x} y1={PAD_TOP + chartH} x2={t.x} y2={PAD_TOP + chartH + 4} stroke="#e5e7eb" strokeWidth="1" />
-            <text x={t.x} y={height - 8} textAnchor="middle" fontSize="10" fill="#9ca3af">
+            <text x={t.x} y={PAD_TOP + chartH + 14} textAnchor="middle" fontSize="10" fill="#9ca3af">
               {t.label}
+            </text>
+            <text x={t.x} y={PAD_TOP + chartH + 26} textAnchor="middle" fontSize="9" fill="#bfbfbf">
+              {t.dateLabel}
             </text>
           </g>
         ))}
