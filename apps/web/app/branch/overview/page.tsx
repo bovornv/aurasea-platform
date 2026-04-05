@@ -1971,7 +1971,6 @@ export default function BranchOverviewPage() {
           const sorted = [...dailyMetrics90].sort((a, b) => b.date.localeCompare(a.date));
           const latestMetric = sorted[0] ?? null;
           const roomsAvail = (branch as any)?.rooms_available ?? (branch as any)?.totalRooms ?? 0;
-          if (!latestMetric?.roomsOnBooks7 && !latestMetric?.roomsOnBooks14) return null;
           return (
             <div style={{ marginTop: 28, marginBottom: 4 }}>
               <TrendChartCard
