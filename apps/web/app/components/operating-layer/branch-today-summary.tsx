@@ -124,6 +124,13 @@ function formatRevenue(n: number | null | undefined): string {
   return `฿${Math.round(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+/** Match DB rounding (1 decimal); no abs() — sign comes from revenue_change_pct_day. */
+function formatRevenueDeltaPct(p: number): string {
+  const r = Math.round(p * 10) / 10;
+  const sign = r > 0 ? '+' : '';
+  return `${sign}${r.toFixed(1)}`;
+}
+
 export function BranchTodaySummary({
   branchType,
   locale: loc,
@@ -196,7 +203,7 @@ export function BranchTodaySummary({
               <span style={valueStyle}>{revStr}</span>
               {revDelta != null && Number.isFinite(revDelta) ? (
                 <span style={revDelta >= 0 ? deltaPos : deltaNeg}>
-                  {' '}({revDelta >= 0 ? '+' : ''}{Math.round(revDelta)}% {isTh ? 'เทียบเมื่อวาน' : 'from yesterday'})
+                  {' '}({formatRevenueDeltaPct(revDelta)}% {isTh ? 'เทียบเมื่อวาน' : 'from yesterday'})
                 </span>
               ) : (
                 <span style={trendFlat}>
@@ -262,7 +269,7 @@ export function BranchTodaySummary({
               <span style={valueStyle}>{revStr}</span>
               {f.revenueDeltaPct != null && Number.isFinite(f.revenueDeltaPct) ? (
                 <span style={f.revenueDeltaPct >= 0 ? deltaPos : deltaNeg}>
-                  {' '}({f.revenueDeltaPct >= 0 ? '+' : ''}{Math.round(f.revenueDeltaPct)}% {isTh ? 'เทียบเมื่อวาน' : 'from yesterday'})
+                  {' '}({formatRevenueDeltaPct(f.revenueDeltaPct)}% {isTh ? 'เทียบเมื่อวาน' : 'from yesterday'})
                 </span>
               ) : (
                 <span style={trendFlat}>
