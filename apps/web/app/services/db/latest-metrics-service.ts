@@ -111,6 +111,46 @@ export async function getFnbOperatingStatus(
   } as FnbOperatingStatusRow;
 }
 
+/**
+ * Compute F&B day-over-day revenue % change live from fnb_daily_metrics.
+ * Returns null if <2 distinct dates exist, or if the prior day revenue is 0.
+ * Formula: (today_revenue - yesterday_revenue) / yesterday_revenue * 100, 1 decimal.
+ */
+export async function getFnbRevenueDeltaPct(branchId: string): Promise<number | null> {
+  if (branchId == null || branchId === '') return null;
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('fnb_daily_metrics')
+    .select('metric_date, revenue')
+    .eq('branch_id', branchId)
+    .order('metric_date', { ascending: false })
+    .limit(10);
+
+  if (error || !data || data.length === 0) return null;
+
+  // Sum revenue by date (guards against multiple rows per day)
+  const byDate = new Map<string, number>();
+  for (const row of data as Array<Record<string, unknown>>) {
+    const date = row.metric_date != null ? String(row.metric_date).slice(0, 10) : null;
+    if (!date) continue;
+    const rev = row.revenue != null ? Number(row.revenue) : 0;
+    byDate.set(date, (byDate.get(date) ?? 0) + rev);
+  }
+
+  const dates = [...byDate.keys()].sort().reverse(); // newest first
+  if (dates.length < 2) return null;
+
+  const todayRev = byDate.get(dates[0]!) ?? 0;
+  const yesterdayRev = byDate.get(dates[1]!) ?? 0;
+
+  if (yesterdayRev === 0) return null;
+  return Math.round(((todayRev - yesterdayRev) / yesterdayRev) * 1000) / 10; // 1 decimal
+}
+
 /** Row from `accommodation_today_metrics_ui` — accommodation Today top metrics row. */
 export interface AccommodationTodayMetricsUiRow {
   branch_id: string;
