@@ -22,6 +22,7 @@ const ALLOWED_COLUMNS_FNB: Set<string> = new Set([
 const ALLOWED_COLUMNS_ACCOMMODATION: Set<string> = new Set([
   'branch_id', 'metric_date', 'revenue', 'additional_cost_today',
   'rooms_sold', 'rooms_available', 'staff_count', 'monthly_fixed_cost',
+  'rooms_on_books_7', 'rooms_on_books_14', 'variable_cost_per_room',
 ]);
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
@@ -78,14 +79,18 @@ function buildFnbPayload(metric: DailyMetricInput): Record<string, unknown> {
 function buildAccommodationPayload(metric: DailyMetricInput): Record<string, unknown> {
   const base = dailyMetricToDb(metric) as Record<string, unknown>;
   const { monthly_fixed_cost: _mfc, adr: _adr, cost: _cost, cash_balance: _cb, ...rest } = base;
-  const out = {
+  const out: Record<string, unknown> = {
     ...rest,
     revenue: metric.revenue ?? 0,
   };
-  delete (out as Record<string, unknown>).monthly_fixed_cost;
-  delete (out as Record<string, unknown>).adr;
-  delete (out as Record<string, unknown>).cost;
-  delete (out as Record<string, unknown>).cash_balance;
+  delete out.monthly_fixed_cost;
+  delete out.adr;
+  delete out.cost;
+  delete out.cash_balance;
+  // Include new forward demand fields (only when provided)
+  if (metric.roomsOnBooks7 !== undefined) out.rooms_on_books_7 = metric.roomsOnBooks7;
+  if (metric.roomsOnBooks14 !== undefined) out.rooms_on_books_14 = metric.roomsOnBooks14;
+  if (metric.variableCostPerRoom !== undefined) out.variable_cost_per_room = metric.variableCostPerRoom;
   return out;
 }
 

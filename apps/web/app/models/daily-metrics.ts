@@ -22,6 +22,9 @@ export interface DailyMetric {
   adr?: number; // Average Daily Rate (THB)
   accommodationStaff?: number;
   monthlyFixedCost?: number;
+  roomsOnBooks7?: number; // Confirmed reservations 7 days ahead
+  roomsOnBooks14?: number; // Confirmed reservations 14 days ahead
+  variableCostPerRoom?: number; // Per-room variable cost (housekeeping, laundry, breakfast, supplies)
   
   // F&B Fields (nullable)
   customers?: number;
@@ -57,6 +60,9 @@ export interface DailyMetricInput {
   adr?: number;
   accommodationStaff?: number; // จำนวนพนักงานที่พัก (staff_count)
   monthlyFixedCost?: number; // อัปเดตต้นทุนคงที่รายเดือน
+  roomsOnBooks7?: number; // Confirmed reservations 7 days ahead
+  roomsOnBooks14?: number; // Confirmed reservations 14 days ahead
+  variableCostPerRoom?: number; // Per-room variable cost
 
   // F&B Fields (optional)
   customers?: number;
@@ -129,6 +135,9 @@ export interface DailyMetricDb {
   adr?: number | null;
   staff_count?: number | null;
   monthly_fixed_cost?: number | null;
+  rooms_on_books_7?: number | null;
+  rooms_on_books_14?: number | null;
+  variable_cost_per_room?: number | null;
   
   // F&B Fields (nullable)
   customers?: number | null;
@@ -171,6 +180,9 @@ export function dailyMetricFromDb(db: DailyMetricDb): DailyMetric {
     top3MenuRevenue: db.top3_menu_revenue !== null && db.top3_menu_revenue !== undefined ? Number(db.top3_menu_revenue) : undefined,
     fnbStaff: db.fnb_staff != null ? Number(db.fnb_staff) : undefined,
     promoSpend: db.promo_spend != null ? Number(db.promo_spend) : undefined,
+    roomsOnBooks7: db.rooms_on_books_7 != null ? Number(db.rooms_on_books_7) : undefined,
+    roomsOnBooks14: db.rooms_on_books_14 != null ? Number(db.rooms_on_books_14) : undefined,
+    variableCostPerRoom: db.variable_cost_per_room != null ? Number(db.variable_cost_per_room) : undefined,
     createdAt: (db as any).created_at ?? new Date().toISOString(),
   };
 }
@@ -196,5 +208,8 @@ export function dailyMetricToDb(metric: DailyMetricInput): Omit<DailyMetricDb, '
     top3_menu_revenue: metric.top3MenuRevenue !== undefined ? metric.top3MenuRevenue : null,
     fnb_staff: metric.fnbStaff ?? null, // From branches setup
     promo_spend: metric.promoSpend ?? null,
+    rooms_on_books_7: metric.roomsOnBooks7 ?? null,
+    rooms_on_books_14: metric.roomsOnBooks14 ?? null,
+    variable_cost_per_room: metric.variableCostPerRoom ?? null,
   };
 }

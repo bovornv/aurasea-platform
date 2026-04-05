@@ -20,6 +20,9 @@ import { getBranchTrendSeriesWithFallback } from '../../services/db/latest-metri
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
 import { DayOfWeekChart } from '../../components/charts/day-of-week-chart';
+import { AdrOpportunityBandChart } from '../../components/charts/adr-opportunity-band-chart';
+import { BreakevenRevParChart } from '../../components/charts/breakeven-revpar-chart';
+import { WeeklyHeatmapChart } from '../../components/charts/weekly-heatmap-chart';
 import { trendInsightDual, trendInsightFromSeries } from '../../utils/trend-chart-insights';
 
 const PAGE_PADDING_TOP = 8;
@@ -58,6 +61,7 @@ export default function BranchTrendsPage() {
   const [dailyMetrics, setDailyMetrics] = useState<Awaited<ReturnType<typeof getDailyMetrics>>>([]);
   const [dailyLoading, setDailyLoading] = useState(true);
   const [trendSeries, setTrendSeries] = useState<Awaited<ReturnType<typeof getBranchTrendSeriesWithFallback>>>(null);
+  const [dailyMetrics90, setDailyMetrics90] = useState<Awaited<ReturnType<typeof getDailyMetrics>>>([]);
 
   useEffect(() => setMounted(true), []);
 
@@ -68,15 +72,18 @@ export default function BranchTrendsPage() {
       setTrendSeries(null);
       return;
     }
+    const isAcc = branch.moduleType === 'accommodation';
     Promise.all([
       getBranchKpiMetrics(branch.id, DEFAULT_DAYS),
       getDailyMetrics(branch.id, DEFAULT_DAYS),
       getBranchTrendSeriesWithFallback(branch.id, DEFAULT_DAYS, { moduleType: branch.moduleType }),
+      isAcc ? getDailyMetrics(branch.id, 90) : Promise.resolve([]),
     ])
-      .then(([rows, daily, series]) => {
+      .then(([rows, daily, series, daily90]) => {
         setKpiRows(rows ?? []);
         setDailyMetrics(daily ?? []);
         setTrendSeries(series ?? null);
+        setDailyMetrics90(daily90 ?? []);
         setKpiLoading(false);
         setDailyLoading(false);
       })
@@ -84,6 +91,7 @@ export default function BranchTrendsPage() {
         setKpiRows([]);
         setDailyMetrics([]);
         setTrendSeries(null);
+        setDailyMetrics90([]);
         setKpiLoading(false);
         setDailyLoading(false);
       });
@@ -462,7 +470,7 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
-                  {/* 3. RevPAR + ADR — Secondary */}
+                  {/* 3. RevPAR + ADR with ADR Opportunity Band — Secondary */}
                   <TrendChartCard
                     legend={[
                       { label: locale === 'th' ? 'รายได้ต่อห้อง' : 'RevPAR', color: '#16a34a' },
@@ -473,21 +481,13 @@ export default function BranchTrendsPage() {
                     problem={branchTrendInsights.accRevparAdr?.problem ?? ''}
                     recommendation={branchTrendInsights.accRevparAdr?.recommendation ?? ''}
                   >
-                    <DecisionTrendChart
-                      values={revparValues}
-                      valuesRight={adrValues.length === revparValues.length ? adrValues : undefined}
-                      dates={chartDates.length === revparValues.length ? chartDates : undefined}
-                      color="#16a34a"
-                      colorRight="#7c3aed"
-                      showBaseline={true}
-                      formatLeft={(v) => `฿${Math.round(v)}`}
-                      formatRight={(v) => `฿${Math.round(v)}`}
-                      leftLabel={locale === 'th' ? 'รายได้ต่อห้อง (฿)' : 'RevPAR (฿)'}
-                      rightLabel={locale === 'th' ? 'ราคาห้องเฉลี่ย (฿)' : 'ADR (฿)'}
-                      emptyMessage={emptyMsg}
+                    <AdrOpportunityBandChart
+                      revparValues={revparValues}
+                      adrValues={adrValues.length === revparValues.length ? adrValues : []}
+                      occupancyValues={occupancyValues.length === revparValues.length ? occupancyValues : []}
+                      dates={chartDates.length === revparValues.length ? chartDates : []}
                       locale={chartLocale}
-                      insightRevenue={aligned(revenueValues, revparValues.length)}
-                      insightCustomers={aligned(customersValues, revparValues.length)}
+                      emptyMessage={emptyMsg}
                     />
                   </TrendChartCard>
 
@@ -505,6 +505,36 @@ export default function BranchTrendsPage() {
                       highlightWeekend={true}
                       formatValue={(v) => (occupancyValues.length >= 2 ? `${Math.round(v)}%` : `฿${Math.round(v)}`)}
                       emptyMessage={emptyMsg}
+                    />
+                  </TrendChartCard>
+
+                  {/* 5. RevPAR vs. Breakeven RevPAR — Full width */}
+                  <TrendChartCard
+                    titleLabel={locale === 'th' ? 'RevPAR เทียบกับจุดคุ้มทุน' : 'RevPAR vs. Breakeven'}
+                    legend={[
+                      { label: locale === 'th' ? 'RevPAR จริง' : 'Actual RevPAR', color: '#16a34a' },
+                      { label: locale === 'th' ? 'RevPAR จุดคุ้มทุน' : 'Breakeven RevPAR', color: '#ef4444' },
+                    ]}
+                    cols={12}
+                    locale={locale === 'th' ? 'th' : 'en'}
+                  >
+                    <BreakevenRevParChart
+                      dailyMetrics={dailyMetrics.length >= 7 ? dailyMetrics : []}
+                      roomsAvailable={totalRooms}
+                      locale={chartLocale}
+                    />
+                  </TrendChartCard>
+
+                  {/* 6. Weekly Performance Heatmap — Full width */}
+                  <TrendChartCard
+                    titleLabel={locale === 'th' ? 'ตารางประสิทธิภาพรายสัปดาห์' : 'Weekly Performance Heatmap'}
+                    cols={12}
+                    locale={locale === 'th' ? 'th' : 'en'}
+                  >
+                    <WeeklyHeatmapChart
+                      dailyMetrics={dailyMetrics90.length >= 7 ? dailyMetrics90 : dailyMetrics}
+                      roomsAvailable={totalRooms}
+                      locale={chartLocale}
                     />
                   </TrendChartCard>
                 </>

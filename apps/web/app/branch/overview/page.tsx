@@ -55,6 +55,7 @@ import {
 } from '../../services/db/latest-metrics-service';
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
+import { ForwardDemandChart } from '../../components/charts/forward-demand-chart';
 import { trendInsightDual } from '../../utils/trend-chart-insights';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
@@ -255,6 +256,8 @@ export default function BranchOverviewPage() {
   // PHASE 3: Calculate performance trends from branch_daily_metrics (via getDailyMetrics)
   // Compare last 7 days vs previous 7 days (requires minimum 14 days)
   const [dailyMetricsForTrends, setDailyMetricsForTrends] = useState<DailyMetric[] | null>(null);
+  // 90-day metrics for forward demand DOW baseline
+  const [dailyMetrics90, setDailyMetrics90] = useState<DailyMetric[]>([]);
   
 
   // Business Health Score comes only from Supabase (accommodation_health_today / fnb_health_today). No frontend calculation.
@@ -396,20 +399,25 @@ export default function BranchOverviewPage() {
   // Fetch daily metrics for performance trends
   useEffect(() => {
     if (!branch?.id) return;
-    
+
     const fetchDailyMetrics = async () => {
       try {
         const { getDailyMetrics } = require('../../services/db/daily-metrics-service');
-        const metrics = await getDailyMetrics(branch.id, 40);
+        const isAcc = branch.moduleType === 'accommodation';
+        const [metrics, metrics90] = await Promise.all([
+          getDailyMetrics(branch.id, 40),
+          isAcc ? getDailyMetrics(branch.id, 90) : Promise.resolve([]),
+        ]);
         setDailyMetricsForTrends(metrics);
+        setDailyMetrics90(metrics90 ?? []);
       } catch (e) {
         console.error('[PerformanceTrends] Failed to fetch daily metrics:', e);
         setDailyMetricsForTrends([]);
       }
     };
-    
+
     fetchDailyMetrics();
-  }, [branch?.id]);
+  }, [branch?.id, branch?.moduleType]);
 
   useEffect(() => {
     if (!branch?.id || (branch.moduleType !== 'accommodation' && branch.moduleType !== 'fnb')) {
@@ -1957,6 +1965,30 @@ export default function BranchOverviewPage() {
             </div>
           )}
         </div>
+
+        {/* Forward Demand — Rooms on Books (accommodation only, above Performance Drivers) */}
+        {isAccommodation && dailyMetrics90.length > 0 && (() => {
+          const sorted = [...dailyMetrics90].sort((a, b) => b.date.localeCompare(a.date));
+          const latestMetric = sorted[0] ?? null;
+          const roomsAvail = (branch as any)?.rooms_available ?? (branch as any)?.totalRooms ?? 0;
+          if (!latestMetric?.roomsOnBooks7 && !latestMetric?.roomsOnBooks14) return null;
+          return (
+            <div style={{ marginTop: 28, marginBottom: 4 }}>
+              <TrendChartCard
+                titleLabel={locale === 'th' ? 'ดีมานด์ล่วงหน้า — ห้องที่จองแล้ว' : 'Forward Demand — Rooms on Books'}
+                cols={12}
+                locale={locale === 'th' ? 'th' : 'en'}
+              >
+                <ForwardDemandChart
+                  latestMetric={latestMetric}
+                  historicalMetrics={dailyMetrics90}
+                  roomsAvailable={roomsAvail}
+                  locale={locale === 'th' ? 'th' : 'en'}
+                />
+              </TrendChartCard>
+            </div>
+          );
+        })()}
 
         {/* 4. Performance Drivers — placed below Today's Priorities */}
         {(isAccommodation || isFnb) && driverChartData && driverChartData.revenue.length >= 2 ? (
