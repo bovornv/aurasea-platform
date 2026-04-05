@@ -408,7 +408,7 @@ export default function BranchTrendsPage() {
                 gridTemplateColumns: 'repeat(12, 1fr)',
                 gap: GRID_GAP,
                 marginTop: SECTION_GAP,
-                alignItems: 'start',
+                alignItems: 'stretch',
               }}
             >
               {isAccommodation && (
@@ -494,6 +494,7 @@ export default function BranchTrendsPage() {
                   {/* 4. Occupancy by day of week — Secondary */}
                   <TrendChartCard
                     titleLabel={locale === 'th' ? 'อัตราการเข้าพักตามวันในสัปดาห์' : 'Occupancy by day of week'}
+                    subtitle={locale === 'th' ? 'อัตราการเข้าพักเฉลี่ยต่อวันในสัปดาห์ (30 วันล่าสุด)' : 'Average occupancy % per day of week (last 30 days)'}
                     cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
                     problem={branchTrendInsights.accDow?.problem ?? ''}
@@ -508,14 +509,14 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
-                  {/* 5. RevPAR vs. Breakeven RevPAR — Full width */}
+                  {/* 5. RevPAR vs. Breakeven RevPAR — Half width */}
                   <TrendChartCard
                     titleLabel={locale === 'th' ? 'RevPAR เทียบกับจุดคุ้มทุน' : 'RevPAR vs. Breakeven'}
                     legend={[
                       { label: locale === 'th' ? 'RevPAR จริง' : 'Actual RevPAR', color: '#16a34a' },
                       { label: locale === 'th' ? 'RevPAR จุดคุ้มทุน' : 'Breakeven RevPAR', color: '#ef4444' },
                     ]}
-                    cols={12}
+                    cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
                   >
                     <BreakevenRevParChart
@@ -525,10 +526,10 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
-                  {/* 6. Weekly Performance Heatmap — Full width */}
+                  {/* 6. Weekly Performance Heatmap — Half width */}
                   <TrendChartCard
                     titleLabel={locale === 'th' ? 'ตารางประสิทธิภาพรายสัปดาห์' : 'Weekly Performance Heatmap'}
-                    cols={12}
+                    cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
                   >
                     <WeeklyHeatmapChart

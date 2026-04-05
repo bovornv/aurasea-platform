@@ -12,6 +12,8 @@ export interface LegendItem {
 interface TrendChartCardProps {
   /** When no legend: single line as chart title (e.g. "Occupancy by day of week"). Bold 14px. */
   titleLabel?: string | null;
+  /** Optional subtitle rendered below titleLabel in small grey text. */
+  subtitle?: string | null;
   /** Inline legend for dual-line charts: acts as title. Bold 14px, ● + label. */
   legend?: LegendItem[] | null;
   children: React.ReactNode;
@@ -24,6 +26,7 @@ interface TrendChartCardProps {
 
 export function TrendChartCard({
   titleLabel,
+  subtitle,
   legend,
   children,
   problem,
@@ -58,9 +61,16 @@ export function TrendChartCard({
             ))}
           </div>
         ) : titleLabel ? (
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 6 }}>
-            {titleLabel}
-          </p>
+          <div style={{ marginBottom: 6 }}>
+            <p style={{ fontSize: 14, fontWeight: 600, color: '#111827', margin: 0 }}>
+              {titleLabel}
+            </p>
+            {subtitle ? (
+              <p style={{ fontSize: 12, color: '#9ca3af', margin: 0, marginTop: 2 }}>
+                {subtitle}
+              </p>
+            ) : null}
+          </div>
         ) : null}
         <div style={{ flex: 1, minHeight: 140 }}>{children}</div>
         {hasInsight ? (
