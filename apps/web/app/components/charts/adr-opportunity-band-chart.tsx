@@ -13,6 +13,7 @@
 
 import { useMemo } from 'react';
 import { computeTimeSeriesWeekendBands, getWeekendStyle, CHART_WEEKEND_BAND_STROKE_WIDTH } from '../../utils/chart-weekend';
+import { formatShortDate } from '../../utils/trends-headline';
 
 const PAD_LEFT = 44;
 const PAD_RIGHT = 44;
@@ -36,11 +37,6 @@ function percentile(sorted: number[], p: number): number {
 
 function median(sorted: number[]): number {
   return percentile(sorted, 50);
-}
-
-function formatShortDate(isoDate: string): string {
-  const d = new Date(`${isoDate}T12:00:00`);
-  return `${d.getDate()}/${d.getMonth() + 1}`;
 }
 
 export interface AdrOpportunityBandChartProps {

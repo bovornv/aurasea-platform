@@ -15,6 +15,7 @@
 import { useMemo } from 'react';
 import type { DailyMetric } from '../../models/daily-metrics';
 import { computeTimeSeriesWeekendBands, getWeekendStyle, CHART_WEEKEND_BAND_STROKE_WIDTH } from '../../utils/chart-weekend';
+import { formatShortDate } from '../../utils/trends-headline';
 
 const PAD_LEFT = 44;
 const PAD_RIGHT = 24;
@@ -29,9 +30,169 @@ function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
 
-function formatShortDate(isoDate: string): string {
-  const d = new Date(`${isoDate}T12:00:00`);
-  return `${d.getDate()}/${d.getMonth() + 1}`;
+export interface BreakevenPoint {
+  date: string;
+  actualRevpar: number;
+  breakevenRevpar: number | null;
+}
+
+export function computeBreakevenSeries(
+  dailyMetrics: DailyMetric[],
+  roomsAvailable: number
+): {
+  points: BreakevenPoint[];
+  hasBreakeven: boolean;
+  costDataMissing: boolean;
+  sortedSlice: DailyMetric[];
+} {
+  if (!dailyMetrics || dailyMetrics.length === 0) {
+    return { points: [], hasBreakeven: false, costDataMissing: false, sortedSlice: [] };
+  }
+
+  const sorted = [...dailyMetrics].sort((a, b) => a.date.localeCompare(b.date)).slice(-30);
+
+  if (sorted.length === 0) {
+    return { points: [], hasBreakeven: false, costDataMissing: false, sortedSlice: [] };
+  }
+
+  const costDataMissing = sorted.every(
+    (m) =>
+      m.monthlyFixedCost == null && (m.variableCostPerRoom == null || m.variableCostPerRoom === 0)
+  );
+
+  let lastMfc: number | null = null;
+  for (const m of sorted) {
+    if (m.monthlyFixedCost != null && m.monthlyFixedCost > 0) lastMfc = m.monthlyFixedCost;
+  }
+
+  const nonZeroVarCosts = sorted
+    .filter((m) => m.variableCostPerRoom != null && m.variableCostPerRoom > 0)
+    .map((m) => m.variableCostPerRoom as number);
+  const last7NonZeroVar = nonZeroVarCosts.slice(-7);
+  const fallbackVarCost =
+    last7NonZeroVar.length > 0
+      ? last7NonZeroVar.reduce((s, v) => s + v, 0) / last7NonZeroVar.length
+      : 0;
+
+  const result: BreakevenPoint[] = [];
+  let runningMfc = lastMfc;
+
+  for (const m of sorted) {
+    if (m.monthlyFixedCost != null && m.monthlyFixedCost > 0) runningMfc = m.monthlyFixedCost;
+
+    const rooms = roomsAvailable > 0 ? roomsAvailable : (m.roomsAvailable ?? 0);
+    const revpar = rooms > 0 ? m.revenue / rooms : 0;
+
+    let breakevenRevpar: number | null = null;
+    if (runningMfc != null && runningMfc > 0 && rooms > 0) {
+      const d = new Date(`${m.date}T12:00:00`);
+      const dim = daysInMonth(d.getFullYear(), d.getMonth());
+      const dailyFixed = runningMfc / dim;
+      const varCost =
+        m.variableCostPerRoom != null && m.variableCostPerRoom > 0
+          ? m.variableCostPerRoom
+          : fallbackVarCost;
+      const dailyVariable = varCost * (m.roomsSold ?? 0);
+      const totalDailyCost = dailyFixed + dailyVariable;
+      breakevenRevpar = totalDailyCost / rooms;
+    }
+
+    result.push({ date: m.date, actualRevpar: revpar, breakevenRevpar });
+  }
+
+  const anyBreakeven = result.some((p) => p.breakevenRevpar != null);
+  return { points: result, hasBreakeven: anyBreakeven, costDataMissing, sortedSlice: sorted };
+}
+
+/** Problem / Recommendation for TrendChartCard — same inputs as the chart, no extra fetch. */
+export function computeBreakevenProblemRecommendation(
+  dailyMetrics: DailyMetric[],
+  roomsAvailable: number,
+  locale: 'en' | 'th'
+): { problem: string; recommendation: string } | null {
+  const { points, hasBreakeven, costDataMissing, sortedSlice } = computeBreakevenSeries(
+    dailyMetrics,
+    roomsAvailable
+  );
+  const th = locale === 'th';
+
+  const fmt = (x: number) => `฿${Math.round(x).toLocaleString(th ? 'th-TH' : 'en-US')}`;
+
+  if (costDataMissing) {
+    return {
+      problem: th
+        ? 'คำนวณจุดคุ้มทุนไม่ได้ — กรุณากรอกต้นทุนคงที่ที่การเงินขั้นสูง'
+        : 'Breakeven cannot be calculated — enter fixed costs in Advanced Finance',
+      recommendation: th
+        ? 'ไปที่ กรอกข้อมูล → การเงินขั้นสูง และกรอกต้นทุนคงที่รายเดือน'
+        : 'Go to Enter Data → Advanced Finance and enter monthly fixed costs',
+    };
+  }
+
+  if (points.length < 7 || !hasBreakeven) return null;
+
+  const last = points[points.length - 1]!;
+  const last3 = points.slice(-3);
+  const consecutiveLast3 =
+    last3.length === 3 &&
+    last3.every((p) => p.breakevenRevpar != null && p.actualRevpar < p.breakevenRevpar!);
+
+  const belowCount = points.filter(
+    (p) => p.breakevenRevpar != null && p.actualRevpar < p.breakevenRevpar!
+  ).length;
+
+  const nPeriod = points.length;
+
+  const lastMetric = sortedSlice[sortedSlice.length - 1];
+  const roomsSold = lastMetric?.roomsSold ?? 0;
+  const roomsAvail =
+    roomsAvailable > 0 ? roomsAvailable : (lastMetric?.roomsAvailable ?? 0);
+
+  if (consecutiveLast3 && last.breakevenRevpar != null) {
+    return {
+      problem: th
+        ? `RevPAR ต่ำกว่าจุดคุ้มทุน 3 วันติดต่อกัน (${fmt(last.actualRevpar)} เทียบกับ ${fmt(last.breakevenRevpar)} จุดคุ้มทุน)`
+        : `RevPAR has been below breakeven for 3 consecutive days (${fmt(last.actualRevpar)} vs ${fmt(last.breakevenRevpar)} breakeven)`,
+      recommendation: th
+        ? `ตรวจสอบราคาหรือลดต้นทุนผันแปรด่วน — ${belowCount} จาก ${nPeriod} วันต่ำกว่าจุดคุ้มทุนในช่วงนี้`
+        : `Review pricing urgently or reduce variable costs — ${belowCount} of ${nPeriod} days were below breakeven this period`,
+    };
+  }
+
+  if (last.breakevenRevpar != null && last.actualRevpar < last.breakevenRevpar) {
+    const diff = last.breakevenRevpar - last.actualRevpar;
+    let recLine: string;
+    if (roomsSold > 0 && roomsAvail > 0) {
+      const raw = ((last.breakevenRevpar - last.actualRevpar) * roomsAvail) / roomsSold;
+      const rounded = Math.round(raw / 10) * 10;
+      recLine = th
+        ? `การเพิ่มราคาเฉลี่ย ${fmt(rounded)} ต่อห้องจะช่วยชดเชยกรณีที่ขาดวันนี้`
+        : `A rate increase of ${fmt(rounded)} per room would recover today's shortfall`;
+    } else {
+      recLine = th
+        ? 'เพิ่มการขายห้องหรือราคาเพื่อชดเชยกับจุดคุ้มทุน'
+        : 'Increase occupancy or ADR to close the gap against breakeven';
+    }
+    return {
+      problem: th
+        ? `RevPAR วันนี้ (${fmt(last.actualRevpar)}) ต่ำกว่าจุดคุ้มทุน (${fmt(last.breakevenRevpar)}) ขาด ${fmt(diff)}`
+        : `Today's RevPAR (${fmt(last.actualRevpar)}) is below breakeven (${fmt(last.breakevenRevpar)}) by ${fmt(diff)}`,
+      recommendation: recLine,
+    };
+  }
+
+  if (last.breakevenRevpar != null && last.actualRevpar >= last.breakevenRevpar) {
+    return {
+      problem: th
+        ? 'RevPAR อยู่เหนือจุดคุ้มทุน — ควบคุมต้นทุนเพื่อรักษาระยะขอบกำไร'
+        : 'RevPAR is above breakeven — monitor cost discipline to protect the margin',
+      recommendation: th
+        ? `${belowCount} จาก ${nPeriod} วันต่ำกว่าจุดคุ้มทุนในช่วงนี้ — รักษานโยบายราคาปัจจุบัน`
+        : `${belowCount} of ${nPeriod} days were below breakeven this period — maintain current pricing discipline`,
+    };
+  }
+
+  return null;
 }
 
 export interface BreakevenRevParChartProps {
@@ -39,12 +200,6 @@ export interface BreakevenRevParChartProps {
   roomsAvailable: number;
   locale?: 'th' | 'en';
   height?: number;
-}
-
-interface ComputedPoint {
-  date: string;
-  actualRevpar: number;
-  breakevenRevpar: number | null;
 }
 
 export function BreakevenRevParChart({
@@ -55,61 +210,10 @@ export function BreakevenRevParChart({
 }: BreakevenRevParChartProps) {
   const th = locale === 'th';
 
-  const { points, hasBreakeven } = useMemo((): { points: ComputedPoint[]; hasBreakeven: boolean } => {
-    if (!dailyMetrics || dailyMetrics.length === 0) return { points: [], hasBreakeven: false };
-
-    // Sort oldest-first, take last 30 days
-    const sorted = [...dailyMetrics]
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(-30);
-
-    if (sorted.length === 0) return { points: [], hasBreakeven: false };
-
-    // Forward-fill monthly_fixed_cost
-    let lastMfc: number | null = null;
-    // First pass: collect last known MFC
-    for (const m of sorted) {
-      if (m.monthlyFixedCost != null && m.monthlyFixedCost > 0) lastMfc = m.monthlyFixedCost;
-    }
-
-    // For variable_cost_per_room: use last-7-nonzero average if null/0
-    const nonZeroVarCosts = sorted
-      .filter((m) => m.variableCostPerRoom != null && m.variableCostPerRoom > 0)
-      .map((m) => m.variableCostPerRoom as number);
-    const last7NonZeroVar = nonZeroVarCosts.slice(-7);
-    const fallbackVarCost =
-      last7NonZeroVar.length > 0
-        ? last7NonZeroVar.reduce((s, v) => s + v, 0) / last7NonZeroVar.length
-        : 0;
-
-    const result: ComputedPoint[] = [];
-    let runningMfc = lastMfc;
-
-    for (const m of sorted) {
-      if (m.monthlyFixedCost != null && m.monthlyFixedCost > 0) runningMfc = m.monthlyFixedCost;
-
-      const rooms = roomsAvailable > 0 ? roomsAvailable : (m.roomsAvailable ?? 0);
-      const revpar = rooms > 0 ? m.revenue / rooms : 0;
-
-      let breakevenRevpar: number | null = null;
-      if (runningMfc != null && runningMfc > 0 && rooms > 0) {
-        const d = new Date(`${m.date}T12:00:00`);
-        const dim = daysInMonth(d.getFullYear(), d.getMonth());
-        const dailyFixed = runningMfc / dim;
-        const varCost = m.variableCostPerRoom != null && m.variableCostPerRoom > 0
-          ? m.variableCostPerRoom
-          : fallbackVarCost;
-        const dailyVariable = varCost * (m.roomsSold ?? 0);
-        const totalDailyCost = dailyFixed + dailyVariable;
-        breakevenRevpar = totalDailyCost / rooms;
-      }
-
-      result.push({ date: m.date, actualRevpar: revpar, breakevenRevpar });
-    }
-
-    const anyBreakeven = result.some((p) => p.breakevenRevpar != null);
-    return { points: result, hasBreakeven: anyBreakeven };
-  }, [dailyMetrics, roomsAvailable]);
+  const { points, hasBreakeven } = useMemo(
+    () => computeBreakevenSeries(dailyMetrics, roomsAvailable),
+    [dailyMetrics, roomsAvailable]
+  );
 
   const chartH = height - PAD_TOP - PAD_BOTTOM;
 
@@ -175,7 +279,7 @@ export function BreakevenRevParChart({
     }));
   }, [yMin, yMax, chartH]);
 
-  // X-axis ticks
+  // X-axis ticks — same date style as DecisionTrendChart (formatShortDate from trends-headline)
   const xTicks = useMemo(() => {
     if (points.length < 2) return [];
     const n = points.length;
@@ -250,6 +354,11 @@ export function BreakevenRevParChart({
         {/* Axes */}
         <line x1={PAD_LEFT} y1={PAD_TOP} x2={PAD_LEFT} y2={PAD_TOP + chartH} stroke="#e5e7eb" strokeWidth="1" />
         <line x1={PAD_LEFT} y1={PAD_TOP + chartH} x2={PAD_LEFT + PLOT_W} y2={PAD_TOP + chartH} stroke="#e5e7eb" strokeWidth="1" />
+
+        {/* Left Y-axis unit — matches DecisionTrendChart / AdrOpportunityBandChart (fontSize 11, #9ca3af) */}
+        <text x={PAD_LEFT - 2} y={PAD_TOP - 2} textAnchor="end" fontSize="11" fill="#9ca3af">
+          (฿)
+        </text>
 
         {/* Y-axis ticks */}
         {yTicks.map((t, i) => (
