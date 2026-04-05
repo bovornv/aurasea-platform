@@ -131,10 +131,11 @@ export function WeeklyHeatmapChart({
     return { grid, weeks, maxRevpar };
   }, [dailyMetrics, roomsAvailable]);
 
-  // DOW averages for summary
+  // DOW averages for summary (occupancy + revpar)
   const dowStats = useMemo(() => {
     if (grid.length === 0) return null;
     const dowOcc = Array.from({ length: 7 }, () => ({ sum: 0, count: 0 }));
+    const dowRev = Array.from({ length: 7 }, () => ({ sum: 0, count: 0 }));
     for (const row of grid) {
       for (let d = 0; d < 7; d++) {
         const c = row[d];
@@ -142,18 +143,31 @@ export function WeeklyHeatmapChart({
           dowOcc[d]!.sum += c.occupancy;
           dowOcc[d]!.count++;
         }
+        if (c?.revpar != null) {
+          dowRev[d]!.sum += c.revpar;
+          dowRev[d]!.count++;
+        }
       }
     }
-    const avgs = dowOcc.map((s) => (s.count > 0 ? s.sum / s.count : null));
-    let maxIdx = -1, minIdx = -1;
-    let maxVal = -Infinity, minVal = Infinity;
-    for (let d = 0; d < 7; d++) {
-      const v = avgs[d];
-      if (v == null) continue;
-      if (v > maxVal) { maxVal = v; maxIdx = d; }
-      if (v < minVal) { minVal = v; minIdx = d; }
+    const occAvgs = dowOcc.map((s) => (s.count > 0 ? s.sum / s.count : null));
+    const revAvgs = dowRev.map((s) => (s.count > 0 ? s.sum / s.count : null));
+
+    function extremes(avgs: (number | null)[]) {
+      let maxIdx = -1, minIdx = -1;
+      let maxVal = -Infinity, minVal = Infinity;
+      for (let d = 0; d < 7; d++) {
+        const v = avgs[d];
+        if (v == null) continue;
+        if (v > maxVal) { maxVal = v; maxIdx = d; }
+        if (v < minVal) { minVal = v; minIdx = d; }
+      }
+      return { maxIdx, minIdx, maxVal, minVal };
     }
-    return { avgs, maxIdx, minIdx, maxVal, minVal };
+
+    return {
+      occ: { ...extremes(occAvgs) },
+      rev: { ...extremes(revAvgs) },
+    };
   }, [grid]);
 
   if (grid.length === 0) {
@@ -296,22 +310,32 @@ export function WeeklyHeatmapChart({
       </div>
 
       {/* Summary */}
-      {dowStats && dowStats.maxIdx >= 0 && dowStats.minIdx >= 0 && (
-        <div style={{ marginTop: 12, fontSize: 12, color: '#6b7280', display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <span>
-            <span style={{ color: '#059669', fontWeight: 500 }}>
-              {th ? 'วันที่ดีที่สุด' : 'Strongest day'}:
-            </span>{' '}
-            {dowLabels[dowStats.maxIdx]} ({Math.round(dowStats.maxVal * 100)}%{th ? ' เฉลี่ย' : ' avg'})
-          </span>
-          <span>
-            <span style={{ color: '#dc2626', fontWeight: 500 }}>
-              {th ? 'วันที่อ่อนแอที่สุด' : 'Weakest day'}:
-            </span>{' '}
-            {dowLabels[dowStats.minIdx]} ({Math.round(dowStats.minVal * 100)}%{th ? ' เฉลี่ย' : ' avg'})
-          </span>
-        </div>
-      )}
+      {dowStats && (() => {
+        const s = mode === 'occupancy' ? dowStats.occ : dowStats.rev;
+        if (s.maxIdx < 0 || s.minIdx < 0) return null;
+        const fmtMax = mode === 'occupancy'
+          ? `${Math.round(s.maxVal * 100)}%${th ? ' เฉลี่ย' : ' avg'}`
+          : `฿${Math.round(s.maxVal).toLocaleString()} RevPAR`;
+        const fmtMin = mode === 'occupancy'
+          ? `${Math.round(s.minVal * 100)}%${th ? ' เฉลี่ย' : ' avg'}`
+          : `฿${Math.round(s.minVal).toLocaleString()} RevPAR`;
+        return (
+          <div style={{ marginTop: 12, fontSize: 12, color: '#6b7280', display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <span>
+              <span style={{ color: '#059669', fontWeight: 500 }}>
+                {th ? 'วันที่ดีที่สุด' : 'Strongest day'}:
+              </span>{' '}
+              {dowLabels[s.maxIdx]} ({fmtMax})
+            </span>
+            <span>
+              <span style={{ color: '#dc2626', fontWeight: 500 }}>
+                {th ? 'วันที่อ่อนแอที่สุด' : 'Weakest day'}:
+              </span>{' '}
+              {dowLabels[s.minIdx]} ({fmtMin})
+            </span>
+          </div>
+        );
+      })()}
     </div>
   );
 }
