@@ -87,6 +87,10 @@ function buildAccommodationPayload(metric: DailyMetricInput): Record<string, unk
   delete out.adr;
   delete out.cost;
   delete out.cash_balance;
+  // Log Today (accommodation) no longer sends additional_cost_today — omit so upsert does not clear it
+  if (metric.additionalCostToday === undefined) {
+    delete out.additional_cost_today;
+  }
   // Include new forward demand fields (only when provided)
   if (metric.roomsOnBooks7 !== undefined) out.rooms_on_books_7 = metric.roomsOnBooks7;
   if (metric.roomsOnBooks14 !== undefined) out.rooms_on_books_14 = metric.roomsOnBooks14;

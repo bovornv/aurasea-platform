@@ -73,14 +73,17 @@ export default function LogTodayPage() {
     roomsSold: string;
     roomsOnBooks7: string;
     roomsOnBooks14: string;
-    variableCostPerRoom: string;
     customers: string;
     top3MenuRevenue: string;
     additionalCostToday: string;
     totalRoomsAvailable: string;
     accommodationStaffCount: string;
+    variableCostPerRoom: string;
     fnbStaffCount: string;
   } | null>(null);
+
+  /** True when variable cost was pre-filled from DB (today’s row or last non-zero). */
+  const [accommodationVariableCostFromDb, setAccommodationVariableCostFromDb] = useState(false);
   
   // Determine user role
   const userRole = permissions.role || 'staff';
@@ -117,16 +120,16 @@ export default function LogTodayPage() {
     roomsSold: '',
     roomsOnBooks7: '',
     roomsOnBooks14: '',
-    variableCostPerRoom: '',
     customers: '',
     top3MenuRevenue: '',
-    additionalCostToday: '', // Optional THB — increases daily cost
+    additionalCostToday: '', // Optional THB — F&B Section 1 only; not used for accommodation UI
   });
   
   // SECTION 2: Optional Finance & Capacity (Advanced)
   const [financeData, setFinanceData] = useState({
     cashBalance: '',
     debtPayment: '',
+    variableCostPerRoom: '', // Accommodation — auto-filled from last non-zero daily metric
     // Accommodation capacity fields (manager+)
     totalRoomsAvailable: branch?.totalRooms != null ? String(branch.totalRooms) : '',
     accommodationStaffCount: branch?.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
@@ -191,12 +194,12 @@ export default function LogTodayPage() {
       roomsSold: '',
       roomsOnBooks7: '',
       roomsOnBooks14: '',
-      variableCostPerRoom: '',
       customers: '',
       top3MenuRevenue: '',
       additionalCostToday: '',
       totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
       accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
+      variableCostPerRoom: '',
       fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
     };
     setOriginalValues((prev) => prev ?? emptySnapshot);
@@ -213,34 +216,44 @@ export default function LogTodayPage() {
 
     const today = getTodayDateString();
 
-    // Accommodation: fetch latest capacity from accommodation_daily_metrics (single source for rooms_available, staff_count, monthly_fixed_cost)
+    // Accommodation: fetch latest row from accommodation_daily_metrics (same pattern for rooms, staff, variable_cost_per_room)
     if (moduleType === 'accommodation') {
       const supabase = getSupabaseClient();
       if (supabase) {
         supabase
           .from('accommodation_daily_metrics')
-          .select('rooms_available, staff_count, monthly_fixed_cost')
+          .select('rooms_available, staff_count, monthly_fixed_cost, variable_cost_per_room')
           .eq('branch_id', branch.id)
           .order('metric_date', { ascending: false })
           .limit(1)
           .maybeSingle()
           .then(({ data }) => {
-            const row = data as { rooms_available?: number | null; staff_count?: number | null; monthly_fixed_cost?: number | null } | null;
+            const row = data as {
+              rooms_available?: number | null;
+              staff_count?: number | null;
+              monthly_fixed_cost?: number | null;
+              variable_cost_per_room?: number | null;
+            } | null;
             if (row) {
               const rooms = row.rooms_available != null ? Number(row.rooms_available) : null;
               const staffRaw = row.staff_count;
               const staff = staffRaw != null ? Number(staffRaw) : null;
               const mfc = row.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : null;
+              const vcrRaw = row.variable_cost_per_room != null ? Number(row.variable_cost_per_room) : null;
+              const vcrOk = vcrRaw != null && vcrRaw > 0;
               setAccommodationCapacityFromMetrics({ rooms_available: rooms, staff_count: staff, monthly_fixed_cost: mfc });
+              setAccommodationVariableCostFromDb(vcrOk);
               setFinanceData((prev) => ({
                 ...prev,
                 totalRoomsAvailable: rooms != null && rooms > 0 ? String(rooms) : prev.totalRoomsAvailable,
                 accommodationStaffCount: staff != null && staff > 0 ? String(staff) : prev.accommodationStaffCount,
+                variableCostPerRoom: vcrOk ? String(Math.round(vcrRaw)) : prev.variableCostPerRoom,
               }));
               setOriginalValues((prev) => prev ? {
                 ...prev,
                 totalRoomsAvailable: rooms != null && rooms > 0 ? String(rooms) : prev.totalRoomsAvailable,
                 accommodationStaffCount: staff != null && staff > 0 ? String(staff) : prev.accommodationStaffCount,
+                variableCostPerRoom: vcrOk ? String(Math.round(vcrRaw)) : prev.variableCostPerRoom,
               } : null);
             }
           });
@@ -270,10 +283,19 @@ export default function LogTodayPage() {
             const rooms = row.roomsSold != null ? String(row.roomsSold) : '';
             const rob7 = row.roomsOnBooks7 != null ? String(row.roomsOnBooks7) : '';
             const rob14 = row.roomsOnBooks14 != null ? String(row.roomsOnBooks14) : '';
-            const varCost = row.variableCostPerRoom != null ? String(row.variableCostPerRoom) : '';
             const cust = row.customers != null ? String(row.customers) : '';
             const top3 = row.top3MenuRevenue != null ? String(row.top3MenuRevenue) : '';
-            const addCost = row.additionalCostToday != null ? String(row.additionalCostToday) : '';
+            const addCost = moduleType === 'fnb' && row.additionalCostToday != null ? String(row.additionalCostToday) : '';
+
+            if (moduleType === 'accommodation') {
+              const v = row.variableCostPerRoom != null ? Number(row.variableCostPerRoom) : null;
+              if (v != null && v > 0) {
+                const s = String(Math.round(v));
+                setAccommodationVariableCostFromDb(true);
+                setFinanceData((prev) => ({ ...prev, variableCostPerRoom: s }));
+              }
+            }
+
             setTodayRecordId(row.id ?? null);
             setDataStatus({
               status: freshness.color,
@@ -286,44 +308,69 @@ export default function LogTodayPage() {
               roomsSold: rooms,
               roomsOnBooks7: rob7,
               roomsOnBooks14: rob14,
-              variableCostPerRoom: varCost,
               customers: cust,
               top3MenuRevenue: top3,
-              additionalCostToday: addCost,
+              ...(moduleType === 'fnb' ? { additionalCostToday: addCost } : {}),
             }));
-            setOriginalValues({
-              revenue: rev,
-              roomsSold: rooms,
-              roomsOnBooks7: rob7,
-              roomsOnBooks14: rob14,
-              variableCostPerRoom: varCost,
-              customers: cust,
-              top3MenuRevenue: top3,
-              additionalCostToday: addCost,
-              totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
-              accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
-              fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
+            setOriginalValues((prev) => {
+              const base = prev ?? emptySnapshot;
+              const vNum =
+                moduleType === 'accommodation' && row.variableCostPerRoom != null
+                  ? Number(row.variableCostPerRoom)
+                  : null;
+              const vStr =
+                moduleType === 'accommodation' && vNum != null && vNum > 0
+                  ? String(Math.round(vNum))
+                  : base.variableCostPerRoom;
+              return {
+                ...base,
+                revenue: rev,
+                roomsSold: rooms,
+                roomsOnBooks7: rob7,
+                roomsOnBooks14: rob14,
+                customers: cust,
+                top3MenuRevenue: top3,
+                additionalCostToday: moduleType === 'fnb' ? addCost : '',
+                totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
+                accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
+                variableCostPerRoom: moduleType === 'accommodation' ? vStr : '',
+                fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
+              };
             });
           } else {
             setTodayRecordId(null);
-            setOriginalValues({ revenue: '', roomsSold: '', roomsOnBooks7: '', roomsOnBooks14: '', variableCostPerRoom: '', customers: '', top3MenuRevenue: '', additionalCostToday: '', totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '', accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '', fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '' });
+            setOriginalValues((prev) => ({
+              ...(prev ?? emptySnapshot),
+              revenue: '',
+              roomsSold: '',
+              roomsOnBooks7: '',
+              roomsOnBooks14: '',
+              customers: '',
+              top3MenuRevenue: '',
+              additionalCostToday: '',
+              totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
+              accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
+              variableCostPerRoom: moduleType === 'accommodation' ? (prev?.variableCostPerRoom ?? '') : '',
+              fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
+            }));
             setDataStatus({ status: freshness.color, message: freshness.label, lastMetricDate: freshness.latest ?? null });
           }
         } else {
           setTodayRecordId(null);
-          setOriginalValues({
+          setOriginalValues((prev) => ({
+            ...(prev ?? emptySnapshot),
             revenue: '',
             roomsSold: '',
             roomsOnBooks7: '',
             roomsOnBooks14: '',
-            variableCostPerRoom: '',
             customers: '',
             top3MenuRevenue: '',
             additionalCostToday: '',
             totalRoomsAvailable: branch.totalRooms != null ? String(branch.totalRooms) : '',
             accommodationStaffCount: branch.accommodationStaffCount != null ? String(branch.accommodationStaffCount) : '',
+            variableCostPerRoom: moduleType === 'accommodation' ? (prev?.variableCostPerRoom ?? '') : '',
             fnbStaffCount: branch.fnbStaffCount != null ? String(branch.fnbStaffCount) : '',
-          });
+          }));
           setDataStatus({
             status: freshness.color,
             message: freshness.label,
@@ -376,18 +423,18 @@ export default function LogTodayPage() {
       todayData.roomsSold !== originalValues.roomsSold ||
       todayData.roomsOnBooks7 !== originalValues.roomsOnBooks7 ||
       todayData.roomsOnBooks14 !== originalValues.roomsOnBooks14 ||
-      todayData.variableCostPerRoom !== originalValues.variableCostPerRoom ||
       todayData.customers !== originalValues.customers ||
       todayData.top3MenuRevenue !== originalValues.top3MenuRevenue ||
       todayData.additionalCostToday !== originalValues.additionalCostToday ||
       financeData.totalRoomsAvailable !== originalValues.totalRoomsAvailable ||
       financeData.accommodationStaffCount !== originalValues.accommodationStaffCount ||
+      financeData.variableCostPerRoom !== originalValues.variableCostPerRoom ||
       financeData.fnbStaffCount !== originalValues.fnbStaffCount
     );
   }, [originalValues, todayData, financeData]);
 
-  const todayFields = ['revenue', 'roomsSold', 'roomsOnBooks7', 'roomsOnBooks14', 'variableCostPerRoom', 'customers', 'top3MenuRevenue', 'additionalCostToday'] as const;
-  const financeFields = ['totalRoomsAvailable', 'accommodationStaffCount', 'fnbStaffCount'] as const;
+  const todayFields = ['revenue', 'roomsSold', 'roomsOnBooks7', 'roomsOnBooks14', 'customers', 'top3MenuRevenue', 'additionalCostToday'] as const;
+  const financeFields = ['totalRoomsAvailable', 'accommodationStaffCount', 'variableCostPerRoom', 'fnbStaffCount'] as const;
   const currentValueFor = (field: keyof NonNullable<typeof originalValues>) =>
     todayFields.includes(field as any) ? (todayData as Record<string, string>)[field] : (financeData as Record<string, string>)[field];
 
@@ -455,7 +502,6 @@ export default function LogTodayPage() {
       if (staffVal == null || staffVal <= 0) {
         newErrors.accommodationStaffCount = locale === 'th' ? 'ต้องมากกว่า 0' : 'Must be greater than 0';
       }
-      if (newErrors.totalRoomsAvailable || newErrors.accommodationStaffCount) setFinanceExpanded(true);
     }
 
     // F&B: first-time config — F&B Staff Count required when not yet set on branch
@@ -481,11 +527,14 @@ export default function LogTodayPage() {
       newErrors.roomsOnBooks14 = locale === 'th' ? 'กรุณากรอกห้องที่จองล่วงหน้า 14 วัน' : 'Rooms on books (14 days) is required';
     }
 
-    // Accommodation: Variable cost per room required
-    if (isAccommodation && !todayData.variableCostPerRoom && todayData.variableCostPerRoom !== '0') {
+    // Accommodation: Variable cost per room required (Section 2 / finance state)
+    if (isAccommodation && !financeData.variableCostPerRoom && financeData.variableCostPerRoom !== '0') {
       newErrors.variableCostPerRoom = locale === 'th' ? 'กรุณากรอกต้นทุนผันแปรต่อห้อง' : 'Variable cost per room is required';
     }
-    
+    if (isAccommodation && (newErrors.variableCostPerRoom || newErrors.totalRoomsAvailable || newErrors.accommodationStaffCount)) {
+      setFinanceExpanded(true);
+    }
+
     // Validate rooms sold doesn't exceed capacity (use branch.totalRooms from config)
     if (isAccommodation && todayData.roomsSold) {
       const roomsSoldNum = safeNumber(todayData.roomsSold, 0);
@@ -524,8 +573,8 @@ export default function LogTodayPage() {
           : 'Top 3 menu revenue cannot exceed total revenue';
       }
     }
-    // Additional Cost Today: optional, must be >= 0
-    if (todayData.additionalCostToday) {
+    // Additional Cost Today (F&B only): optional, must be >= 0
+    if (isFnb && todayData.additionalCostToday) {
       const additionalCost = safeNumber(todayData.additionalCostToday, -1);
       if (additionalCost < 0) {
         newErrors.additionalCostToday = locale === 'th' ? 'ต้องมากกว่าหรือเท่ากับ 0' : 'Must be >= 0';
@@ -562,7 +611,7 @@ export default function LogTodayPage() {
         if (rob7 !== undefined) dailyMetric.roomsOnBooks7 = Math.max(0, Math.round(rob7));
         const rob14 = safeNumber(todayData.roomsOnBooks14, undefined);
         if (rob14 !== undefined) dailyMetric.roomsOnBooks14 = Math.max(0, Math.round(rob14));
-        const varCost = safeNumber(todayData.variableCostPerRoom, undefined);
+        const varCost = safeNumber(financeData.variableCostPerRoom, undefined);
         if (varCost !== undefined) dailyMetric.variableCostPerRoom = Math.max(0, Math.round(varCost));
       }
       
@@ -578,9 +627,11 @@ export default function LogTodayPage() {
           }
         }
       }
-      // Additional cost today (optional THB) — increases daily cost
-      const parsedAdditionalCost = todayData.additionalCostToday ? safeNumber(todayData.additionalCostToday, undefined) : undefined;
-      dailyMetric.additionalCostToday = parsedAdditionalCost != null && parsedAdditionalCost >= 0 ? Math.round(parsedAdditionalCost) : 0;
+      // Additional cost today — F&B only (accommodation: omit so DB column is not updated on save)
+      if (isFnb) {
+        const parsedAdditionalCost = todayData.additionalCostToday ? safeNumber(todayData.additionalCostToday, undefined) : undefined;
+        dailyMetric.additionalCostToday = parsedAdditionalCost != null && parsedAdditionalCost >= 0 ? Math.round(parsedAdditionalCost) : 0;
+      }
       
       // Save to database (branch type routes to accommodation_daily_metrics vs fnb_daily_metrics)
       await saveDailyMetric({
@@ -672,7 +723,7 @@ export default function LogTodayPage() {
           const varCost = updated.variableCostPerRoom != null ? String(updated.variableCostPerRoom) : '';
           const cust = updated.customers != null ? String(updated.customers) : '';
           const top3 = updated.top3MenuRevenue != null ? String(updated.top3MenuRevenue) : '';
-          const addCost = updated.additionalCostToday != null ? String(updated.additionalCostToday) : '';
+          const addCost = moduleType === 'fnb' && updated.additionalCostToday != null ? String(updated.additionalCostToday) : '';
           setTodayRecordId(updated.id ?? null);
           setTodayData((prev) => ({
             ...prev,
@@ -680,22 +731,25 @@ export default function LogTodayPage() {
             roomsSold: rooms,
             roomsOnBooks7: rob7,
             roomsOnBooks14: rob14,
-            variableCostPerRoom: varCost,
             customers: cust,
             top3MenuRevenue: top3,
-            additionalCostToday: addCost,
+            ...(moduleType === 'fnb' ? { additionalCostToday: addCost } : {}),
           }));
+          if (moduleType === 'accommodation' && varCost !== '') {
+            setFinanceData((prev) => ({ ...prev, variableCostPerRoom: varCost }));
+            setAccommodationVariableCostFromDb(true);
+          }
           setOriginalValues({
             revenue: rev,
             roomsSold: rooms,
             roomsOnBooks7: rob7,
             roomsOnBooks14: rob14,
-            variableCostPerRoom: varCost,
             customers: cust,
             top3MenuRevenue: top3,
-            additionalCostToday: addCost,
+            additionalCostToday: moduleType === 'fnb' ? addCost : '',
             totalRoomsAvailable: financeData.totalRoomsAvailable,
             accommodationStaffCount: financeData.accommodationStaffCount,
+            variableCostPerRoom: moduleType === 'accommodation' ? varCost : '',
             fnbStaffCount: financeData.fnbStaffCount,
           });
         }
@@ -940,7 +994,7 @@ export default function LogTodayPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
-                      {locale === 'th' ? 'ห้องที่จองล่วงหน้า — 7 วัน' : 'Rooms on books — next 7 days'} <span style={{ color: '#ef4444' }}>*</span>
+                      {locale === 'th' ? 'ห้องที่จองล่วงหน้า — นับจากวันนี้ 7 วัน' : 'Rooms on books — 7 days from today'} <span style={{ color: '#ef4444' }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -967,7 +1021,7 @@ export default function LogTodayPage() {
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
-                      {locale === 'th' ? 'ห้องที่จองล่วงหน้า — 14 วัน' : 'Rooms on books — next 14 days'} <span style={{ color: '#ef4444' }}>*</span>
+                      {locale === 'th' ? 'ห้องที่จองล่วงหน้า — นับจากวันนี้ 14 วัน' : 'Rooms on books — 14 days from today'} <span style={{ color: '#ef4444' }}>*</span>
                     </label>
                     <input
                       type="text"
@@ -995,7 +1049,7 @@ export default function LogTodayPage() {
                   <div style={{ fontSize: '12px', color: '#9ca3af' }}>
                     {locale === 'th'
                       ? 'กรอกจำนวนการจองที่ยืนยันแล้วสำหรับ 7 และ 14 วันข้างหน้า ณ คืนนี้'
-                      : 'Enter total confirmed reservations for 7 and 14 days ahead as of tonight'}
+                      : 'Enter confirmed reservations for 7 and 14 days ahead as of tonight'}
                   </div>
                 </div>
               )}
@@ -1075,21 +1129,24 @@ export default function LogTodayPage() {
                   )}
                 </div>
               )}
-              
-              {/* Accommodation: Variable cost per room sold today (required) */}
-              {isAccommodation && (
+
+              {/* Additional Cost Today (optional) — F&B only */}
+              {isFnb && (
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
-                    {locale === 'th' ? 'ต้นทุนผันแปรต่อห้องที่ขายวันนี้ (฿)' : 'Variable cost per room sold today (฿)'} <span style={{ color: '#ef4444' }}>*</span>
+                    {locale === 'th' ? 'ต้นทุนเพิ่มเติมวันนี้' : 'Additional Cost Today'}
+                    <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
+                      ({locale === 'th' ? 'ไม่บังคับ' : 'optional'})
+                    </span>
                   </label>
                   <div style={{ position: 'relative' }}>
                     <input
                       type="text"
-                      value={formatDisplayNumber(todayData.variableCostPerRoom)}
+                      value={formatDisplayNumber(todayData.additionalCostToday)}
                       onChange={(e) => {
-                        const parsed = parseInputNumber(e.target.value);
-                        setTodayData({ ...todayData, variableCostPerRoom: parsed });
-                        if (errors.variableCostPerRoom) setErrors({ ...errors, variableCostPerRoom: '' });
+                        const filtered = parseInputNumber(e.target.value);
+                        setTodayData({ ...todayData, additionalCostToday: filtered });
+                        if (errors.additionalCostToday) setErrors({ ...errors, additionalCostToday: '' });
                       }}
                       style={{
                         width: '100%',
@@ -1097,7 +1154,7 @@ export default function LogTodayPage() {
                         borderRadius: '6px',
                         fontSize: '14px',
                         textAlign: 'right',
-                        ...inputStyleFor('variableCostPerRoom', errors.variableCostPerRoom),
+                        ...inputStyleFor('additionalCostToday', errors.additionalCostToday),
                       }}
                       placeholder="0"
                     />
@@ -1110,61 +1167,13 @@ export default function LogTodayPage() {
                       color: '#6b7280',
                     }}>THB</span>
                   </div>
-                  {errors.variableCostPerRoom && (
+                  {errors.additionalCostToday && (
                     <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>
-                      {errors.variableCostPerRoom}
+                      {errors.additionalCostToday}
                     </div>
                   )}
-                  <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '0.25rem' }}>
-                    {locale === 'th'
-                      ? 'แม่บ้าน ซักรีด อาหารเช้า และอุปกรณ์สำหรับห้องที่ขายวันนี้'
-                      : 'Housekeeping, laundry, breakfast, and per-room supplies for today'}
-                  </div>
                 </div>
               )}
-
-              {/* Additional Cost Today (optional THB) — both Accommodation and F&B */}
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
-                  {locale === 'th' ? 'ต้นทุนเพิ่มเติมวันนี้' : 'Additional Cost Today'}
-                  <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
-                    ({locale === 'th' ? 'ไม่บังคับ' : 'optional'})
-                  </span>
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type="text"
-                    value={formatDisplayNumber(todayData.additionalCostToday)}
-                    onChange={(e) => {
-                      const filtered = parseInputNumber(e.target.value);
-                      setTodayData({ ...todayData, additionalCostToday: filtered });
-                      if (errors.additionalCostToday) setErrors({ ...errors, additionalCostToday: '' });
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '0.625rem 3rem 0.625rem 0.75rem',
-                      borderRadius: '6px',
-                      fontSize: '14px',
-                      textAlign: 'right',
-                      ...inputStyleFor('additionalCostToday', errors.additionalCostToday),
-                    }}
-                    placeholder="0"
-                  />
-                  <span style={{
-                    position: 'absolute',
-                    right: '0.75rem',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    fontSize: '13px',
-                    color: '#6b7280',
-                  }}>THB</span>
-                </div>
-                {errors.additionalCostToday && (
-                  <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>
-                    {errors.additionalCostToday}
-                  </div>
-                )}
-              </div>
               
               {/* PART 5: Hide Save button for view-only role */}
               {role && !role.canViewOnly && (
@@ -1349,6 +1358,60 @@ export default function LogTodayPage() {
                     </div>
                   )}
                   
+                  {/* Accommodation: variable cost per room — auto-filled from latest daily metric row (same pattern as rooms/staff) */}
+                  {isAccommodation && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
+                        {locale === 'th' ? 'ต้นทุนผันแปรต่อห้องที่ขายวันนี้' : 'Variable cost per room sold today'}
+                        <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>({locale === 'th' ? 'จำเป็น' : 'required'})</span>
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type="text"
+                          value={formatDisplayNumber(financeData.variableCostPerRoom)}
+                          onChange={(e) => {
+                            const parsed = parseInputNumber(e.target.value);
+                            setFinanceData({ ...financeData, variableCostPerRoom: parsed });
+                            if (errors.variableCostPerRoom) setErrors({ ...errors, variableCostPerRoom: '' });
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '0.625rem 3rem 0.625rem 0.75rem',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            textAlign: 'right',
+                            ...inputStyleFor('variableCostPerRoom', errors.variableCostPerRoom),
+                          }}
+                          placeholder={
+                            !accommodationVariableCostFromDb && financeData.variableCostPerRoom === ''
+                              ? (locale === 'th' ? 'เช่น 150' : 'e.g. 150')
+                              : '0'
+                          }
+                        />
+                        <span style={{
+                          position: 'absolute',
+                          right: '0.75rem',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          fontSize: '13px',
+                          color: '#6b7280',
+                        }}>THB</span>
+                      </div>
+                      {errors.variableCostPerRoom && (
+                        <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>
+                          {errors.variableCostPerRoom}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
+                        {isAccommodationSetupMode && !financeData.variableCostPerRoom
+                          ? (locale === 'th' ? 'กรอกครั้งแรก (จำเป็น)' : 'Required on first setup.')
+                          : (locale === 'th'
+                            ? 'เติมจากรายการล่าสุด แก้ไขได้เมื่อต้นทุนต่อห้องเปลี่ยน'
+                            : 'Auto-filled from last entry. Edit only if cost per room changed.')}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Accommodation Capacity: auto-filled from latest record, always editable. Saves as rooms_available, staff_count. */}
                   {isAccommodation && (
                     <>
