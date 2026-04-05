@@ -107,7 +107,7 @@ export function ForwardDemandChart({
     let paceStatus: 'ahead' | 'behind' | 'insufficient' = 'insufficient';
     if (hasEnoughHistory) {
       const fwdSum = fwdValues.slice(1).reduce((s, v) => s + v, 0);
-      const baseSum = baseValues.slice(1).reduce((s, v) => s + (v ?? 0), 0);
+      const baseSum = baseValues.slice(1).reduce((s: number, v) => s + (v ?? 0), 0);
       const baseCount = baseValues.slice(1).filter((v) => v != null).length;
       if (baseCount > 0 && baseSum > 0) {
         const pct = (fwdSum - baseSum) / baseSum;
