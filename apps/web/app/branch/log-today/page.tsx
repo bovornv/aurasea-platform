@@ -667,6 +667,9 @@ export default function LogTodayPage() {
         if (updated) {
           const rev = updated.revenue != null ? String(updated.revenue) : '';
           const rooms = updated.roomsSold != null ? String(updated.roomsSold) : '';
+          const rob7 = updated.roomsOnBooks7 != null ? String(updated.roomsOnBooks7) : '';
+          const rob14 = updated.roomsOnBooks14 != null ? String(updated.roomsOnBooks14) : '';
+          const varCost = updated.variableCostPerRoom != null ? String(updated.variableCostPerRoom) : '';
           const cust = updated.customers != null ? String(updated.customers) : '';
           const top3 = updated.top3MenuRevenue != null ? String(updated.top3MenuRevenue) : '';
           const addCost = updated.additionalCostToday != null ? String(updated.additionalCostToday) : '';
@@ -675,6 +678,9 @@ export default function LogTodayPage() {
             ...prev,
             revenue: rev,
             roomsSold: rooms,
+            roomsOnBooks7: rob7,
+            roomsOnBooks14: rob14,
+            variableCostPerRoom: varCost,
             customers: cust,
             top3MenuRevenue: top3,
             additionalCostToday: addCost,
@@ -682,6 +688,9 @@ export default function LogTodayPage() {
           setOriginalValues({
             revenue: rev,
             roomsSold: rooms,
+            roomsOnBooks7: rob7,
+            roomsOnBooks14: rob14,
+            variableCostPerRoom: varCost,
             customers: cust,
             top3MenuRevenue: top3,
             additionalCostToday: addCost,
