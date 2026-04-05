@@ -14,7 +14,7 @@ export class RevenueConcentrationRule {
     timestamp: Date;
     dailyRevenue: number;
   }>): AlertContract | null {
-    if (!operationalSignals || operationalSignals.length < 21) {
+    if (!operationalSignals || operationalSignals.length < 7) {
       return null;
     }
 
@@ -22,11 +22,11 @@ export class RevenueConcentrationRule {
     const twentyEightDaysAgo = new Date(today.getTime() - 28 * 24 * 60 * 60 * 1000);
 
     // Filter to 28-day rolling window
-    const recentSignals = operationalSignals.filter(signal => 
+    const recentSignals = operationalSignals.filter(signal =>
       signal.timestamp >= twentyEightDaysAgo && signal.timestamp <= today
     );
 
-    if (recentSignals.length < 21) {
+    if (recentSignals.length < 7) {
       return null;
     }
 
@@ -94,7 +94,11 @@ export class RevenueConcentrationRule {
                       severity === 'warning' ? 'near-term' : 'medium-term';
 
     // Calculate confidence
-    const confidence = this.calculateConfidence(recentSignals.length, weekendRevenue, totalRevenue);
+    const rawConfidence = this.calculateConfidence(recentSignals.length, weekendRevenue, totalRevenue);
+    // Apply confidence cap for insufficient data (below full 21-day minimum)
+    const confidence = recentSignals.length < 21
+      ? Math.min(rawConfidence, 0.6)
+      : rawConfidence;
 
     // Generate message and recommendations
     const { message, recommendations } = this.generateMessageAndRecommendations(

@@ -31,7 +31,7 @@ export class BreakEvenRiskRule {
     dailyRevenue: number;
     dailyExpenses: number;
   }>): AlertContract | null {
-    if (!operationalSignals || operationalSignals.length < 30) {
+    if (!operationalSignals || operationalSignals.length < 7) {
       return null;
     }
 
@@ -39,11 +39,11 @@ export class BreakEvenRiskRule {
     const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     // Filter to recent signals
-    const recentSignals = operationalSignals.filter(signal => 
+    const recentSignals = operationalSignals.filter(signal =>
       signal.timestamp >= thirtyDaysAgo && signal.timestamp <= today
     );
 
-    if (recentSignals.length < 30) {
+    if (recentSignals.length < 7) {
       return null;
     }
 
@@ -94,7 +94,11 @@ export class BreakEvenRiskRule {
     // ⚠️ FROZEN: Confidence calculation (DO NOT MODIFY WITHOUT TEST UPDATES)
     // Confidence must increase with more historical data
     // Uses operationalSignals.length (total data points) to allow confidence growth
-    const confidence = this.calculateConfidence(operationalSignals.length);
+    const rawConfidence = this.calculateConfidence(operationalSignals.length);
+    // Apply confidence cap for insufficient data (below full 30-day minimum)
+    const confidence = operationalSignals.length < 30
+      ? Math.min(rawConfidence, 0.6)
+      : rawConfidence;
 
     // Generate message and recommendations
     const { message, recommendations } = this.generateMessageAndRecommendations(

@@ -465,8 +465,8 @@ class OperationalSignalsService {
                           revenue30Days,
                           costs7Days,
                           costs30Days,
-                          staffCount: metrics.modules.accommodation?.totalStaffAccommodation || 
-                                     metrics.modules.fnb?.totalStaffFnb || 10,
+                          staffCount: metrics.modules.accommodation?.totalStaffAccommodation ||
+                                     metrics.modules.fnb?.totalStaffFnb || 1,
                           occupancyRate: dailyHistory.occupancy?.[i] !== undefined 
                             ? dailyHistory.occupancy[i]
                             : (metrics.modules.accommodation?.occupancyRateLast30DaysPct 
@@ -532,8 +532,8 @@ class OperationalSignalsService {
                           revenue30Days,
                           costs7Days,
                           costs30Days,
-                          staffCount: metrics.modules.accommodation?.totalStaffAccommodation || 
-                                     metrics.modules.fnb?.totalStaffFnb || 10,
+                          staffCount: metrics.modules.accommodation?.totalStaffAccommodation ||
+                                     metrics.modules.fnb?.totalStaffFnb || 1,
                           occupancyRate: metrics.modules.accommodation?.occupancyRateLast30DaysPct 
                             ? (metrics.modules.accommodation.occupancyRateLast30DaysPct / 100) * historicalMultiplier
                             : undefined,

@@ -34,7 +34,7 @@ export class SeasonalityRiskRule {
     timestamp: Date;
     dailyRevenue: number;
   }>): AlertContract | null {
-    if (!operationalSignals || operationalSignals.length < 90) {
+    if (!operationalSignals || operationalSignals.length < 21) {
       return null;
     }
 
@@ -42,11 +42,11 @@ export class SeasonalityRiskRule {
     const ninetyDaysAgo = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
 
     // Filter to signals with at least 90 days of data
-    const recentSignals = operationalSignals.filter(signal => 
+    const recentSignals = operationalSignals.filter(signal =>
       signal.timestamp >= ninetyDaysAgo && signal.timestamp <= today
     );
 
-    if (recentSignals.length < 90) {
+    if (recentSignals.length < 21) {
       return null;
     }
 
@@ -140,7 +140,11 @@ export class SeasonalityRiskRule {
       'medium-term'; // informational
 
     // Calculate confidence
-    const confidence = this.calculateConfidence(recentSignals.length, monthlyValues.length);
+    const rawConfidence = this.calculateConfidence(recentSignals.length, monthlyValues.length);
+    // Apply confidence cap for insufficient data (below full 90-day minimum)
+    const confidence = recentSignals.length < 90
+      ? Math.min(rawConfidence, 0.6)
+      : rawConfidence;
 
     // Generate message and recommendations (pass severity to ensure message reflects assigned severity)
     const { message, recommendations } = this.generateMessageAndRecommendations(

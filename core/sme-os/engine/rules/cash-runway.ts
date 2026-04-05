@@ -19,7 +19,13 @@ export class CashRunwayRule {
       return null;
     }
     
-    if (!input.financial?.currentBalance || !input.financial?.cashFlows?.length) {
+    if (!input.financial?.currentBalance || input.financial.currentBalance <= 0 || !input.financial?.cashFlows?.length) {
+      return null;
+    }
+
+    // Guard: if all cash flow amounts are zero, cash balance was never entered — skip
+    const allFlowsZero = input.financial.cashFlows.every(f => f.amount === 0);
+    if (allFlowsZero) {
       return null;
     }
 

@@ -99,8 +99,8 @@ export function convertDailyMetricsToSignals(
     // Calculate customer volume (if F&B)
     const customerVolume = metric.customers;
     
-    // Determine staff count
-    const staffCount = accommodationStaff || fnbStaff || 10;
+    // Determine staff count — use 1 as fallback so alerts are not miscalibrated
+    const staffCount = accommodationStaff || fnbStaff || 1;
     
     const dailyRevenue = metric.revenue;
     const dailyExpenses = isAcc ? blendedDaily : fnbDayCost(metric);

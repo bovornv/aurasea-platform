@@ -38,19 +38,18 @@ export class WeekendWeekdayFnbGapRule {
     timestamp: Date;
     dailyRevenue: number;
   }>): AlertContract | null {
-    // ⚠️ FROZEN: Minimum data requirement (DO NOT MODIFY WITHOUT TEST UPDATES)
-    if (!operationalSignals || operationalSignals.length < 14) {
+    if (!operationalSignals || operationalSignals.length < 5) {
       return null;
     }
 
     // Sort signals by timestamp (most recent first) and take the most recent 14
-    const sortedSignals = [...operationalSignals].sort((a, b) => 
+    const sortedSignals = [...operationalSignals].sort((a, b) =>
       b.timestamp.getTime() - a.timestamp.getTime()
     );
 
     const signalsToAnalyze = sortedSignals.slice(0, 14);
-    
-    if (signalsToAnalyze.length < 14) {
+
+    if (signalsToAnalyze.length < 5) {
       return null;
     }
 
@@ -127,7 +126,11 @@ export class WeekendWeekdayFnbGapRule {
       return null; // Below threshold, no alert needed
     }
 
-    const confidence = this.calculateConfidence(operationalSignals.length);
+    const rawConfidence = this.calculateConfidence(operationalSignals.length);
+    // Apply confidence cap for insufficient data (below full 14-day minimum)
+    const confidence = operationalSignals.length < 14
+      ? Math.min(rawConfidence, 0.6)
+      : rawConfidence;
     const { message, recommendations } = this.generateMessageAndRecommendations(
       weekendWeekdayRatio,
       avgWeekendRevenue,

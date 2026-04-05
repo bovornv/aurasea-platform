@@ -60,7 +60,7 @@ export class LiquidityRunwayRiskRule {
     // 3. cash balance is missing or <= 0
     // 4. average monthly burn >= 0 (profitable/breakeven)
     // 5. runway >= 12 months (healthy)
-    if (!operationalSignals || operationalSignals.length < LiquidityRunwayRiskRule.MINIMUM_DATA_DAYS) {
+    if (!operationalSignals || operationalSignals.length < 7) {
       return null;
     }
 
@@ -68,11 +68,11 @@ export class LiquidityRunwayRiskRule {
     const thirtyDaysAgo = new Date(today.getTime() - LiquidityRunwayRiskRule.MINIMUM_DATA_DAYS * 24 * 60 * 60 * 1000);
 
     // Filter to recent signals
-    const recentSignals = operationalSignals.filter(signal => 
+    const recentSignals = operationalSignals.filter(signal =>
       signal.timestamp >= thirtyDaysAgo && signal.timestamp <= today
     );
 
-    if (recentSignals.length < LiquidityRunwayRiskRule.MINIMUM_DATA_DAYS) {
+    if (recentSignals.length < 7) {
       return null;
     }
 
@@ -179,7 +179,11 @@ export class LiquidityRunwayRiskRule {
 
     // Calculate confidence based on total data points provided
     // Confidence must increase with more historical data
-    const confidence = this.calculateConfidence(operationalSignals.length);
+    const rawConfidence = this.calculateConfidence(operationalSignals.length);
+    // Apply confidence cap for insufficient data (below full 30-day minimum)
+    const confidence = operationalSignals.length < LiquidityRunwayRiskRule.MINIMUM_DATA_DAYS
+      ? Math.min(rawConfidence, 0.6)
+      : rawConfidence;
 
     // Generate message and recommendations
     const { message, recommendations } = this.generateMessageAndRecommendations(

@@ -70,7 +70,8 @@ export interface HospitalityAlert {
  */
 export function translateToSMEOS(
   input: HospitalityInput,
-  alertSensitivity?: 'low' | 'medium' | 'high'
+  alertSensitivity?: 'low' | 'medium' | 'high',
+  businessType?: 'accommodation' | 'cafe_restaurant'
 ): InputContract {
   // Aggregate revenue into cash flows (inflows)
   const revenueFlows = input.revenue.dates.map(date => ({
@@ -141,6 +142,7 @@ export function translateToSMEOS(
       businessSize: 'sme',
       ...(alertSensitivity && { alertSensitivity }),
     },
+    ...(businessType && { businessType }),
   };
 }
 

@@ -15,6 +15,42 @@
 import type { DailyMetric } from '../models/daily-metrics';
 import { calculateDailyRevenue } from '../models/daily-metrics';
 
+// Module-level cache for long-range revenue signals (keyed by "branchId:days")
+const _longRangeSignalCache = new Map<string, {
+  signals: Array<{ timestamp: Date; dailyRevenue: number }>;
+  fetchedAt: number;
+}>();
+
+/**
+ * Fetches long-range revenue signals from the DB for a branch.
+ * Results are cached for 5 minutes per (branchId, days) pair.
+ */
+export async function fetchLongRangeSignals(
+  branchId: string,
+  days: number
+): Promise<Array<{ timestamp: Date; dailyRevenue: number }>> {
+  const cacheKey = `${branchId}:${days}`;
+  const cached = _longRangeSignalCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.fetchedAt < 5 * 60 * 1000) {
+    return cached.signals;
+  }
+  try {
+    const { getDailyMetrics } = await import('./db/daily-metrics-service');
+    const rows = await getDailyMetrics(branchId, days);
+    const signals = (rows || [])
+      .map((r: DailyMetric) => ({
+        timestamp: new Date(r.date),
+        dailyRevenue: r.revenue ?? calculateDailyRevenue(r),
+      }))
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    _longRangeSignalCache.set(cacheKey, { signals, fetchedAt: now });
+    return signals;
+  } catch (_e) {
+    return [];
+  }
+}
+
 export type AlertType = 
   | 'demand_softening'
   | 'revenue_downtrend'

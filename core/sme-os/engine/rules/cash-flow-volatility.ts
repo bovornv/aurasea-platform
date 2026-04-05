@@ -57,7 +57,7 @@ export class CashFlowVolatilityRule {
     // 3. mean revenue === 0
     // 4. coefficient of variation (CV) < 0.25
     // These checks must remain in this exact order
-    if (!operationalSignals || operationalSignals.length < CashFlowVolatilityRule.MINIMUM_DATA_DAYS) {
+    if (!operationalSignals || operationalSignals.length < 14) {
       return null;
     }
 
@@ -65,11 +65,11 @@ export class CashFlowVolatilityRule {
     const sixtyDaysAgo = new Date(today.getTime() - CashFlowVolatilityRule.MINIMUM_DATA_DAYS * 24 * 60 * 60 * 1000);
 
     // Filter to signals with at least 60 days of data
-    const recentSignals = operationalSignals.filter(signal => 
+    const recentSignals = operationalSignals.filter(signal =>
       signal.timestamp >= sixtyDaysAgo && signal.timestamp <= today
     );
 
-    if (recentSignals.length < CashFlowVolatilityRule.MINIMUM_DATA_DAYS) {
+    if (recentSignals.length < 14) {
       return null;
     }
 
@@ -156,7 +156,11 @@ export class CashFlowVolatilityRule {
     // Use >= 60 days (not > 60)
     // Cap at 0.95
     // Confidence must increase with more data points
-    const confidence = this.calculateConfidence(recentSignals.length);
+    const rawConfidence = this.calculateConfidence(recentSignals.length);
+    // Apply confidence cap for insufficient data (below full 60-day minimum)
+    const confidence = recentSignals.length < CashFlowVolatilityRule.MINIMUM_DATA_DAYS
+      ? Math.min(rawConfidence, 0.6)
+      : rawConfidence;
 
     // Round CV to 2 decimal places for display only
     const cvRounded = Math.round(coefficientOfVariation * 100) / 100;

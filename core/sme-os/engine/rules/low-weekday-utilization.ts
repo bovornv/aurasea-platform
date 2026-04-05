@@ -18,8 +18,7 @@ export class LowWeekdayUtilizationRule {
     timestamp: Date;
     dailyRevenue: number;
   }>): AlertContract | null {
-    // PART 2: Add explicit 14-day minimum guard
-    if (!operationalSignals || operationalSignals.length < 14) {
+    if (!operationalSignals || operationalSignals.length < 5) {
       return null;
     }
 
@@ -46,8 +45,8 @@ export class LowWeekdayUtilizationRule {
       revenueByDate.set(dateKey, existing + signal.dailyRevenue);
     });
 
-    // Need at least 14 unique weekday days
-    if (weekdayDates.size < 14) {
+    // Need at least 5 unique weekday days
+    if (weekdayDates.size < 5) {
       return null;
     }
 
@@ -116,7 +115,11 @@ export class LowWeekdayUtilizationRule {
 
     const cutoffDate = new Date(today);
     cutoffDate.setDate(cutoffDate.getDate() - 30); // 30 days lookback for context
-    const confidence = this.calculateConfidence(uniqueWeekdayDays);
+    const rawConfidence = this.calculateConfidence(uniqueWeekdayDays);
+    // Apply confidence cap for insufficient data (below full 14-weekday minimum)
+    const confidence = uniqueWeekdayDays < 14
+      ? Math.min(rawConfidence, 0.6)
+      : rawConfidence;
     const { message, recommendations } = this.generateMessageAndRecommendations(
       effectiveCanonicalUtilization,
       avgWeekdayRevenue,

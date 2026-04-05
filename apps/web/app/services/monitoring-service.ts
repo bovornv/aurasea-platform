@@ -27,6 +27,7 @@ import { BreakEvenRiskRule } from '../../../../core/sme-os/engine/rules/break-ev
 import { SeasonalityRiskRule } from '../../../../core/sme-os/engine/rules/seasonality-risk';
 import { CashRunwayRule } from '../../../../core/sme-os/engine/rules/cash-runway';
 import { translateToSMEOS } from '../adapters/hospitality-adapter';
+import { fetchLongRangeSignals } from './accommodation-intelligence-engine';
 
 export interface MonitoringStatus {
   isActive: boolean;
@@ -963,6 +964,18 @@ class MonitoringService {
     // Trend-based alerts require at least 2 real signals; no synthetic signals
     const signalsForTrendAlerts = allSignals.length >= 2 ? allSignals : [];
 
+    // Pre-fetch long-range signals from DB for rules that need 60 or 90 days of history
+    let longRangeSignals60: Array<{ timestamp: Date; dailyRevenue: number }> = [];
+    let longRangeSignals90: Array<{ timestamp: Date; dailyRevenue: number }> = [];
+    if (currentBranchId) {
+      try {
+        longRangeSignals60 = await fetchLongRangeSignals(currentBranchId, 60);
+        longRangeSignals90 = await fetchLongRangeSignals(currentBranchId, 90);
+      } catch (_e) {
+        // Ignore — rules will fall back to allSignals
+      }
+    }
+
     // Evaluate alerts with validation and error handling
     const demandDropAlert = latestMetrics 
       ? this.safeEvaluateAlert('demand_drop', latestMetrics, () => this.demandDropRule.evaluate(smeOSInput, signalsForTrendAlerts), 'Demand Drop')
@@ -1203,7 +1216,14 @@ class MonitoringService {
     
     // Get branch modules (needed for alert scope checks and legacy type mapping)
     const branchModules = this.getBranchModules(setup, currentBranchId);
-    
+
+    // Set businessType on smeOSInput for alert rule threshold calibration
+    if (branchModules.includes('accommodation')) {
+      smeOSInput.businessType = 'accommodation';
+    } else if (branchModules.includes('fnb')) {
+      smeOSInput.businessType = 'cafe_restaurant';
+    }
+
     // Map modules to legacy format expected by DataConfidenceRiskRule
     const legacyBusinessType = branchModules.includes('accommodation') 
       ? 'hotel' as 'hotel' | 'cafe' | 'resort' | 'restaurant'
@@ -1542,28 +1562,18 @@ class MonitoringService {
         })();
     
     // 6. Cash Flow Volatility Alert (General)
-    // Requires: dailyRevenue, >=60 days
+    // Requires: dailyRevenue, >=14 days (uses long-range DB signals when available)
+    const cashFlowVolatilitySignals = longRangeSignals60.length > 0
+      ? longRangeSignals60
+      : allSignals.map(signal => ({
+          timestamp: signal.timestamp,
+          dailyRevenue: signal.revenue7Days / 7,
+        }));
     const cashFlowVolatilityAlert = latestMetrics
       ? this.safeEvaluateAlert('cash_flow_volatility', latestMetrics, () => {
-          const cashFlowVolatilitySignals = allSignals.map(signal => ({
-            timestamp: signal.timestamp,
-            dailyRevenue: signal.revenue7Days / 7,
-          }));
-          if (cashFlowVolatilitySignals.length < 60) {
-            return null;
-          }
           return this.cashFlowVolatilityRule.evaluate(smeOSInput, cashFlowVolatilitySignals);
         }, 'Cash Flow Volatility')
-      : (() => {
-          const cashFlowVolatilitySignals = allSignals.map(signal => ({
-            timestamp: signal.timestamp,
-            dailyRevenue: signal.revenue7Days / 7,
-          }));
-          if (cashFlowVolatilitySignals.length < 60) {
-            return null;
-          }
-          return this.cashFlowVolatilityRule.evaluate(smeOSInput, cashFlowVolatilitySignals);
-        })();
+      : this.cashFlowVolatilityRule.evaluate(smeOSInput, cashFlowVolatilitySignals);
     
     // 7. Break-Even Risk Alert (General)
     // Requires: dailyRevenue, dailyExpenses, >=30 days
@@ -1627,28 +1637,18 @@ class MonitoringService {
         })();
     
     // 8. Seasonality Risk Alert (General)
-    // Requires: dailyRevenue, >=90 days
+    // Requires: dailyRevenue, >=21 days (uses long-range DB signals when available)
+    const seasonalitySignals = longRangeSignals90.length > 0
+      ? longRangeSignals90
+      : allSignals.map(signal => ({
+          timestamp: signal.timestamp,
+          dailyRevenue: signal.revenue7Days / 7,
+        }));
     const seasonalityRiskAlert = latestMetrics
       ? this.safeEvaluateAlert('seasonality_risk', latestMetrics, () => {
-          const seasonalitySignals = allSignals.map(signal => ({
-            timestamp: signal.timestamp,
-            dailyRevenue: signal.revenue7Days / 7,
-          }));
-          if (seasonalitySignals.length < 90) {
-            return null;
-          }
           return this.seasonalityRiskRule.evaluate(smeOSInput, seasonalitySignals);
         }, 'Seasonality Risk')
-      : (() => {
-          const seasonalitySignals = allSignals.map(signal => ({
-            timestamp: signal.timestamp,
-            dailyRevenue: signal.revenue7Days / 7,
-          }));
-          if (seasonalitySignals.length < 90) {
-            return null;
-          }
-          return this.seasonalityRiskRule.evaluate(smeOSInput, seasonalitySignals);
-        })();
+      : this.seasonalityRiskRule.evaluate(smeOSInput, seasonalitySignals);
 
     // 9. Cash Runway Alert (General)
     // Requires: cashBalance, cashFlows
@@ -1977,9 +1977,7 @@ class MonitoringService {
     // Ensure crisis scenario triggers at least 2-4 alerts based on metrics conditions
     if (latestMetrics && typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('aurasea_test_mode');
-        if (stored) {
-          const parsed = JSON.parse(stored);
+        {
           // Detect crisis from metrics only (no simulation scenario)
           const isCrisisScenario = false;
           

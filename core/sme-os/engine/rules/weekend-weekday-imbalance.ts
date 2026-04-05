@@ -13,7 +13,7 @@ export class WeekendWeekdayImbalanceRule {
     occupancyRate: number;
     averageDailyRate: number;
   }>): AlertContract | null {
-    if (!operationalSignals || operationalSignals.length < 28) {
+    if (!operationalSignals || operationalSignals.length < 10) {
       return null;
     }
 
@@ -21,11 +21,11 @@ export class WeekendWeekdayImbalanceRule {
     const twentyEightDaysAgo = new Date(today.getTime() - 28 * 24 * 60 * 60 * 1000);
 
     // Filter to 28-day rolling window
-    const recentSignals = operationalSignals.filter(signal => 
+    const recentSignals = operationalSignals.filter(signal =>
       signal.timestamp >= twentyEightDaysAgo && signal.timestamp <= today
     );
 
-    if (recentSignals.length < 28) {
+    if (recentSignals.length < 10) {
       return null;
     }
 
@@ -116,6 +116,9 @@ export class WeekendWeekdayImbalanceRule {
       adrRatio
     );
 
+    // Apply confidence cap for insufficient data (below full 28-day minimum)
+    const confidence = recentSignals.length < 28 ? 0.6 : 0.75;
+
     const alert: AlertContract = {
       id: `weekend-weekday-imbalance-${Date.now()}`,
       timestamp: today,
@@ -128,7 +131,7 @@ export class WeekendWeekdayImbalanceRule {
         end: new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000)
       },
       message,
-      confidence: 0.75,
+      confidence,
       contributingFactors,
       conditions: [
         `Weekend premium ratio: ${weekendPremiumRatio.toFixed(2)}x`,

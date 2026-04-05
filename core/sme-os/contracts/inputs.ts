@@ -69,4 +69,6 @@ export interface InputContract {
     marketType?: 'tourism' | 'local' | 'mixed';
     alertSensitivity?: 'low' | 'medium' | 'high'; // PART 1.4: Alert sensitivity level
   };
+  // Business vertical for alert rule calibration
+  businessType?: 'accommodation' | 'cafe_restaurant';
 }

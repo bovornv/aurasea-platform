@@ -512,7 +512,7 @@ export default function LogTodayPage() {
         date: today,
         revenue: calculatedRevenue, // Always required
         cost: undefined, // Will be estimated by system
-        cashBalance: isOwner && financeData.cashBalance ? safeNumber(financeData.cashBalance, undefined) : undefined,
+        cashBalance: safeNumber(financeData.cashBalance, undefined) ?? 0,
       };
       
       // Accommodation: save rooms_available and staff_count from current form values. Upsert ON CONFLICT (branch_id, metric_date).
