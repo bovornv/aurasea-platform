@@ -72,15 +72,15 @@ export function DayOfWeekChart({
 
   if (!bars || bars.every((b) => b.avg === 0)) {
     return (
-      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 13 }}>
+      <div style={{ height: '100%', minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 13 }}>
         {emptyMessage}
       </div>
     );
   }
 
   return (
-    <div style={{ height, width: '100%' }}>
-      <svg width="100%" height={height} viewBox={`0 0 ${chartWidth} ${height}`} preserveAspectRatio="xMidYMid meet">
+    <div style={{ height: '100%', width: '100%', minHeight: 220 }}>
+      <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth} ${height}`} preserveAspectRatio="xMidYMid meet">
         <line x1={PAD_LEFT} y1={PAD_TOP} x2={PAD_LEFT} y2={height - PAD_BOTTOM} stroke={AXIS_COLOR} strokeWidth="1" />
         <line x1={PAD_LEFT} y1={height - PAD_BOTTOM} x2={chartWidth - PAD_RIGHT} y2={height - PAD_BOTTOM} stroke={AXIS_COLOR} strokeWidth="1" />
         {yTicks.map((t, i) => (

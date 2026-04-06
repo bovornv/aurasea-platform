@@ -376,6 +376,13 @@ export const translations = {
       heatmapAbove: 'This week is tracking above last week — momentum is building.',
       heatmapBelow: 'This week is trailing last week — check for demand shifts.',
       heatmapStable: 'Performance is steady week over week.',
+      // Forward Demand chart — Rooms on Books signal
+      fwdFarBehind: '{date7} is {gap7} rooms behind your typical {day7} pace — a flash promotion this week could help.',
+      fwdModerateBehind: 'Bookings for {date7} are {gap7} rooms below your usual pace — watch closely and consider a promotion.',
+      fwdOnPace: 'Bookings for {date7} are tracking at your typical {day7} pace — hold pricing and monitor.',
+      fwdAhead: '{date7} is {ahead} rooms ahead of your typical pace — consider raising the rate now.',
+      fwdCollecting: 'Collecting booking pace data — pace comparison available in {n} more days.',
+      fwdNoData: 'Enter rooms on books in Enter Data to see your forward demand signal.',
     },
     // Dashboard
     hospitality: {
@@ -853,6 +860,13 @@ export const translations = {
       heatmapAbove: 'สัปดาห์นี้ดีกว่าสัปดาห์ที่แล้ว — โมเมนตัมกำลังสร้างตัว',
       heatmapBelow: 'สัปดาห์นี้ต่ำกว่าสัปดาห์ที่แล้ว — ตรวจสอบการเปลี่ยนแปลงของดีมานด์',
       heatmapStable: 'ประสิทธิภาพเสถียรเมื่อเทียบสัปดาห์ต่อสัปดาห์',
+      // Forward Demand chart — Rooms on Books signal
+      fwdFarBehind: '{date7} ขาดอีก {gap7} ห้อง จากจำนวนปกติของวัน{day7} — โปรโมชั่นด่วนสัปดาห์นี้อาจช่วยได้',
+      fwdModerateBehind: 'การจองสำหรับ {date7} ต่ำกว่าจังหวะปกติ {gap7} ห้อง — ติดตามอย่างใกล้ชิดและพิจารณาโปรโมชั่น',
+      fwdOnPace: 'การจองสำหรับ {date7} อยู่ในระดับจังหวะปกติของวัน{day7} — รักษาราคาและติดตาม',
+      fwdAhead: '{date7} จองล่วงหน้าเกินจำนวนปกติ {ahead} ห้อง — ลองปรับราคาขึ้นได้เลย',
+      fwdCollecting: 'กำลังเก็บข้อมูลจังหวะการจอง — การเปรียบเทียบจะพร้อมในอีก {n} วัน',
+      fwdNoData: 'ป้อนห้องที่จองแล้วใน Enter Data เพื่อดูสัญญาณความต้องการล่วงหน้า',
     },
     // Dashboard
     hospitality: {

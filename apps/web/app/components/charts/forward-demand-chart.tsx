@@ -23,6 +23,19 @@ const PLOT_W = CHART_WIDTH - PAD_LEFT - PAD_RIGHT;
 const DOW_LABELS_EN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DOW_LABELS_TH = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
 
+// Signal dot colors — same values as TrendChartCard's SIGNAL_COLORS
+const SIGNAL_COLORS: Record<string, string> = {
+  green: '#16a34a',
+  amber: '#d97706',
+  red: '#ef4444',
+  info: '#6b7280',
+};
+
+// Full day names for the signal insight text (indexed by JS getDay(): 0=Sun … 6=Sat)
+const DAY_NAMES_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+// Short Thai day-name suffixes used after "วัน" in templates
+const DAY_NAMES_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+
 function isoDateAddDays(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T12:00:00`);
   d.setDate(d.getDate() + days);
@@ -198,27 +211,91 @@ export function ForwardDemandChart({
     dateLabel: dates[i] ? formatShortDate(dates[i]!, locale) : '',
   }));
 
-  // Pace text
-  const paceText = useMemo(() => {
-    if (!hasBaseline) {
+  // Signal insight — replaces the old plain-text paceText
+  const signalInsight = useMemo((): { signal: string; text: string } => {
+    if (!latestMetric) {
+      return { signal: 'info', text: th ? 'ไม่มีข้อมูล' : 'No data' };
+    }
+
+    const rob7 = latestMetric.roomsOnBooks7 ?? 0;
+    const rob14 = latestMetric.roomsOnBooks14 ?? 0;
+
+    // Condition 6 — no forward data entered
+    if (rob7 === 0 && rob14 === 0) {
       return {
+        signal: 'info',
         text: th
-          ? 'ข้อมูลน้อยกว่า 30 วัน — ยังไม่มีเส้นฐาน'
-          : 'Less than 30 days of history — no baseline yet',
-        color: '#9ca3af',
+          ? 'ป้อนห้องที่จองแล้วใน Enter Data เพื่อดูสัญญาณความต้องการล่วงหน้า'
+          : 'Enter rooms on books in Enter Data to see your forward demand signal.',
       };
     }
-    if (paceStatus === 'ahead') {
+
+    // Condition 5 — not enough history yet (< 14 data points with rooms sold)
+    const histCount = historicalMetrics.filter((m) => m.roomsSold != null && m.roomsSold > 0).length;
+    if (histCount < 14) {
+      const n = Math.max(1, 14 - histCount);
       return {
-        text: th ? 'การจองเป็นไปตามแผน ✓' : 'Booking pace is on track ✓',
-        color: '#059669',
+        signal: 'info',
+        text: th
+          ? `กำลังเก็บข้อมูลจังหวะการจอง — การเปรียบเทียบจะพร้อมในอีก ${n} วัน`
+          : `Collecting booking pace data — pace comparison available in ${n} more days.`,
       };
     }
+
+    // Check if we have a valid baseline for day +7
+    const baseline7 = baselineValues[7];
+    if (baseline7 == null || baseline7 === 0) {
+      return {
+        signal: 'info',
+        text: th
+          ? 'กำลังเก็บข้อมูลจังหวะการจอง — การเปรียบเทียบจะพร้อมเร็วๆ นี้'
+          : 'Collecting booking pace data — comparison will be available soon.',
+      };
+    }
+
+    const date7 = dates[7]!;
+    const gap7 = Math.round(baseline7 - rob7); // positive = behind, negative = ahead
+
+    const dowJs = new Date(`${date7}T12:00:00`).getDay();
+    const day7Name = th ? DAY_NAMES_TH[dowJs]! : DAY_NAMES_EN[dowJs]!;
+    const dateLabel = formatShortDate(date7, locale);
+
+    // Condition 1 — far behind (> 15 rooms)
+    if (gap7 > 15) {
+      return {
+        signal: 'red',
+        text: th
+          ? `${dateLabel} ขาดอีก ${gap7} ห้อง จากจำนวนปกติของวัน${day7Name} — โปรโมชั่นด่วนสัปดาห์นี้อาจช่วยได้`
+          : `${dateLabel} is ${gap7} rooms behind your typical ${day7Name} pace — a flash promotion this week could help.`,
+      };
+    }
+    // Condition 2 — moderately behind (5–15 rooms)
+    if (gap7 >= 5) {
+      return {
+        signal: 'amber',
+        text: th
+          ? `การจองสำหรับ ${dateLabel} ต่ำกว่าจังหวะปกติ ${gap7} ห้อง — ติดตามอย่างใกล้ชิดและพิจารณาโปรโมชั่น`
+          : `Bookings for ${dateLabel} are ${gap7} rooms below your usual pace — watch closely and consider a promotion.`,
+      };
+    }
+    // Condition 3 — on pace (gap between -5 and +5)
+    if (gap7 >= -5) {
+      return {
+        signal: 'green',
+        text: th
+          ? `การจองสำหรับ ${dateLabel} อยู่ในระดับจังหวะปกติของวัน${day7Name} — รักษาราคาและติดตาม`
+          : `Bookings for ${dateLabel} are tracking at your typical ${day7Name} pace — hold pricing and monitor.`,
+      };
+    }
+    // Condition 4 — ahead of pace (gap7 < -5, i.e. on_books > baseline by > 5)
+    const ahead = Math.round(Math.abs(gap7));
     return {
-      text: th ? 'การจองต่ำกว่าค่าเฉลี่ยตามวันในสัปดาห์' : 'Booking pace is behind historical average',
-      color: '#d97706',
+      signal: 'green',
+      text: th
+        ? `${dateLabel} จองล่วงหน้าเกินจำนวนปกติ ${ahead} ห้อง — ลองปรับราคาขึ้นได้เลย`
+        : `${dateLabel} is ${ahead} rooms ahead of your typical pace — consider raising the rate now.`,
     };
-  }, [hasBaseline, paceStatus, th]);
+  }, [latestMetric, historicalMetrics, baselineValues, dates, th, locale]);
 
   if (!latestMetric) {
     return (
@@ -320,9 +397,21 @@ export function ForwardDemandChart({
         ))}
       </svg>
 
-      {/* Pace status */}
-      <div style={{ marginTop: 8, fontSize: 12, color: paceText.color, fontWeight: 500 }}>
-        {paceText.text}
+      {/* Forward demand signal — colored dot + one sentence */}
+      <div style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            backgroundColor: SIGNAL_COLORS[signalInsight.signal] ?? SIGNAL_COLORS.info,
+            flexShrink: 0,
+            marginTop: 4,
+          }}
+        />
+        <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.4 }}>
+          {signalInsight.text}
+        </p>
       </div>
 
       {/* Legend */}
