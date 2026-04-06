@@ -432,6 +432,22 @@ export const translations = {
       hmCustomersGap: 'Weekends average {gap} more customers than weekdays — {strongest} is your busiest day.',
       hmCustomersEven: 'Customer traffic is fairly even across the week — {strongest} leads slightly.',
     },
+    // F&B Today — Performance Drivers signals (today vs 7-day average)
+    fnbTodayDrivers: {
+      performanceDrivers: 'Performance Drivers',
+      // Chart 1: Customers + Revenue (today vs weekly avg)
+      custRevBothUp: 'More customers and higher revenue than your weekly average — keep service quality high.',
+      custUpRevDown: 'More customers than usual but revenue is not keeping up — check if low-value orders are pulling the average down.',
+      custDownRevUp: 'Fewer customers than usual but revenue is holding — your higher-value customers are coming in today.',
+      custRevBothDown: 'Both customers and revenue are below your weekly average today — consider a same-day promotion.',
+      custRevNoData: 'Enter today\'s data to see how you compare to your weekly average.',
+      // Chart 2: Customers + Avg Ticket (today vs weekly avg)
+      custTicketBothUp: 'More customers and higher spend per visit than usual — upselling is working today.',
+      custUpTicketDown: 'Good traffic today but spend per customer is below average — prompt staff to recommend add-ons.',
+      custDownTicketUp: 'Quieter than usual but customers are spending more per visit — quality over quantity today.',
+      custTicketBothDown: 'Fewer customers and lower spend per visit today — push a bundle or combo offer right now.',
+      custTicketNoData: 'Enter today\'s data to see spend per customer vs your average.',
+    },
     // Dashboard
     hospitality: {
       dashboard: {
@@ -963,6 +979,22 @@ export const translations = {
       hmRevenue: 'วัน{strongest}สร้างรายได้มากที่สุด (เฉลี่ย ฿{x}) — วัน{weakest}น้อยที่สุด (เฉลี่ย ฿{y})',
       hmCustomersGap: 'วันหยุดสุดสัปดาห์มีลูกค้าเฉลี่ยมากกว่าวันธรรมดา {gap} คน — วัน{strongest}คึกคักที่สุด',
       hmCustomersEven: 'จำนวนลูกค้าสม่ำเสมอตลอดสัปดาห์ — วัน{strongest}นำหน้าเล็กน้อย',
+    },
+    // F&B Today — Performance Drivers signals (today vs 7-day average)
+    fnbTodayDrivers: {
+      performanceDrivers: 'ตัวขับเคลื่อนประสิทธิภาพ',
+      // Chart 1: Customers + Revenue (today vs weekly avg)
+      custRevBothUp: 'ลูกค้าและรายได้สูงกว่าค่าเฉลี่ยรายสัปดาห์ — รักษาคุณภาพบริการให้สูง',
+      custUpRevDown: 'ลูกค้ามากกว่าปกติแต่รายได้ไม่ตาม — ตรวจสอบว่าออร์เดอร์มูลค่าต่ำกำลังดึงค่าเฉลี่ยลงหรือไม่',
+      custDownRevUp: 'ลูกค้าน้อยกว่าปกติแต่รายได้คงที่ — ลูกค้ามูลค่าสูงของคุณมาวันนี้',
+      custRevBothDown: 'ทั้งลูกค้าและรายได้ต่ำกว่าค่าเฉลี่ยรายสัปดาห์วันนี้ — พิจารณาโปรโมชั่นวันเดียวกัน',
+      custRevNoData: 'ป้อนข้อมูลวันนี้เพื่อดูว่าคุณเทียบกับค่าเฉลี่ยรายสัปดาห์อย่างไร',
+      // Chart 2: Customers + Avg Ticket (today vs weekly avg)
+      custTicketBothUp: 'ลูกค้ามากขึ้นและใช้จ่ายต่อครั้งสูงกว่าปกติ — การอัพเซลล์ได้ผลวันนี้',
+      custUpTicketDown: 'ลูกค้ามากวันนี้แต่การใช้จ่ายต่อคนต่ำกว่าค่าเฉลี่ย — กระตุ้นพนักงานแนะนำเมนูเสริม',
+      custDownTicketUp: 'เงียบกว่าปกติแต่ลูกค้าใช้จ่ายต่อครั้งมากขึ้น — คุณภาพมากกว่าปริมาณวันนี้',
+      custTicketBothDown: 'ลูกค้าน้อยลงและใช้จ่ายต่อครั้งน้อยลงวันนี้ — ผลักดันออร์เดอร์ชุดหรือคอมโบทันที',
+      custTicketNoData: 'ป้อนข้อมูลวันนี้เพื่อดูการใช้จ่ายต่อคนเทียบกับค่าเฉลี่ย',
     },
     // Dashboard
     hospitality: {

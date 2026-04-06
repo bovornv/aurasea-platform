@@ -49,7 +49,7 @@ import {
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
 import { ForwardDemandChart } from '../../components/charts/forward-demand-chart';
-import { trendInsightDual, compareLastToPriorWeekTrend } from '../../utils/trend-chart-insights';
+import { compareLastToPriorWeekTrend } from '../../utils/trend-chart-insights';
 import type { TrendSignal } from '../../components/charts/trend-chart-card';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getFnbWeeklyPurchases, type FnbPurchaseSummary } from '../../services/db/fnb-purchase-service';
@@ -865,22 +865,66 @@ export default function BranchOverviewPage() {
       };
     }
     if (isFnb) {
+      const customers = driverChartData.customers;
+      const revenue = driverChartData.revenue;
+      const avgTicket = driverChartData.avgTicket;
+      const n = customers.length;
+
+      // Today = last entry; 7d avg = mean of up to 7 preceding entries
+      const todayCustomers = customers[n - 1] ?? 0;
+      const todayRevenue = revenue.length === n ? (revenue[n - 1] ?? 0) : 0;
+      const todayAvgTicket = avgTicket.length === n ? (avgTicket[n - 1] ?? 0) : 0;
+
+      const priorSlice = (arr: number[]) => arr.slice(Math.max(0, n - 8), n - 1);
+      const mean7d = (arr: number[]) => {
+        const vals = priorSlice(arr).filter((v) => Number.isFinite(v));
+        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      };
+
+      const customers7dAvg = mean7d(customers);
+      const revenue7dAvg = mean7d(revenue.length === n ? revenue : []);
+      const ticket7dAvg = (() => {
+        // avg ticket 7d: mean of revenue/customers for days with customers > 0
+        const prior = priorSlice(customers);
+        const priorRev = revenue.length === n ? priorSlice(revenue) : [];
+        const vals = prior.map((c, i) => (c > 0 && priorRev[i] != null ? priorRev[i]! / c : null)).filter((v): v is number => v != null);
+        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      })();
+
+      const noDataToday = todayCustomers === 0 && todayRevenue === 0;
+
+      // Chart 1: Customers + Revenue signal
+      let custRevSignal: TrendSignal;
+      if (noDataToday) {
+        custRevSignal = { signal: 'info', text: t('fnbTodayDrivers.custRevNoData') };
+      } else if (todayCustomers > customers7dAvg && todayRevenue > revenue7dAvg) {
+        custRevSignal = { signal: 'green', text: t('fnbTodayDrivers.custRevBothUp') };
+      } else if (todayCustomers > customers7dAvg && todayRevenue <= revenue7dAvg) {
+        custRevSignal = { signal: 'amber', text: t('fnbTodayDrivers.custUpRevDown') };
+      } else if (todayCustomers <= customers7dAvg && todayRevenue > revenue7dAvg) {
+        custRevSignal = { signal: 'info', text: t('fnbTodayDrivers.custDownRevUp') };
+      } else {
+        custRevSignal = { signal: 'red', text: t('fnbTodayDrivers.custRevBothDown') };
+      }
+
+      // Chart 2: Customers + Avg Ticket signal
+      let custTicketSignal: TrendSignal;
+      if (todayCustomers === 0) {
+        custTicketSignal = { signal: 'info', text: t('fnbTodayDrivers.custTicketNoData') };
+      } else if (todayCustomers > customers7dAvg && todayAvgTicket > ticket7dAvg) {
+        custTicketSignal = { signal: 'green', text: t('fnbTodayDrivers.custTicketBothUp') };
+      } else if (todayCustomers > customers7dAvg && todayAvgTicket <= ticket7dAvg) {
+        custTicketSignal = { signal: 'amber', text: t('fnbTodayDrivers.custUpTicketDown') };
+      } else if (todayCustomers <= customers7dAvg && todayAvgTicket > ticket7dAvg) {
+        custTicketSignal = { signal: 'info', text: t('fnbTodayDrivers.custDownTicketUp') };
+      } else {
+        custTicketSignal = { signal: 'red', text: t('fnbTodayDrivers.custTicketBothDown') };
+      }
+
       return {
         kind: 'fnb' as const,
-        custRev: trendInsightDual(
-          { values: driverChartData.customers, metric: 'customers' },
-          driverChartData.revenue.length === driverChartData.customers.length
-            ? { values: driverChartData.revenue, metric: 'revenue' }
-            : null,
-          loc
-        ),
-        custTicket: trendInsightDual(
-          { values: driverChartData.customers, metric: 'customers' },
-          driverChartData.avgTicket.length === driverChartData.customers.length
-            ? { values: driverChartData.avgTicket, metric: 'avgTicket' }
-            : null,
-          loc
-        ),
+        custRev: custRevSignal,
+        custTicket: custTicketSignal,
       };
     }
     return null;
@@ -2139,9 +2183,9 @@ export default function BranchOverviewPage() {
         {/* 4. Performance Drivers — placed below Today's Priorities */}
         {(isAccommodation || isFnb) && driverChartData && driverChartData.revenue.length >= 2 ? (
           <div style={{ marginTop: 32 }}>
-            <h2 style={{ fontSize: 17, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 16 }}>
-              {locale === 'th' ? 'ตัวขับเคลื่อนประสิทธิภาพ' : 'Performance Drivers'}
-            </h2>
+            <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase', margin: 0, marginBottom: 16 }}>
+              {t('fnbTodayDrivers.performanceDrivers')}
+            </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
               {isAccommodation && (
                 <>
@@ -2199,16 +2243,19 @@ export default function BranchOverviewPage() {
                 </>
               )}
               {isFnb && (
-                <>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(12, 1fr)',
+                  gap: 16,
+                }}>
                   <TrendChartCard
                     legend={[
                       { label: locale === 'th' ? 'จำนวนลูกค้า' : 'Customers', color: '#2563eb' },
                       { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
                     ]}
-                    cols={12}
+                    cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custRev.problem : ''}
-                    recommendation={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custRev.recommendation : ''}
+                    insight={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custRev : null}
                   >
                     <DecisionTrendChart
                       values={driverChartData.customers}
@@ -2236,10 +2283,9 @@ export default function BranchOverviewPage() {
                       { label: locale === 'th' ? 'จำนวนลูกค้า' : 'Customers', color: '#2563eb' },
                       { label: locale === 'th' ? 'ค่าใช้จ่ายเฉลี่ยต่อบิล' : 'Avg Ticket', color: '#7c3aed' },
                     ]}
-                    cols={12}
+                    cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custTicket.problem : ''}
-                    recommendation={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custTicket.recommendation : ''}
+                    insight={performanceDriverInsights?.kind === 'fnb' ? performanceDriverInsights.custTicket : null}
                   >
                     <DecisionTrendChart
                       values={driverChartData.customers}
@@ -2259,7 +2305,7 @@ export default function BranchOverviewPage() {
                       insightRevenue={driverChartData.revenue}
                     />
                   </TrendChartCard>
-                </>
+                </div>
               )}
             </div>
           </div>
