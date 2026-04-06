@@ -386,6 +386,52 @@ export const translations = {
       fwdCollecting: 'Collecting booking pace data — pace comparison available in {n} more days.',
       fwdNoData: 'Enter rooms on books in Enter Data to see your forward demand signal.',
     },
+    // F&B Trend signals
+    fnbSignals: {
+      // Section headers
+      revenueTraffic: 'Revenue & Traffic Performance',
+      costProfitability: 'Cost & Profitability',
+      demandPatterns: 'Demand Patterns',
+      // Chart 1: Customers + Revenue
+      custRevBothUp: 'More customers and higher revenue — service quality and capacity are the priority now.',
+      custUpRevDown: 'More customers but revenue not keeping up — check if low-value orders are pulling down the average.',
+      custDownRevUp: 'Fewer customers but revenue is holding — your higher-value customers are staying loyal.',
+      custRevBothDown: 'Traffic and revenue both declining — run a promotion or review your visibility this week.',
+      custRevNoData: 'Log more days to see customer and revenue trends.',
+      // Chart 2: Customers + Avg Ticket
+      custUpTicketUp: 'More customers spending more per visit — upselling is working.',
+      custUpTicketDown: 'Busier but customers spending less per visit — focus staff on recommending add-ons.',
+      custDownTicketUp: 'Fewer visits but higher spend per customer — your regulars are your most valuable asset.',
+      custTicketBothDown: 'Both traffic and average spend are falling — review menu pricing and consider a bundle promotion.',
+      custTicketNoData: 'Log more days to see customer and ticket trends.',
+      // Chart 3: Revenue + Avg Ticket
+      revUpTicketUp: 'Revenue and average ticket both rising — strong momentum.',
+      revUpTicketDown: 'Revenue up but ticket falling — more customers offsetting lower spend per visit.',
+      revDownTicketUp: 'Revenue softening despite higher tickets — fewer customers. Focus on driving traffic.',
+      revTicketBothDown: 'Revenue and average ticket both falling — review pricing and consider a promotion.',
+      revTicketNoData: 'Log more days to see revenue and ticket trends.',
+      // Chart 4: Day of week (customers)
+      dowWideGapFnb: 'Weekends average {gap}pts above weekdays ({weekend_avg} vs {weekday_avg} customers) — a weekday package could fill those seats.',
+      dowModerateGapFnb: 'Weekends see {gap} more customers than weekdays — consider a midweek offer to balance traffic.',
+      dowBalancedFnb: 'Customer traffic is fairly balanced across the week — weekends lead by only {gap} customers.',
+      dowWeekdayBusierFnb: 'Weekdays outperform weekends ({weekday_avg} vs {weekend_avg} customers) — unusual pattern worth investigating.',
+      dowNoDataFnb: 'Log more days to see day-of-week demand patterns.',
+      // Food Cost chart
+      fcGoodBelow28: 'Food cost averaging {avg}% — well below the 35% target. Strong cost discipline.',
+      fcGoodInRange: 'Food cost averaging {avg}% — within the healthy 28–35% range.',
+      fcWarning: 'Food cost averaging {avg}% — above target. Review supplier prices or portion sizes.',
+      fcCritical: 'Food cost averaging {avg}% — critically high. Immediate review needed.',
+      fcNoData: 'Log food purchases in Enter Data to see your weekly food cost trend.',
+      // Breakeven customers chart
+      bkAllAbove: 'Above breakeven every day this month — {day} is your most profitable day.',
+      bkModerate: '{n} days below breakeven this month — check if those were slow days or high-cost days.',
+      bkCritical: '{n} of 30 days below breakeven — review fixed costs or find ways to grow daily traffic.',
+      bkNoData: 'Enter monthly fixed costs in Settings to see your breakeven line.',
+      // Heatmap insights
+      hmRevenue: '{strongest}s generate the most revenue (avg ฿{x}) — {weakest}s the least (avg ฿{y}).',
+      hmCustomersGap: 'Weekends average {gap} more customers than weekdays — {strongest} is your busiest day.',
+      hmCustomersEven: 'Customer traffic is fairly even across the week — {strongest} leads slightly.',
+    },
     // Dashboard
     hospitality: {
       dashboard: {
@@ -871,6 +917,52 @@ export const translations = {
       fwdAhead: '{date7} จองล่วงหน้าเกินจำนวนปกติ {ahead} ห้อง — ลองปรับราคาขึ้นได้เลย',
       fwdCollecting: 'กำลังเก็บข้อมูลจังหวะการจอง — การเปรียบเทียบจะพร้อมในอีก {n} วัน',
       fwdNoData: 'ป้อนห้องที่จองแล้วใน Enter Data เพื่อดูสัญญาณความต้องการล่วงหน้า',
+    },
+    // F&B Trend signals
+    fnbSignals: {
+      // Section headers
+      revenueTraffic: 'ผลการดำเนินงานรายได้และลูกค้า',
+      costProfitability: 'ต้นทุนและความสามารถในการทำกำไร',
+      demandPatterns: 'รูปแบบความต้องการ',
+      // Chart 1: Customers + Revenue
+      custRevBothUp: 'ลูกค้าและรายได้เพิ่มขึ้นทั้งคู่ — ให้ความสำคัญกับคุณภาพการบริการและความสามารถรองรับ',
+      custUpRevDown: 'ลูกค้าเพิ่มแต่รายได้ไม่ตาม — ตรวจสอบว่าออเดอร์มูลค่าต่ำกำลังดึงค่าเฉลี่ยลงหรือไม่',
+      custDownRevUp: 'ลูกค้าน้อยลงแต่รายได้ยังดี — ลูกค้ามูลค่าสูงยังคงภักดี',
+      custRevBothDown: 'ทั้งลูกค้าและรายได้ลดลง — ลองจัดโปรโมชั่นหรือทบทวนการมองเห็นของร้านสัปดาห์นี้',
+      custRevNoData: 'บันทึกข้อมูลเพิ่มเพื่อดูแนวโน้มลูกค้าและรายได้',
+      // Chart 2: Customers + Avg Ticket
+      custUpTicketUp: 'ลูกค้าเพิ่มและใช้จ่ายต่อครั้งมากขึ้น — การขายเพิ่มกำลังได้ผล',
+      custUpTicketDown: 'ลูกค้าคึกคักแต่ใช้จ่ายต่อครั้งน้อยลง — กระตุ้นพนักงานแนะนำเมนูเสริม',
+      custDownTicketUp: 'ลูกค้าน้อยลงแต่ใช้จ่ายต่อคนสูงขึ้น — ลูกค้าประจำคือสินทรัพย์ที่มีค่าที่สุด',
+      custTicketBothDown: 'ทั้งจำนวนลูกค้าและยอดเฉลี่ยต่อบิลลดลง — ทบทวนราคาเมนูและพิจารณาโปรโมชั่นชุด',
+      custTicketNoData: 'บันทึกข้อมูลเพิ่มเพื่อดูแนวโน้มลูกค้าและยอดเฉลี่ยต่อบิล',
+      // Chart 3: Revenue + Avg Ticket
+      revUpTicketUp: 'รายได้และยอดเฉลี่ยต่อบิลเพิ่มทั้งคู่ — โมเมนตัมดีมาก',
+      revUpTicketDown: 'รายได้เพิ่มแต่ยอดเฉลี่ยลด — ลูกค้ามากขึ้นชดเชยการใช้จ่ายต่อครั้งที่น้อยลง',
+      revDownTicketUp: 'รายได้ลดแม้ยอดเฉลี่ยสูงขึ้น — ลูกค้าน้อยลง ควรเน้นดึงดูดลูกค้าใหม่',
+      revTicketBothDown: 'รายได้และยอดเฉลี่ยต่อบิลลดลงทั้งคู่ — ทบทวนการกำหนดราคาและพิจารณาโปรโมชั่น',
+      revTicketNoData: 'บันทึกข้อมูลเพิ่มเพื่อดูแนวโน้มรายได้และยอดเฉลี่ยต่อบิล',
+      // Chart 4: Day of week (customers)
+      dowWideGapFnb: 'วันหยุดสุดสัปดาห์มีลูกค้าเฉลี่ยสูงกว่าวันธรรมดา {gap} คน ({weekend_avg} vs {weekday_avg}) — แพ็กเกจวันธรรมดาอาจช่วยเพิ่มโต๊ะที่ว่างได้',
+      dowModerateGapFnb: 'วันหยุดสุดสัปดาห์มีลูกค้ามากกว่า {gap} คน — พิจารณาโปรโมชั่นกลางสัปดาห์เพื่อสร้างสมดุล',
+      dowBalancedFnb: 'จำนวนลูกค้าสมดุลดีตลอดสัปดาห์ — วันหยุดนำหน้าเพียง {gap} คน',
+      dowWeekdayBusierFnb: 'วันธรรมดาคึกคักกว่าวันหยุด ({weekday_avg} vs {weekend_avg} คน) — รูปแบบผิดปกติ ควรตรวจสอบ',
+      dowNoDataFnb: 'บันทึกข้อมูลเพิ่มเพื่อดูรูปแบบความต้องการรายวัน',
+      // Food Cost chart
+      fcGoodBelow28: 'ต้นทุนอาหารเฉลี่ย {avg}% — ต่ำกว่าเป้าหมาย 35% มาก วินัยด้านต้นทุนดีมาก',
+      fcGoodInRange: 'ต้นทุนอาหารเฉลี่ย {avg}% — อยู่ในช่วงสุขภาพดี 28–35%',
+      fcWarning: 'ต้นทุนอาหารเฉลี่ย {avg}% — เกินเป้าหมาย ทบทวนราคาซัพพลายเออร์หรือขนาดเสิร์ฟ',
+      fcCritical: 'ต้นทุนอาหารเฉลี่ย {avg}% — สูงวิกฤต ต้องตรวจสอบทันที',
+      fcNoData: 'บันทึกการซื้อวัตถุดิบใน Enter Data เพื่อดูแนวโน้มต้นทุนอาหารรายสัปดาห์',
+      // Breakeven customers chart
+      bkAllAbove: 'เกินจุดคุ้มทุนทุกวันในเดือนนี้ — {day} คือวันที่ทำกำไรได้มากที่สุด',
+      bkModerate: '{n} วันที่ต่ำกว่าจุดคุ้มทุนในเดือนนี้ — ตรวจสอบว่าเป็นวันลูกค้าน้อยหรือต้นทุนสูง',
+      bkCritical: '{n} ใน 30 วันต่ำกว่าจุดคุ้มทุน — ทบทวนต้นทุนคงที่หรือหาวิธีเพิ่มลูกค้ารายวัน',
+      bkNoData: 'ป้อนต้นทุนคงที่รายเดือนใน Settings เพื่อดูเส้นจุดคุ้มทุน',
+      // Heatmap insights
+      hmRevenue: 'วัน{strongest}สร้างรายได้มากที่สุด (เฉลี่ย ฿{x}) — วัน{weakest}น้อยที่สุด (เฉลี่ย ฿{y})',
+      hmCustomersGap: 'วันหยุดสุดสัปดาห์มีลูกค้าเฉลี่ยมากกว่าวันธรรมดา {gap} คน — วัน{strongest}คึกคักที่สุด',
+      hmCustomersEven: 'จำนวนลูกค้าสม่ำเสมอตลอดสัปดาห์ — วัน{strongest}นำหน้าเล็กน้อย',
     },
     // Dashboard
     hospitality: {

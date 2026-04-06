@@ -20,6 +20,7 @@ import { useUserRole } from '../../contexts/user-role-context';
 import { useRouteGuard } from '../../hooks/use-route-guard';
 import { businessGroupService } from '../../services/business-group-service';
 import { saveDailyMetric, getDailyMetrics, getTodayDailyMetric, getTodayDateString, clearDailyMetricsCacheForBranch, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
+import { saveFnbPurchase, getFnbWeeklyPurchases, type FnbPurchaseRow, type FnbPurchaseSummary, getTodayIso, getMondayOfCurrentWeek } from '../../services/db/fnb-purchase-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
 import { operationalSignalsService } from '../../services/operational-signals-service';
 import { useHospitalityAlerts } from '../../hooks/use-hospitality-alerts';
@@ -138,6 +139,23 @@ export default function LogTodayPage() {
   });
   const [financeExpanded, setFinanceExpanded] = useState(false);
 
+  // F&B Purchase log state
+  const [purchaseLogExpanded, setPurchaseLogExpanded] = useState(false);
+  const [purchaseSaving, setPurchaseSaving] = useState(false);
+  const [purchaseSaveSuccess, setPurchaseSaveSuccess] = useState(false);
+  const [weeklyPurchases, setWeeklyPurchases] = useState<FnbPurchaseSummary | null>(null);
+  const [purchaseForm, setPurchaseForm] = useState<{
+    purchase_type: 'food_beverage' | 'non_food_supplies';
+    amount: string;
+    purchase_date: string;
+    note: string;
+  }>({
+    purchase_type: 'food_beverage',
+    amount: '',
+    purchase_date: getTodayIso(),
+    note: '',
+  });
+
   // Accommodation: capacity from latest accommodation_daily_metrics (rooms_available, staff → lock if set)
   const [accommodationCapacityFromMetrics, setAccommodationCapacityFromMetrics] = useState<{
     rooms_available: number | null;
@@ -183,6 +201,12 @@ export default function LogTodayPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Load weekly purchases for F&B branches
+  useEffect(() => {
+    if (!mounted || !branch?.id || !isFnb) return;
+    getFnbWeeklyPurchases(branch.id).then(setWeeklyPurchases);
+  }, [mounted, branch?.id, isFnb]);
 
   // Load today's record + last entry date: pre-fill form when data exists, set status and last-entry line
   useEffect(() => {
@@ -1149,19 +1173,19 @@ export default function LogTodayPage() {
                 </div>
               )}
 
-              {/* Food Cost Today (optional) — F&B only */}
+              {/* Other Cost Today (optional) — F&B only */}
               {isFnb && (
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
-                    {locale === 'th' ? 'ต้นทุนอาหารวันนี้' : 'Food Cost Today'}
+                    {locale === 'th' ? 'ค่าใช้จ่ายอื่นๆ วันนี้' : 'Other Cost Today'}
                     <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
                       ({locale === 'th' ? 'ไม่บังคับ' : 'optional'})
                     </span>
                   </label>
                   <p style={{ fontSize: '11px', color: '#9ca3af', margin: '0 0 0.375rem 0', lineHeight: 1.4 }}>
                     {locale === 'th'
-                      ? 'ต้นทุนวัตถุดิบและอุปกรณ์ที่ใช้ไปวันนี้ ประมาณการจากอัตราส่วนต้นทุนอาหารที่คุณรู้จัก หากไม่มีตัวเลขที่แน่นอน'
-                      : 'Total ingredient and supply cost consumed today. Estimate based on your known food cost ratio if exact figure is unavailable.'}
+                      ? 'ค่าใช้จ่ายเฉพาะกิจวันนี้ เช่น ค่าซ่อม อุปกรณ์ฉุกเฉิน มื้ออาหารพนักงาน ไม่ต้องรวมการซื้อวัตถุดิบ — บันทึกด้านล่างแทน'
+                      : 'One-off costs today (repairs, emergency supplies, staff meals). Do not include food purchases here — log those below.'}
                   </p>
                   <div style={{ position: 'relative' }}>
                     <input
@@ -1523,8 +1547,236 @@ export default function LogTodayPage() {
               )}
             </SectionCard>
           )}
+
+          {/* SECTION 2B: LOG A PURCHASE (F&B only) */}
+          {isFnb && (
+            <SectionCard
+              title={locale === 'th' ? 'บันทึกการซื้อวัตถุดิบ' : 'Log a Purchase'}
+              subtitle={locale === 'th' ? 'บันทึกการซื้อวัตถุดิบและอุปกรณ์รายสัปดาห์' : 'Track weekly food & supply purchases'}
+              collapsible={true}
+              expanded={purchaseLogExpanded}
+              onToggle={() => setPurchaseLogExpanded(!purchaseLogExpanded)}
+            >
+              {purchaseLogExpanded && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  {/* Purchase Type Toggle */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.5rem' }}>
+                      {locale === 'th' ? 'ประเภทการซื้อ' : 'Purchase Type'}
+                    </label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setPurchaseForm({ ...purchaseForm, purchase_type: 'food_beverage' })}
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem 0.75rem',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          border: '1.5px solid',
+                          cursor: 'pointer',
+                          borderColor: purchaseForm.purchase_type === 'food_beverage' ? '#0a0a0a' : '#e5e7eb',
+                          backgroundColor: purchaseForm.purchase_type === 'food_beverage' ? '#0a0a0a' : '#ffffff',
+                          color: purchaseForm.purchase_type === 'food_beverage' ? '#ffffff' : '#374151',
+                        }}
+                      >
+                        {locale === 'th' ? 'วัตถุดิบ / เครื่องดื่ม' : 'Food & Beverage'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPurchaseForm({ ...purchaseForm, purchase_type: 'non_food_supplies' })}
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem 0.75rem',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          border: '1.5px solid',
+                          cursor: 'pointer',
+                          borderColor: purchaseForm.purchase_type === 'non_food_supplies' ? '#0a0a0a' : '#e5e7eb',
+                          backgroundColor: purchaseForm.purchase_type === 'non_food_supplies' ? '#0a0a0a' : '#ffffff',
+                          color: purchaseForm.purchase_type === 'non_food_supplies' ? '#ffffff' : '#374151',
+                        }}
+                      >
+                        {locale === 'th' ? 'อุปกรณ์ที่ไม่ใช่อาหาร' : 'Non-Food Supplies'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Amount */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
+                      {locale === 'th' ? 'จำนวนเงิน (บาท)' : 'Amount (THB)'}
+                      <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>*</span>
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={purchaseForm.amount}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9]/g, '');
+                          setPurchaseForm({ ...purchaseForm, amount: val });
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '0.625rem 3rem 0.625rem 0.75rem',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          textAlign: 'right',
+                          border: '1px solid #e5e7eb',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                        }}
+                        placeholder="0"
+                      />
+                      <span style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', fontSize: '13px', color: '#6b7280' }}>THB</span>
+                    </div>
+                  </div>
+
+                  {/* Date */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
+                      {locale === 'th' ? 'วันที่ซื้อ' : 'Purchase Date'}
+                    </label>
+                    <input
+                      type="date"
+                      value={purchaseForm.purchase_date}
+                      min={(() => { const d = new Date(); d.setDate(d.getDate() - 14); return d.toISOString().slice(0, 10); })()}
+                      max={getTodayIso()}
+                      onChange={(e) => setPurchaseForm({ ...purchaseForm, purchase_date: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.625rem 0.75rem',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        border: '1px solid #e5e7eb',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    <p style={{ fontSize: '11px', color: '#9ca3af', margin: '0.25rem 0 0 0' }}>
+                      {locale === 'th' ? 'ย้อนหลังได้สูงสุด 14 วัน' : 'Up to 14 days back'}
+                    </p>
+                  </div>
+
+                  {/* Note */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
+                      {locale === 'th' ? 'หมายเหตุ (ไม่บังคับ)' : 'Note (optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={100}
+                      value={purchaseForm.note}
+                      onChange={(e) => setPurchaseForm({ ...purchaseForm, note: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '0.625rem 0.75rem',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        border: '1px solid #e5e7eb',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                      placeholder={locale === 'th' ? 'เช่น ซื้อผักจากตลาด' : 'e.g. Market vegetables'}
+                    />
+                  </div>
+
+                  {/* Save Purchase Button */}
+                  <button
+                    type="button"
+                    disabled={purchaseSaving || !purchaseForm.amount || Number(purchaseForm.amount) <= 0}
+                    onClick={async () => {
+                      if (!branch?.id || !purchaseForm.amount || Number(purchaseForm.amount) <= 0) return;
+                      setPurchaseSaving(true);
+                      const result = await saveFnbPurchase(branch.id, {
+                        purchase_date: purchaseForm.purchase_date,
+                        purchase_type: purchaseForm.purchase_type,
+                        amount: Number(purchaseForm.amount),
+                        note: purchaseForm.note.trim() || null,
+                      });
+                      setPurchaseSaving(false);
+                      if (result.ok) {
+                        setPurchaseForm({ ...purchaseForm, amount: '', note: '' });
+                        setPurchaseSaveSuccess(true);
+                        setTimeout(() => setPurchaseSaveSuccess(false), 3000);
+                        // Refresh weekly purchases list
+                        const updated = await getFnbWeeklyPurchases(branch.id);
+                        setWeeklyPurchases(updated);
+                      }
+                    }}
+                    style={{
+                      padding: '0.75rem 1.25rem',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: purchaseSaving || !purchaseForm.amount || Number(purchaseForm.amount) <= 0 ? 'not-allowed' : 'pointer',
+                      border: '1.5px solid #0a0a0a',
+                      backgroundColor: '#ffffff',
+                      color: '#0a0a0a',
+                      opacity: purchaseSaving || !purchaseForm.amount || Number(purchaseForm.amount) <= 0 ? 0.5 : 1,
+                    }}
+                  >
+                    {purchaseSaving
+                      ? (locale === 'th' ? 'กำลังบันทึก...' : 'Saving...')
+                      : (locale === 'th' ? 'บันทึกการซื้อ' : 'Save Purchase')}
+                  </button>
+                  {purchaseSaveSuccess && (
+                    <div style={{ fontSize: '13px', color: '#059669', fontWeight: 500 }}>
+                      ✓ {locale === 'th' ? 'บันทึกสำเร็จ' : 'Purchase saved'}
+                    </div>
+                  )}
+
+                  {/* This Week's Purchases List */}
+                  {weeklyPurchases && weeklyPurchases.rows.length > 0 && (
+                    <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '1rem' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '0.75rem' }}>
+                        {locale === 'th' ? 'การซื้อสัปดาห์นี้' : "This Week's Purchases"}
+                        <span style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.5rem' }}>
+                          ({getMondayOfCurrentWeek()} – {getTodayIso()})
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                        {weeklyPurchases.rows.map((row) => (
+                          <div key={row.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px', color: '#374151', padding: '0.375rem 0', borderBottom: '1px solid #f9fafb' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 500, backgroundColor: row.purchase_type === 'food_beverage' ? '#dcfce7' : '#fef9c3', color: row.purchase_type === 'food_beverage' ? '#166534' : '#854d0e' }}>
+                                {row.purchase_type === 'food_beverage' ? (locale === 'th' ? 'วัตถุดิบ' : 'F&B') : (locale === 'th' ? 'อุปกรณ์' : 'Supplies')}
+                              </span>
+                              <span style={{ color: '#6b7280' }}>{row.purchase_date}</span>
+                              {row.note && <span style={{ color: '#9ca3af' }}>— {row.note}</span>}
+                            </span>
+                            <span style={{ fontWeight: 600 }}>฿{row.amount.toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Totals row */}
+                      <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #e5e7eb', fontSize: '13px', fontWeight: 600 }}>
+                        <span style={{ color: '#166534' }}>
+                          {locale === 'th' ? 'วัตถุดิบ' : 'F&B'}: ฿{weeklyPurchases.foodBevTotal.toLocaleString()}
+                        </span>
+                        <span style={{ color: '#854d0e' }}>
+                          {locale === 'th' ? 'อุปกรณ์' : 'Supplies'}: ฿{weeklyPurchases.nonFoodTotal.toLocaleString()}
+                        </span>
+                        <span style={{ color: '#374151', marginLeft: 'auto' }}>
+                          {locale === 'th' ? 'รวม' : 'Total'}: ฿{(weeklyPurchases.foodBevTotal + weeklyPurchases.nonFoodTotal).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {weeklyPurchases && weeklyPurchases.rows.length === 0 && (
+                    <div style={{ fontSize: '13px', color: '#9ca3af', textAlign: 'center', padding: '1rem 0' }}>
+                      {locale === 'th' ? 'ยังไม่มีการซื้อสัปดาห์นี้' : 'No purchases logged this week yet'}
+                    </div>
+                  )}
+                </div>
+              )}
+            </SectionCard>
+          )}
         </form>
-        
+
         {/* SECTION 3: SYSTEM PREVIEW (Auto after Save) */}
         {previewData && (
           <SectionCard

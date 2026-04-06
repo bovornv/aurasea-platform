@@ -52,6 +52,8 @@ import { ForwardDemandChart } from '../../components/charts/forward-demand-chart
 import { trendInsightDual, compareLastToPriorWeekTrend } from '../../utils/trend-chart-insights';
 import type { TrendSignal } from '../../components/charts/trend-chart-card';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
+import { getFnbWeeklyPurchases, type FnbPurchaseSummary } from '../../services/db/fnb-purchase-service';
+import { computeFnbWeeklyMetrics, type FnbWeeklyMetrics } from '../../utils/fnb-weekly-metrics';
 import { getDataFreshness } from '../../lib/dataFreshness';
 import { isSupabaseAvailable } from '../../lib/supabase/client';
 import {
@@ -141,6 +143,8 @@ export default function BranchOverviewPage() {
   const [fnbRevenueDeltaPct, setFnbRevenueDeltaPct] = useState<number | null | undefined>(undefined);
   // F&B today extras: additional_cost_today + monthly_fixed_cost from most recent fnb_daily_metrics row.
   const [fnbTodayExtras, setFnbTodayExtras] = useState<FnbTodayExtras | null>(null);
+  // F&B weekly purchase log (Mon – today)
+  const [fnbWeeklyPurchaseData, setFnbWeeklyPurchaseData] = useState<FnbPurchaseSummary | null>(null);
   // Accommodation live revenue delta: same pattern — overrides stale branch_status_current.revenue_change_pct_day.
   const [accRevenueDeltaPct, setAccRevenueDeltaPct] = useState<number | null | undefined>(undefined);
   // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
@@ -450,6 +454,7 @@ export default function BranchOverviewPage() {
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
       getFnbRevenueDeltaPct(branch.id).then(setFnbRevenueDeltaPct);
       getFnbTodayExtras(branch.id).then(setFnbTodayExtras);
+      getFnbWeeklyPurchases(branch.id).then(setFnbWeeklyPurchaseData);
       fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
     } else {
       setFnbRevenueDeltaPct(undefined);
@@ -527,6 +532,7 @@ export default function BranchOverviewPage() {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
           getFnbRevenueDeltaPct(branch.id).then(setFnbRevenueDeltaPct);
           getFnbTodayExtras(branch.id).then(setFnbTodayExtras);
+          getFnbWeeklyPurchases(branch.id).then(setFnbWeeklyPurchaseData);
           fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
         }
       }
@@ -1518,6 +1524,16 @@ export default function BranchOverviewPage() {
     return null;
   }, []);
 
+  /** F&B weekly metrics — food cost %, breakeven customers, etc. from purchase log. */
+  const fnbWeeklyMetrics = useMemo((): FnbWeeklyMetrics | null => {
+    if (!isFnb) return null;
+    return computeFnbWeeklyMetrics(
+      fnbWeeklyPurchaseData?.rows ?? [],
+      dailyMetricsForTrends ?? [],
+      fnbTodayExtras?.monthlyFixedCost ?? null
+    );
+  }, [isFnb, fnbWeeklyPurchaseData, dailyMetricsForTrends, fnbTodayExtras?.monthlyFixedCost]);
+
   /** Branch Today metric strip — public.branch_status_current only (via getTodaySummary). */
   const todaySummary = useMemo(() => {
     const row = todaySummaryRow;
@@ -1555,13 +1571,8 @@ export default function BranchOverviewPage() {
       // Prefer live-computed delta from fnb_daily_metrics over the stale branch_status_current value.
       // fnbRevenueDeltaPct=undefined means the fetch hasn't resolved yet → fall back to stale value.
       const fnbDelta = fnbRevenueDeltaPct !== undefined ? fnbRevenueDeltaPct : revenueDeltaPct;
-      // Food Cost % = additional_cost_today / revenue * 100 (1 dp); null when cost not entered or revenue = 0
-      const addCost = fnbTodayExtras?.additionalCostToday ?? null;
-      const revNum = rev != null ? Number(rev) : 0;
-      const foodCostPct =
-        addCost != null && addCost > 0 && revNum > 0
-          ? Math.round((addCost / revNum) * 1000) / 10 // 1 decimal
-          : null;
+      // Food Cost % from weekly purchase log (preferred over today-only additionalCostToday)
+      const foodCostPct = fnbWeeklyMetrics?.foodCostPct ?? null;
       return {
         accommodation: null,
         fnb: {
@@ -1577,24 +1588,13 @@ export default function BranchOverviewPage() {
     }
 
     return { accommodation: null, fnb: null };
-  }, [branch?.moduleType, todaySummaryRow, fnbRevenueDeltaPct, accRevenueDeltaPct, fnbTodayExtras]);
+  }, [branch?.moduleType, todaySummaryRow, fnbRevenueDeltaPct, accRevenueDeltaPct, fnbTodayExtras, fnbWeeklyMetrics]);
 
-  /** Breakeven Customers — F&B only. Null when monthly_fixed_cost or food cost data is unavailable. */
+  /** Breakeven Customers — F&B only. Derived from fnbWeeklyMetrics (purchase log + fixed cost). */
   const fnbBreakevenCustomers = useMemo((): number | null => {
     if (!isFnb) return null;
-    const addCost = fnbTodayExtras?.additionalCostToday ?? null;
-    const mfc = fnbTodayExtras?.monthlyFixedCost ?? null;
-    const cust = todaySummaryRow?.customers ?? fnbTodayExtras?.customers ?? null;
-    const rev = todaySummaryRow?.total_revenue ?? null;
-    if (mfc == null || mfc <= 0) return null;
-    if (addCost == null || cust == null || cust <= 0 || rev == null || rev <= 0) return null;
-    const grossProfitPerCustomer = (Number(rev) - Number(addCost)) / Number(cust);
-    if (grossProfitPerCustomer <= 0) return null;
-    const today = new Date();
-    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-    const dailyFixedCost = Number(mfc) / daysInMonth;
-    return Math.ceil(dailyFixedCost / grossProfitPerCustomer);
-  }, [isFnb, fnbTodayExtras, todaySummaryRow]);
+    return fnbWeeklyMetrics?.breakevenCustomers ?? null;
+  }, [isFnb, fnbWeeklyMetrics]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development' || !branch?.id || !todaySummaryRow) return;
@@ -1977,6 +1977,72 @@ export default function BranchOverviewPage() {
             </span>
           </div>
         ) : null}
+
+        {/* 2b. F&B Cost Pulse — weekly purchase log summary (F&B only) */}
+        {isFnb && fnbWeeklyPurchaseData != null && (
+          <div style={{ marginTop: 12, marginBottom: 4, background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 12 }}>
+              {locale === 'th' ? 'ต้นทุนสัปดาห์นี้' : "This Week's Cost Pulse"}
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                <span style={{ color: '#6b7280', fontWeight: 500 }}>
+                  {locale === 'th' ? 'ซื้อวัตถุดิบสัปดาห์นี้' : 'Food & Bev Purchases'}
+                </span>
+                <span style={{ fontWeight: 600, color: '#111827' }}>
+                  {fnbWeeklyPurchaseData.foodBevTotal > 0
+                    ? `฿${fnbWeeklyPurchaseData.foodBevTotal.toLocaleString()}`
+                    : '—'}
+                </span>
+              </div>
+              {fnbWeeklyMetrics?.foodCostPct != null ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                  <span style={{ color: '#6b7280', fontWeight: 500 }}>
+                    {locale === 'th' ? 'ต้นทุนอาหาร %' : 'Food Cost %'}
+                    <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 4 }}>
+                      {locale === 'th' ? '(เป้า 28–35%)' : '(target 28–35%)'}
+                    </span>
+                  </span>
+                  <span style={{
+                    fontWeight: 700,
+                    color: fnbWeeklyMetrics.foodCostPct > 45 ? '#dc2626'
+                      : fnbWeeklyMetrics.foodCostPct > 35 ? '#d97706'
+                      : '#059669',
+                    fontSize: 14,
+                  }}>
+                    {fnbWeeklyMetrics.foodCostPct.toFixed(1)}%
+                  </span>
+                </div>
+              ) : null}
+              {fnbWeeklyMetrics?.breakevenCustomers != null && (
+                <div style={{ borderTop: '1px solid #f3f4f6', marginTop: 4, paddingTop: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                    <span style={{ color: '#6b7280', fontWeight: 500 }}>
+                      {locale === 'th' ? 'ลูกค้าจุดคุ้มทุน' : 'Breakeven Customers'}
+                    </span>
+                    <span style={{ fontWeight: 600, color: '#111827' }}>
+                      {fnbWeeklyMetrics.breakevenCustomers}
+                    </span>
+                  </div>
+                  {fnbWeeklyMetrics.aboveBreakeven != null && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 13 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: fnbWeeklyMetrics.aboveBreakeven ? '#059669' : '#dc2626', flexShrink: 0, display: 'inline-block' }} />
+                      <span style={{ color: fnbWeeklyMetrics.aboveBreakeven ? '#059669' : '#dc2626', fontWeight: 500 }}>
+                        {fnbWeeklyMetrics.aboveBreakeven
+                          ? (locale === 'th'
+                              ? `เกินจุดคุ้มทุน (${fnbWeeklyMetrics.todayCustomers} ลูกค้า)`
+                              : `Above breakeven (${fnbWeeklyMetrics.todayCustomers} customers today)`)
+                          : (locale === 'th'
+                              ? `ต่ำกว่าจุดคุ้มทุน (${fnbWeeklyMetrics.todayCustomers ?? '—'} ลูกค้า)`
+                              : `Below breakeven (${fnbWeeklyMetrics.todayCustomers ?? '—'} customers today)`)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* 3. Today's Priorities — branch_priorities_current: Fix This First + Next Best Moves */}
         <div
