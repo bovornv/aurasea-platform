@@ -60,25 +60,21 @@ export function computeBreakevenSeries(
       m.monthlyFixedCost == null && (m.variableCostPerRoom == null || m.variableCostPerRoom === 0)
   );
 
+  // Pre-scan to find the most recent non-null monthly_fixed_cost in the window.
+  // This lets rows BEFORE the first entry backward-fill from the nearest known value,
+  // which is the correct UX: if cost was entered once this month, all days use it.
   let lastMfc: number | null = null;
   for (const m of sorted) {
     if (m.monthlyFixedCost != null && m.monthlyFixedCost > 0) lastMfc = m.monthlyFixedCost;
   }
 
-  const nonZeroVarCosts = sorted
-    .filter((m) => m.variableCostPerRoom != null && m.variableCostPerRoom > 0)
-    .map((m) => m.variableCostPerRoom as number);
-  const last7NonZeroVar = nonZeroVarCosts.slice(-7);
-  const fallbackVarCost =
-    last7NonZeroVar.length > 0
-      ? last7NonZeroVar.reduce((s, v) => s + v, 0) / last7NonZeroVar.length
-      : 0;
-
   const result: BreakevenPoint[] = [];
-  let runningMfc = lastMfc;
+  let runningMfc = lastMfc;    // pre-init with most-recent known value (backward+forward fill)
+  let runningVarCost = 0;      // pure forward-fill from 0; rows before first entry have no variable component
 
   for (const m of sorted) {
     if (m.monthlyFixedCost != null && m.monthlyFixedCost > 0) runningMfc = m.monthlyFixedCost;
+    if (m.variableCostPerRoom != null && m.variableCostPerRoom > 0) runningVarCost = m.variableCostPerRoom;
 
     const rooms = roomsAvailable > 0 ? roomsAvailable : (m.roomsAvailable ?? 0);
     const revpar = rooms > 0 ? m.revenue / rooms : 0;
@@ -88,11 +84,7 @@ export function computeBreakevenSeries(
       const d = new Date(`${m.date}T12:00:00`);
       const dim = daysInMonth(d.getFullYear(), d.getMonth());
       const dailyFixed = runningMfc / dim;
-      const varCost =
-        m.variableCostPerRoom != null && m.variableCostPerRoom > 0
-          ? m.variableCostPerRoom
-          : fallbackVarCost;
-      const dailyVariable = varCost * (m.roomsSold ?? 0);
+      const dailyVariable = runningVarCost * (m.roomsSold ?? 0);
       const totalDailyCost = dailyFixed + dailyVariable;
       breakevenRevpar = totalDailyCost / rooms;
     }
@@ -319,10 +311,39 @@ export function BreakevenRevParChart({
 
   if (!hasBreakeven) {
     return (
-      <div style={{ padding: '24px 0', textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
-        {th
-          ? 'กรุณากรอกต้นทุนคงที่รายเดือนและต้นทุนผันแปรต่อห้องเพื่อดูกราฟนี้'
-          : 'Enter monthly fixed cost and variable cost per room to see this chart'}
+      <div
+        style={{
+          padding: '20px 16px',
+          borderRadius: 8,
+          background: '#f9fafb',
+          border: '1px solid #e5e7eb',
+          textAlign: 'center',
+        }}
+      >
+        <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: '#374151' }}>
+          {th ? 'ไม่มีข้อมูลเส้นจุดคุ้มทุน' : 'Breakeven line unavailable'}
+        </p>
+        <p style={{ margin: '0 0 12px', fontSize: 12, color: '#6b7280', lineHeight: 1.5 }}>
+          {th
+            ? 'กรอกต้นทุนคงที่รายเดือนที่ กรอกข้อมูล → การเงินขั้นสูง เพื่อดู RevPAR จุดคุ้มทุน'
+            : 'Enter your monthly fixed costs in Enter Data → Advanced Finance to see your breakeven RevPAR.'}
+        </p>
+        <a
+          href="../enter-data"
+          style={{
+            display: 'inline-block',
+            fontSize: 12,
+            fontWeight: 500,
+            color: '#2563eb',
+            textDecoration: 'none',
+            padding: '5px 12px',
+            border: '1px solid #bfdbfe',
+            borderRadius: 6,
+            background: '#eff6ff',
+          }}
+        >
+          {th ? 'ไปที่ กรอกข้อมูล' : 'Go to Enter Data'}
+        </a>
       </div>
     );
   }

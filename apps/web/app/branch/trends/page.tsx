@@ -284,12 +284,14 @@ export default function BranchTrendsPage() {
 
   const chartLocale = locale === 'th' ? 'th' : 'en';
 
+  // Use dailyMetrics90 (from accommodation_daily_metrics directly) because the
+  // branch_daily_metrics union view omits monthly_fixed_cost and variable_cost_per_room.
   const breakevenProblemRecommendation = useMemo(
     () =>
       isAccommodation
-        ? computeBreakevenProblemRecommendation(dailyMetrics, totalRooms, chartLocale)
+        ? computeBreakevenProblemRecommendation(dailyMetrics90, totalRooms, chartLocale)
         : null,
-    [isAccommodation, dailyMetrics, totalRooms, chartLocale]
+    [isAccommodation, dailyMetrics90, totalRooms, chartLocale]
   );
 
   const branchTrendInsights = useMemo(() => {
@@ -517,7 +519,7 @@ export default function BranchTrendsPage() {
                     recommendation={breakevenProblemRecommendation?.recommendation ?? ''}
                   >
                     <BreakevenRevParChart
-                      dailyMetrics={dailyMetrics.length >= 7 ? dailyMetrics : []}
+                      dailyMetrics={dailyMetrics90.length >= 7 ? dailyMetrics90 : []}
                       roomsAvailable={totalRooms}
                       locale={chartLocale}
                     />
