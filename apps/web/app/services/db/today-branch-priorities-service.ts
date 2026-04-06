@@ -245,6 +245,39 @@ function pickNum(r: Record<string, unknown>, ...keys: string[]): number | null {
   return null;
 }
 
+const NEGATIVE_ALERT_KEYWORDS = ['drop', 'low', 'pressure', 'worsening', 'down', 'compression'];
+
+function isNegativeAlertType(alertType: string | null | undefined): boolean {
+  const lower = (alertType ?? '').toLowerCase();
+  return NEGATIVE_ALERT_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+/**
+ * Same rules as branch overview "Today's Priorities" — keeps company Today aligned with each branch page.
+ * Suppresses contradictory Revenue Drop when live F&B delta is not down; drops negative alerts with ฿0 impact.
+ */
+export function filterTodayBranchPriorityRows(
+  rows: TodayBranchPriorityRow[],
+  options: { isFnb: boolean; fnbRevenueDeltaPct?: number | null }
+): TodayBranchPriorityRow[] {
+  if (!rows.length) return rows;
+  const { isFnb, fnbRevenueDeltaPct } = options;
+  return rows.filter((row) => {
+    if (isNegativeAlertType(row.alert_type)) {
+      const impact = row.impact_thb ?? row.impact_estimate_thb;
+      if (impact === null || impact === undefined || impact === 0) return false;
+    }
+    if (isFnb) {
+      const alertLower = (row.alert_type ?? '').toLowerCase();
+      const isRevDrop = alertLower.includes('revenue') && alertLower.includes('drop');
+      if (isRevDrop && fnbRevenueDeltaPct !== undefined) {
+        if (fnbRevenueDeltaPct !== null && fnbRevenueDeltaPct > -10) return false;
+      }
+    }
+    return true;
+  });
+}
+
 function mapRow(row: Record<string, unknown>, branchId: string): TodayBranchPriorityRow {
   const title = pickStr(row, 'title', 'short_title', 'shortTitle');
   const description = pickStr(row, 'description', 'action_text', 'actionText');

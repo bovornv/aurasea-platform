@@ -9,6 +9,7 @@ import { fetchCompanyTodayPriorities, type TodayPrioritiesRow } from './today-pr
 import {
   defaultBranchPrioritiesFallback,
   fetchTodayBranchPriorities,
+  filterTodayBranchPriorityRows,
   syntheticAccommodationPrioritiesFromTodayUi,
   syntheticFnbPrioritiesFromTodayUi,
   type TodayBranchPriorityRow,
@@ -16,6 +17,7 @@ import {
 import {
   getAccommodationTodayMetricsUi,
   getFnbOperatingStatus,
+  getFnbRevenueDeltaPct,
   getTodaySummary,
 } from './latest-metrics-service';
 import {
@@ -373,12 +375,19 @@ async function fillCompanyPrioritiesFromBranchesAndUi(
   const bids = [...new Set(branchIds.map((x) => x.trim()).filter(Boolean))];
   if (bids.length === 0) return [];
 
+  /** One top priority per branch (same source + filters as branch overview), then org-wide sort. */
   const fromPerBranchView = (
     await Promise.all(
       bids.map(async (bid) => {
         const { branchType, name } = branchMetaFromBundle(bundle, bid);
-        const rows = await fetchTodayBranchPriorities(bid, branchType, 4, locale);
-        return rows.map((br) => branchPriorityRowToCompanyRow(organizationId, br, name));
+        const rows = await fetchTodayBranchPriorities(bid, branchType, 100, locale);
+        const fnbDelta = branchType === 'fnb' ? await getFnbRevenueDeltaPct(bid) : undefined;
+        const filtered = filterTodayBranchPriorityRows(rows, {
+          isFnb: branchType === 'fnb',
+          fnbRevenueDeltaPct: fnbDelta,
+        });
+        const top = filtered[0];
+        return top ? [branchPriorityRowToCompanyRow(organizationId, top, name)] : [];
       })
     )
   ).flat();
@@ -393,6 +402,7 @@ async function fillCompanyPrioritiesFromBranchesAndUi(
   const syntheticFlat: TodayPrioritiesRow[] = [];
   for (const bid of bids) {
     const { name, branchType } = branchMetaFromBundle(bundle, bid);
+    const fnbDelta = branchType === 'fnb' ? await getFnbRevenueDeltaPct(bid) : undefined;
     let brRows: TodayBranchPriorityRow[] = [];
     if (branchType === 'fnb') {
       const fnb = await getFnbOperatingStatus(bid);
@@ -421,7 +431,14 @@ async function fillCompanyPrioritiesFromBranchesAndUi(
         brRows = defaultBranchPrioritiesFallback(bid, name, 'accommodation', locale);
       }
     }
-    syntheticFlat.push(...brRows.map((br) => branchPriorityRowToCompanyRow(organizationId, br, name)));
+    const filtered = filterTodayBranchPriorityRows(brRows, {
+      isFnb: branchType === 'fnb',
+      fnbRevenueDeltaPct: fnbDelta,
+    });
+    const top = filtered[0];
+    if (top) {
+      syntheticFlat.push(branchPriorityRowToCompanyRow(organizationId, top, name));
+    }
   }
 
   syntheticFlat.sort((a, b) => (b.sort_score ?? 0) - (a.sort_score ?? 0));
@@ -538,9 +555,10 @@ export async function fetchCompanyTodayDashboard(
     }
 
     let priorities = panels.priorities;
-    if (orgId && priorities.length === 0 && branchIds.length > 0) {
+    if (orgId && branchIds.length > 0) {
       try {
-        priorities = await fillCompanyPrioritiesFromBranchesAndUi(orgId, branchIds, bundle, locale, prioLim);
+        const fromBranches = await fillCompanyPrioritiesFromBranchesAndUi(orgId, branchIds, bundle, locale, prioLim);
+        priorities = fromBranches.length > 0 ? fromBranches : panels.priorities;
       } catch {
         priorities = panels.priorities;
       }
