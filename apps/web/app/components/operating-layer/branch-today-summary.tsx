@@ -3,7 +3,7 @@
 /**
  * BranchTodaySummary — Top Metrics only (premium, Stripe/Linear-style).
  * Accommodation: Revenue → Occupancy → Rooms → ADR → RevPAR → Profitability (↑/→/↓) → Health.
- * F&B: Revenue | Customers | Avg Ticket | Avg Cost | Margin | Health.
+ * F&B: Revenue | Customers | Avg Ticket | Food Cost | Margin | Health.
  * Right-aligned data freshness chip: same status as Enter Data page (shared getDataFreshnessStatus).
  */
 
@@ -108,7 +108,7 @@ export interface BranchTodaySummaryProps {
   lastUpdatedDate?: string | null;
   accommodation?: BranchTodaySummaryAccommodation | null;
   fnb?: BranchTodaySummaryFnb | null;
-  /** Avg cost + margin: from public.branch_status_current (Branch overview passes snapshot row only). */
+  /** Margin (and optional avg cost for other surfaces): from public.branch_status_current. */
   fnbProfitability?: {
     avgDailyCost: number | null;
     /** Margin symbol from branch_status_current.margin_symbol (▲/▼/—). */
@@ -153,7 +153,6 @@ export function BranchTodaySummary({
   const labelCustomers = isTh ? 'ลูกค้า' : 'Customers';
   const labelAvgTicket = isTh ? 'ค่าเฉลี่ยต่อบิล' : 'Avg Ticket';
   const labelProfitability = isTh ? 'กำไร' : 'Profitability';
-  const labelAvgCost = isTh ? 'ต้นทุนเฉลี่ย' : 'Avg Cost';
   const labelMargin = isTh ? 'มาร์จิ้น' : 'Margin';
   const labelFoodCost = isTh ? 'ต้นทุนอาหาร' : 'Food Cost';
   const insufficientData = isTh ? 'ข้อมูลไม่เพียงพอ' : 'Insufficient data';
@@ -260,9 +259,6 @@ export function BranchTodaySummary({
     const avgStr = f.avgTicket != null ? formatRevenue(f.avgTicket) : '—';
     const health = f.healthScore != null ? Math.round(f.healthScore) : '—';
     const healthIcon = getHealthIcon(f.healthScore);
-    const avgCost = fnbProfitability?.avgDailyCost;
-    const avgCostStr =
-      avgCost != null && Number.isFinite(avgCost) ? formatRevenue(avgCost) : '—';
     // Food Cost %
     const fcp = f.foodCostPct;
     const foodCostStr = fcp != null && Number.isFinite(fcp) ? `${fcp.toFixed(1)}%` : '—';
@@ -298,11 +294,6 @@ export function BranchTodaySummary({
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelAvgTicket}</span>
               <span style={valueStyle}>{avgStr}</span>
-            </span>
-            <span style={sepStyle}>{sep}</span>
-            <span style={segmentStyle}>
-              <span style={labelStyle}>{labelAvgCost}</span>
-              <span style={valueStyle}>{avgCostStr}</span>
             </span>
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>

@@ -280,7 +280,9 @@ export function FnbBreakevenMiniChart({ branchId, locale = 'en' }: FnbBreakevenM
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 16px' }}>
       <p style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: '0 0 6px 0' }}>
-        {th ? 'ลูกค้า vs จุดคุ้มทุน (7 วัน)' : 'Customers vs Breakeven (7 days)'}
+        {th
+          ? 'จำนวนลูกค้า (จริง vs จุดคุ้มทุน: 7 วัน)'
+          : 'No. of customers (Actual vs Breakeven: 7 days)'}
       </p>
 
       {!hasAnyData ? (

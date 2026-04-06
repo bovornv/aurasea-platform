@@ -252,8 +252,13 @@ export function FnbFoodCostMiniChart({ branchId, locale = 'en' }: FnbFoodCostMin
 
   return (
     <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '14px 16px' }}>
-      <p style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: '0 0 6px 0' }}>
-        {th ? 'ต้นทุนอาหาร % (4 สัปดาห์)' : 'Food Cost % (4 weeks)'}
+      <p style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: '0 0 2px 0' }}>
+        {th ? 'ต้นทุนอาหาร % แต่ละสัปดาห์ (4 สัปดาห์)' : 'Food Cost % in each week (4 weeks)'}
+      </p>
+      <p style={{ fontSize: 11, fontWeight: 400, color: '#6b7280', margin: '0 0 8px 0', lineHeight: 1.35 }}>
+        {th
+          ? 'ต้นทุนการซื้อเป็น % ของรายได้ (เป้า 28–35%) วันจันทร์–อาทิตย์'
+          : 'Purchase cost as % of revenue (target 28–35%), Monday–Sunday'}
       </p>
 
       {!hasAnyData ? (

@@ -2148,12 +2148,31 @@ export default function BranchOverviewPage() {
           );
         })()}
 
-        {/* 2c. F&B compact charts — Breakeven (7-day) + Food Cost % (4-week) */}
+        {/* 2c. F&B compact charts — Breakeven (7-day) + Food Cost % (4-week); 50/50 on desktop */}
         {isFnb && branch?.id && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, marginTop: 12, marginBottom: 4 }}>
-            <FnbBreakevenMiniChart branchId={branch.id} locale={locale === 'th' ? 'th' : 'en'} />
-            <FnbFoodCostMiniChart branchId={branch.id} locale={locale === 'th' ? 'th' : 'en'} />
-          </div>
+          <>
+            <style>{`
+              .fnb-today-mini-charts {
+                display: grid;
+                gap: 12px;
+                grid-template-columns: 1fr;
+                margin-top: 12px;
+                margin-bottom: 4px;
+              }
+              .fnb-today-mini-charts > * {
+                min-width: 0;
+              }
+              @media (min-width: 900px) {
+                .fnb-today-mini-charts {
+                  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                }
+              }
+            `}</style>
+            <div className="fnb-today-mini-charts">
+              <FnbBreakevenMiniChart branchId={branch.id} locale={locale === 'th' ? 'th' : 'en'} />
+              <FnbFoodCostMiniChart branchId={branch.id} locale={locale === 'th' ? 'th' : 'en'} />
+            </div>
+          </>
         )}
 
         {/* 3. Today's Priorities — branch_priorities_current: Fix This First + Next Best Moves */}
