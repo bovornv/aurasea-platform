@@ -1149,15 +1149,20 @@ export default function LogTodayPage() {
                 </div>
               )}
 
-              {/* Additional Cost Today (optional) — F&B only */}
+              {/* Food Cost Today (optional) — F&B only */}
               {isFnb && (
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
-                    {locale === 'th' ? 'ต้นทุนเพิ่มเติมวันนี้' : 'Additional Cost Today'}
+                    {locale === 'th' ? 'ต้นทุนอาหารวันนี้' : 'Food Cost Today'}
                     <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
                       ({locale === 'th' ? 'ไม่บังคับ' : 'optional'})
                     </span>
                   </label>
+                  <p style={{ fontSize: '11px', color: '#9ca3af', margin: '0 0 0.375rem 0', lineHeight: 1.4 }}>
+                    {locale === 'th'
+                      ? 'ต้นทุนวัตถุดิบและอุปกรณ์ที่ใช้ไปวันนี้ ประมาณการจากอัตราส่วนต้นทุนอาหารที่คุณรู้จัก หากไม่มีตัวเลขที่แน่นอน'
+                      : 'Total ingredient and supply cost consumed today. Estimate based on your known food cost ratio if exact figure is unavailable.'}
+                  </p>
                   <div style={{ position: 'relative' }}>
                     <input
                       type="text"

@@ -32,6 +32,7 @@ import {
   getOperatingStatusData,
   getFnbOperatingStatus,
   getFnbRevenueDeltaPct,
+  getFnbTodayExtras,
   getAccommodationRevenueDeltaPct,
   getTodaySummary,
   getBranchTrendSeriesWithFallback,
@@ -40,6 +41,7 @@ import {
   isFnbModuleType,
   type OperatingStatusRow,
   type FnbOperatingStatusRow,
+  type FnbTodayExtras,
   type TodaySummaryRow,
   type BranchTrendSeries,
   type AccommodationTodayMetricsUiRow,
@@ -137,6 +139,8 @@ export default function BranchOverviewPage() {
   // F&B live revenue delta: computed from fnb_daily_metrics (overrides stale branch_status_current value).
   // undefined = not yet fetched (fall back to branch_status_current); null = fetched but insufficient data.
   const [fnbRevenueDeltaPct, setFnbRevenueDeltaPct] = useState<number | null | undefined>(undefined);
+  // F&B today extras: additional_cost_today + monthly_fixed_cost from most recent fnb_daily_metrics row.
+  const [fnbTodayExtras, setFnbTodayExtras] = useState<FnbTodayExtras | null>(null);
   // Accommodation live revenue delta: same pattern — overrides stale branch_status_current.revenue_change_pct_day.
   const [accRevenueDeltaPct, setAccRevenueDeltaPct] = useState<number | null | undefined>(undefined);
   // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
@@ -445,9 +449,11 @@ export default function BranchOverviewPage() {
       setOperatingStatusData(null);
       getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
       getFnbRevenueDeltaPct(branch.id).then(setFnbRevenueDeltaPct);
+      getFnbTodayExtras(branch.id).then(setFnbTodayExtras);
       fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
     } else {
       setFnbRevenueDeltaPct(undefined);
+      setFnbTodayExtras(null);
       setFnbOperatingStatus(null);
       getOperatingStatusData(branch.id, 'accommodation').then(setOperatingStatusData);
       if (branch.moduleType === 'accommodation') {
@@ -520,6 +526,7 @@ export default function BranchOverviewPage() {
         if (branch.moduleType === 'fnb') {
           getFnbOperatingStatus(branch.id).then(setFnbOperatingStatus);
           getFnbRevenueDeltaPct(branch.id).then(setFnbRevenueDeltaPct);
+          getFnbTodayExtras(branch.id).then(setFnbTodayExtras);
           fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
         }
       }
@@ -1548,6 +1555,13 @@ export default function BranchOverviewPage() {
       // Prefer live-computed delta from fnb_daily_metrics over the stale branch_status_current value.
       // fnbRevenueDeltaPct=undefined means the fetch hasn't resolved yet → fall back to stale value.
       const fnbDelta = fnbRevenueDeltaPct !== undefined ? fnbRevenueDeltaPct : revenueDeltaPct;
+      // Food Cost % = additional_cost_today / revenue * 100 (1 dp); null when cost not entered or revenue = 0
+      const addCost = fnbTodayExtras?.additionalCostToday ?? null;
+      const revNum = rev != null ? Number(rev) : 0;
+      const foodCostPct =
+        addCost != null && addCost > 0 && revNum > 0
+          ? Math.round((addCost / revNum) * 1000) / 10 // 1 decimal
+          : null;
       return {
         accommodation: null,
         fnb: {
@@ -1557,12 +1571,30 @@ export default function BranchOverviewPage() {
           customersDeltaPct: null,
           avgTicket: row.avg_ticket,
           healthScore: row.health_score,
+          foodCostPct,
         },
       };
     }
 
     return { accommodation: null, fnb: null };
-  }, [branch?.moduleType, todaySummaryRow, fnbRevenueDeltaPct, accRevenueDeltaPct]);
+  }, [branch?.moduleType, todaySummaryRow, fnbRevenueDeltaPct, accRevenueDeltaPct, fnbTodayExtras]);
+
+  /** Breakeven Customers — F&B only. Null when monthly_fixed_cost or food cost data is unavailable. */
+  const fnbBreakevenCustomers = useMemo((): number | null => {
+    if (!isFnb) return null;
+    const addCost = fnbTodayExtras?.additionalCostToday ?? null;
+    const mfc = fnbTodayExtras?.monthlyFixedCost ?? null;
+    const cust = todaySummaryRow?.customers ?? fnbTodayExtras?.customers ?? null;
+    const rev = todaySummaryRow?.total_revenue ?? null;
+    if (mfc == null || mfc <= 0) return null;
+    if (addCost == null || cust == null || cust <= 0 || rev == null || rev <= 0) return null;
+    const grossProfitPerCustomer = (Number(rev) - Number(addCost)) / Number(cust);
+    if (grossProfitPerCustomer <= 0) return null;
+    const today = new Date();
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const dailyFixedCost = Number(mfc) / daysInMonth;
+    return Math.ceil(dailyFixedCost / grossProfitPerCustomer);
+  }, [isFnb, fnbTodayExtras, todaySummaryRow]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development' || !branch?.id || !todaySummaryRow) return;

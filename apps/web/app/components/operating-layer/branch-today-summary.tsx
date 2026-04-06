@@ -97,6 +97,8 @@ export interface BranchTodaySummaryFnb {
   customersDeltaPct: number | null;
   avgTicket: number | null;
   healthScore: number | null;
+  /** Food Cost % = additional_cost_today / revenue * 100. Null when not entered. */
+  foodCostPct?: number | null;
 }
 
 export interface BranchTodaySummaryProps {
@@ -153,6 +155,7 @@ export function BranchTodaySummary({
   const labelProfitability = isTh ? 'กำไร' : 'Profitability';
   const labelAvgCost = isTh ? 'ต้นทุนเฉลี่ย' : 'Avg Cost';
   const labelMargin = isTh ? 'มาร์จิ้น' : 'Margin';
+  const labelFoodCost = isTh ? 'ต้นทุนอาหาร' : 'Food Cost';
   const insufficientData = isTh ? 'ข้อมูลไม่เพียงพอ' : 'Insufficient data';
   const noYesterday = isTh ? 'ไม่มีข้อมูลเมื่อวาน' : 'no yesterday comparison';
 
@@ -260,6 +263,15 @@ export function BranchTodaySummary({
     const avgCost = fnbProfitability?.avgDailyCost;
     const avgCostStr =
       avgCost != null && Number.isFinite(avgCost) ? formatRevenue(avgCost) : '—';
+    // Food Cost %
+    const fcp = f.foodCostPct;
+    const foodCostStr = fcp != null && Number.isFinite(fcp) ? `${fcp.toFixed(1)}%` : '—';
+    const foodCostColor: React.CSSProperties =
+      fcp == null ? valueStyle
+      : fcp > 45 ? { fontWeight: 600, color: '#dc2626', fontSize: '17px' }  // red alert
+      : fcp > 35 ? { fontWeight: 600, color: '#d97706', fontSize: '17px' }  // amber warning
+      : fcp >= 28 ? valueStyle                                               // grey/neutral
+      : { fontWeight: 600, color: '#059669', fontSize: '17px' };            // green excellent
     return (
       <div style={{ padding: 0 }}>
         <div style={wrapperStyle}>
@@ -291,6 +303,11 @@ export function BranchTodaySummary({
             <span style={segmentStyle}>
               <span style={labelStyle}>{labelAvgCost}</span>
               <span style={valueStyle}>{avgCostStr}</span>
+            </span>
+            <span style={sepStyle}>{sep}</span>
+            <span style={segmentStyle}>
+              <span style={labelStyle}>{labelFoodCost}</span>
+              <span style={foodCostColor}>{foodCostStr}</span>
             </span>
             <span style={sepStyle}>{sep}</span>
             <span style={segmentStyle}>

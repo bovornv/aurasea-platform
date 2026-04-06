@@ -686,6 +686,105 @@ export async function setAccommodationMonthlyFixedCost(
 }
 
 /**
+ * Get latest monthly_fixed_cost for F&B branch (for Owner Settings form).
+ * Reads from fnb_daily_metrics, most recent row with a non-null, positive value.
+ */
+export async function getFnbMonthlyFixedCost(branchId: string): Promise<number | null> {
+  if (branchId == null || branchId === '') return null;
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return null;
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+  try {
+    const { data } = await supabase
+      .from(TABLE_FNB)
+      .select('monthly_fixed_cost')
+      .eq('branch_id', branchId)
+      .not('monthly_fixed_cost', 'is', null)
+      .gt('monthly_fixed_cost', 0)
+      .order('metric_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const row = data as { monthly_fixed_cost?: number | null } | null;
+    return row?.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : null;
+  } catch (e) {
+    logTransientNetworkOnce(`fnbMfcGet:${branchId}`, e, 'DailyMetricsService');
+    if (!isTransientNetworkError(e)) {
+      console.error('[DailyMetricsService] getFnbMonthlyFixedCost error:', e);
+    }
+    return null;
+  }
+}
+
+/**
+ * Save monthly_fixed_cost for F&B branch (Owner Settings only).
+ * Updates the most recent row, or inserts a new row for today if none exists.
+ */
+export async function setFnbMonthlyFixedCost(
+  branchId: string,
+  value: number
+): Promise<{ ok: boolean; error?: string }> {
+  if (branchId == null || branchId === '') return { ok: false, error: 'branchId required' };
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return { ok: false, error: 'Supabase not available' };
+  const supabase = getSupabaseClient();
+  if (!supabase) return { ok: false, error: 'No client' };
+
+  try {
+    const today = getTodayDateString();
+    const { data: latest } = await supabase
+      .from(TABLE_FNB)
+      .select('id, metric_date')
+      .eq('branch_id', branchId)
+      .order('metric_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latest && (latest as { id?: string }).id) {
+      const { error: updateError } = await supabase
+        .from(TABLE_FNB as 'fnb_daily_metrics')
+        .update({ monthly_fixed_cost: value } as never)
+        .eq('id', (latest as { id: string }).id);
+      if (updateError) {
+        logTransientNetworkOnce(`fnbMfcUp:${branchId}`, updateError, 'DailyMetricsService');
+        if (!isTransientNetworkError(updateError)) {
+          console.error('[DailyMetricsService] setFnbMonthlyFixedCost update error:', updateError);
+        }
+        return { ok: false, error: updateError.message };
+      }
+    } else {
+      const insertPayload = {
+        branch_id: branchId,
+        metric_date: today,
+        revenue: 0,
+        monthly_fixed_cost: value,
+        total_customers: null,
+        staff_count: null,
+      };
+      const { error: insertError } = await supabase
+        .from(TABLE_FNB as 'fnb_daily_metrics')
+        .insert(insertPayload as never);
+      if (insertError) {
+        logTransientNetworkOnce(`fnbMfcIn:${branchId}`, insertError, 'DailyMetricsService');
+        if (!isTransientNetworkError(insertError)) {
+          console.error('[DailyMetricsService] setFnbMonthlyFixedCost insert error:', insertError);
+        }
+        return { ok: false, error: insertError.message };
+      }
+    }
+    clearDailyMetricsCacheForBranch(branchId);
+    return { ok: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    logTransientNetworkOnce(`fnbMfcCatch:${branchId}`, e, 'DailyMetricsService');
+    if (!isTransientNetworkError(e)) {
+      console.error('[DailyMetricsService] setFnbMonthlyFixedCost error:', e);
+    }
+    return { ok: false, error: msg };
+  }
+}
+
+/**
  * Save to localStorage (fallback) - Updated for unified fields
  */
 function saveDailyMetricToLocalStorage(metric: DailyMetricInput): boolean {

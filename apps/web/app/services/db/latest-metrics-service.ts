@@ -151,6 +151,42 @@ export async function getFnbRevenueDeltaPct(branchId: string): Promise<number | 
   return Math.round(((todayRev - yesterdayRev) / yesterdayRev) * 1000) / 10; // 1 decimal
 }
 
+/** Today's additional_cost_today + monthly_fixed_cost from the most recent fnb_daily_metrics row. */
+export interface FnbTodayExtras {
+  additionalCostToday: number | null;
+  monthlyFixedCost: number | null;
+  customers: number | null;
+}
+
+/**
+ * Fetch today's food cost and monthly fixed cost from the most recent fnb_daily_metrics row.
+ * Used for Food Cost % and Breakeven Customers on the F&B Today page.
+ */
+export async function getFnbTodayExtras(branchId: string): Promise<FnbTodayExtras> {
+  const empty: FnbTodayExtras = { additionalCostToday: null, monthlyFixedCost: null, customers: null };
+  if (branchId == null || branchId === '') return empty;
+  rejectMockBranchId(branchId);
+  if (!isSupabaseAvailable()) return empty;
+  const supabase = getSupabaseClient();
+  if (!supabase) return empty;
+
+  const { data, error } = await supabase
+    .from('fnb_daily_metrics')
+    .select('metric_date, additional_cost_today, monthly_fixed_cost, total_customers')
+    .eq('branch_id', branchId)
+    .order('metric_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return empty;
+  const row = data as Record<string, unknown>;
+  return {
+    additionalCostToday: row.additional_cost_today != null ? Number(row.additional_cost_today) : null,
+    monthlyFixedCost: row.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : null,
+    customers: row.total_customers != null ? Number(row.total_customers) : null,
+  };
+}
+
 /**
  * Compute accommodation day-over-day revenue % change live from accommodation_daily_metrics.
  * Identical pattern to getFnbRevenueDeltaPct — bypasses the stale branch_status_current column.

@@ -31,7 +31,7 @@ import { useBusinessSetup } from '../../contexts/business-setup-context';
 import { useSystemValidation } from '../../hooks/use-system-validation';
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
 import { logRbacAudit } from '../../utils/rbac-audit';
-import { getAccommodationMonthlyFixedCost, setAccommodationMonthlyFixedCost } from '../../services/db/daily-metrics-service';
+import { getAccommodationMonthlyFixedCost, setAccommodationMonthlyFixedCost, getFnbMonthlyFixedCost, setFnbMonthlyFixedCost } from '../../services/db/daily-metrics-service';
 import { getProvinceFromZip, isValidThaiZip } from '../../utils/thai-zip-province';
 import { updateBranchLocationInSupabase } from '../../services/db/branch-location-service';
 
@@ -86,12 +86,18 @@ export default function BranchSettingsPage() {
   const [pendingBranchInvitations, setPendingBranchInvitations] = useState<Array<{ id: string; email: string; role: string; expires_at: string; token?: string | null }>>([]);
   const [loadingBranchInvitations, setLoadingBranchInvitations] = useState(false);
 
-  // Owner-only: Monthly Fixed Cost (accommodation) — Finance Setup
+  // Owner-only: Monthly Fixed Cost — Finance Setup
   const isOwnerOrSuperAdmin = role?.isSuperAdmin === true || role?.effectiveRole === 'owner';
   const isAccommodationBranch = branch?.modules?.includes(ModuleType.ACCOMMODATION) === true;
+  const isFnbBranch = branch?.modules?.includes(ModuleType.FNB) === true && !isAccommodationBranch;
+  // Accommodation finance state
   const [ownerMonthlyFixedCost, setOwnerMonthlyFixedCost] = useState<string>('');
   const [ownerFinanceSaving, setOwnerFinanceSaving] = useState(false);
   const [ownerFinanceLoaded, setOwnerFinanceLoaded] = useState(false);
+  // F&B finance state
+  const [ownerFnbMonthlyFixedCost, setOwnerFnbMonthlyFixedCost] = useState<string>('');
+  const [ownerFnbFinanceSaving, setOwnerFnbFinanceSaving] = useState(false);
+  const [ownerFnbFinanceLoaded, setOwnerFnbFinanceLoaded] = useState(false);
 
   const loadBranchMembers = useCallback(async () => {
     if (!branch?.id || !isSupabaseAvailable()) return;
@@ -158,6 +164,18 @@ export default function BranchSettingsPage() {
       setOwnerFinanceLoaded(true);
     });
   }, [branch?.id, isOwnerOrSuperAdmin, isAccommodationBranch]);
+
+  // Load Monthly Fixed Cost for Owner Settings (F&B only)
+  useEffect(() => {
+    if (!branch?.id || !isOwnerOrSuperAdmin || !isFnbBranch) {
+      setOwnerFnbFinanceLoaded(true);
+      return;
+    }
+    getFnbMonthlyFixedCost(branch.id).then((val) => {
+      setOwnerFnbMonthlyFixedCost(val != null ? String(val) : '');
+      setOwnerFnbFinanceLoaded(true);
+    });
+  }, [branch?.id, isOwnerOrSuperAdmin, isFnbBranch]);
 
   // Derive business type from modules
   const modulesToBusinessType = useMemo(() => {
@@ -390,6 +408,32 @@ export default function BranchSettingsPage() {
       showToast(locale === 'th' ? 'บันทึกไม่สำเร็จ' : 'Save failed', 'error');
     } finally {
       setOwnerFinanceSaving(false);
+    }
+  };
+
+  const handleSaveFnbMonthlyFixedCost = async () => {
+    if (!branch?.id || !isFnbBranch) return;
+    const num = Number(ownerFnbMonthlyFixedCost.replace(/\D/g, ''));
+    if (Number.isNaN(num) || num < 0) {
+      showToast(locale === 'th' ? 'กรุณากรอกตัวเลขที่ถูกต้อง' : 'Please enter a valid number', 'error');
+      return;
+    }
+    setOwnerFnbFinanceSaving(true);
+    try {
+      const result = await setFnbMonthlyFixedCost(branch.id, num);
+      if (result.ok) {
+        showToast(locale === 'th' ? 'บันทึกต้นทุนคงที่รายเดือนแล้ว' : 'Monthly Fixed Cost saved');
+        invalidateBranchState(branch.id);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('aurasea:metrics-saved', { detail: { branchId: branch.id } }));
+        }
+      } else {
+        showToast(result.error || (locale === 'th' ? 'บันทึกไม่สำเร็จ' : 'Save failed'), 'error');
+      }
+    } catch (e) {
+      showToast(locale === 'th' ? 'บันทึกไม่สำเร็จ' : 'Save failed', 'error');
+    } finally {
+      setOwnerFnbFinanceSaving(false);
     }
   };
 
@@ -924,6 +968,62 @@ export default function BranchSettingsPage() {
                       }}
                     >
                       {ownerFinanceSaving ? (locale === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (locale === 'th' ? 'บันทึก' : 'Save')}
+                    </button>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '13px', color: '#9ca3af' }}>Loading...</p>
+                )}
+              </div>
+            </div>
+          </SectionCard>
+        )}
+
+        {/* Owner Settings → Finance Setup (owner/super_admin + F&B only) */}
+        {isOwnerOrSuperAdmin && isFnbBranch && (
+          <SectionCard title={locale === 'th' ? 'การตั้งค่าทางการเงิน (เจ้าของ)' : 'Finance Setup (Owner)'}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, marginBottom: '0.5rem', color: '#374151' }}>
+                  {locale === 'th' ? 'ต้นทุนคงที่รายเดือน (บาท)' : 'Monthly Fixed Cost (THB)'}
+                </label>
+                <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '0.5rem' }}>
+                  {locale === 'th'
+                    ? 'เงินเดือนพนักงาน ค่าเช่า และการชำระเงินกู้รายเดือน กำหนดโดยเจ้าของเท่านั้น'
+                    : 'Total staff salary, rent, and loan repayments. Configured by owner only.'}
+                </p>
+                {ownerFnbFinanceLoaded ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      value={ownerFnbMonthlyFixedCost.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                      onChange={(e) => setOwnerFnbMonthlyFixedCost(e.target.value.replace(/\D/g, ''))}
+                      placeholder="0"
+                      style={{
+                        width: '200px',
+                        padding: '0.625rem 0.75rem',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        textAlign: 'right',
+                      }}
+                    />
+                    <span style={{ fontSize: '14px', color: '#6b7280' }}>THB</span>
+                    <button
+                      type="button"
+                      onClick={handleSaveFnbMonthlyFixedCost}
+                      disabled={ownerFnbFinanceSaving}
+                      style={{
+                        padding: '0.625rem 1.25rem',
+                        backgroundColor: ownerFnbFinanceSaving ? '#9ca3af' : '#0a0a0a',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        cursor: ownerFnbFinanceSaving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {ownerFnbFinanceSaving ? (locale === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (locale === 'th' ? 'บันทึก' : 'Save')}
                     </button>
                   </div>
                 ) : (
