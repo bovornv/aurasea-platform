@@ -9,8 +9,10 @@ const missing = new Set<string>();
 export const POSTGREST_RESOURCE_KEYS = {
   /** Stable PostgREST contract: `public.branch_business_status_api` */
   branch_business_status_api: 'table:branch_business_status_api',
-  alerts_today: 'table:alerts_today',
+  /** Same rows as legacy `alerts_today`; branch UI reads this name — use for company bundle too. */
+  branch_alerts_today: 'table:branch_alerts_today',
   get_alerts_critical: 'rpc:get_alerts_critical',
+  branch_recommendations: 'table:branch_recommendations',
   today_priorities_view: 'table:today_priorities_view',
   /** Canonical branch priorities snapshot (latest metric_date per branch); branch Today section reads only this. */
   branch_priorities_current: 'table:branch_priorities_current',
@@ -31,17 +33,24 @@ export const POSTGREST_RESOURCE_KEYS = {
 export type PostgrestResourceKey = (typeof POSTGREST_RESOURCE_KEYS)[keyof typeof POSTGREST_RESOURCE_KEYS];
 
 export function isPostgrestObjectMissingError(
-  err: { message?: string; code?: string; details?: string; hint?: string } | null | undefined
+  err: { message?: string; code?: string; details?: string; hint?: string } | null | undefined,
+  /** PostgREST HTTP status from `{ data, error, status }` — 404 almost always means relation/RPC not in schema. */
+  httpStatus?: number
 ): boolean {
+  if (httpStatus === 404) return true;
   if (!err) return false;
   const code = String(err.code ?? '');
   const msg = (err.message ?? '').toLowerCase();
   const details = (err.details ?? '').toLowerCase();
   const hint = (err.hint ?? '').toLowerCase();
+  const blob = `${msg} ${details} ${hint}`;
   if (code === 'PGRST202' || code === 'PGRST205') return true;
-  if (msg.includes('schema cache') || msg.includes('could not find the table')) return true;
-  if (msg.includes('could not find') && msg.includes('function')) return true;
-  if ((msg.includes('does not exist') || msg.includes('undefined table')) && (msg.includes('relation') || msg.includes('view') || msg.includes('function')))
+  if (blob.includes('schema cache') || blob.includes('could not find the table')) return true;
+  if (blob.includes('could not find') && blob.includes('function')) return true;
+  if (
+    (blob.includes('does not exist') || blob.includes('undefined table')) &&
+    (blob.includes('relation') || blob.includes('view') || blob.includes('function'))
+  )
     return true;
   if (details.includes('does not exist') || hint.includes('does not exist')) return true;
   if (code === '404') return true;

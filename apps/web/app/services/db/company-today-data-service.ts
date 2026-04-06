@@ -544,7 +544,7 @@ async function fetchCompanyTodayBundleCore(
 
   const skipBs = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_business_status_api);
   const skipCrit = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.get_alerts_critical);
-  const skipToday = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.alerts_today);
+  const skipToday = isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_alerts_today);
 
   const bsTable = getBranchBusinessStatusApiTable();
   const critRpc = resolvePostgrestAlertsRpc('get_alerts_critical');
@@ -561,7 +561,7 @@ async function fetchCompanyTodayBundleCore(
       : supabase.rpc(critRpc as never, getAlertsCriticalArgs),
     skipToday
       ? Promise.resolve({ data: null, error: null } as const)
-      : supabase.from('alerts_today').select('*').in('branch_id', idFilter),
+      : supabase.from('branch_alerts_today').select('*').in('branch_id', idFilter),
   ]);
 
   if (!skipBs) {
@@ -596,7 +596,7 @@ async function fetchCompanyTodayBundleCore(
   if (branchesRes.error && process.env.NODE_ENV === 'development') {
     console.warn('[CompanyToday] branches (module_type) error:', branchesRes.error.message ?? null);
   }
-  if (!skipToday) logDev('alerts_today', todayRes);
+  if (!skipToday) logDev('branch_alerts_today', todayRes);
   if (!skipCrit) {
     logPostgrestAlertsRead('get_alerts_critical', {
       organizationId,
@@ -630,7 +630,7 @@ async function fetchCompanyTodayBundleCore(
     }
   }
   if (critRes.error) {
-    if (isPostgrestObjectMissingError(critRes.error)) {
+    if (isPostgrestObjectMissingError(critRes.error, critRes.status)) {
       markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.get_alerts_critical);
     } else {
       errors.push(`get_alerts_critical:${critRes.error.message}`);
@@ -638,11 +638,11 @@ async function fetchCompanyTodayBundleCore(
     }
   }
   if (todayRes.error) {
-    if (isPostgrestObjectMissingError(todayRes.error)) {
-      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.alerts_today);
+    if (isPostgrestObjectMissingError(todayRes.error, todayRes.status)) {
+      markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_alerts_today);
     } else {
-      errors.push(`alerts_today:${todayRes.error.message}`);
-      logSupabaseStructured('alerts_today', idFilter, todayRes.error);
+      errors.push(`branch_alerts_today:${todayRes.error.message}`);
+      logSupabaseStructured('branch_alerts_today', idFilter, todayRes.error);
     }
   }
 

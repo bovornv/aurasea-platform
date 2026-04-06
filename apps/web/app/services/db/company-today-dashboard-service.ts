@@ -462,7 +462,7 @@ async function fetchCompanyPanelsFromDashboardView(
 }
 
 /**
- * One parallel batch: company bundle (business + critical + alerts_today) + org-scoped panels + data confidence.
+ * One parallel batch: company bundle (business + critical + branch_alerts_today) + org-scoped panels + data confidence.
  */
 export async function fetchCompanyTodayDashboard(
   organizationId: string | null,

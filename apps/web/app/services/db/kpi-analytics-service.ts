@@ -9,6 +9,12 @@
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../../lib/supabase/postgrest-missing-resource';
 
 export interface BranchLatestKpiRow {
   branch_id: string;
@@ -591,6 +597,7 @@ export async function getBranchRecommendationsFromKpi(
   if (branchId == null || branchId === '') return [];
   rejectMockBranchId(branchId);
   if (!isSupabaseAvailable()) return [];
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.branch_recommendations)) return [];
 
   const supabase = getSupabaseClient();
   if (!supabase) return [];
@@ -598,12 +605,15 @@ export async function getBranchRecommendationsFromKpi(
   const bid = branchId.trim();
 
   try {
-    const { data, error } = await supabase
+    const { data, error, status } = await supabase
       .from('branch_recommendations')
       .select('branch_id, metric_date, recommendation_title')
       .eq('branch_id', bid);
 
     if (error) {
+      if (isPostgrestObjectMissingError(error, status)) {
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.branch_recommendations);
+      }
       if (process.env.NODE_ENV === 'development') {
         console.warn('[KpiAnalytics] branch_recommendations error:', error.message);
       }
