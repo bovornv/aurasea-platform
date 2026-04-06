@@ -32,6 +32,7 @@ import {
   getOperatingStatusData,
   getFnbOperatingStatus,
   getFnbRevenueDeltaPct,
+  getAccommodationRevenueDeltaPct,
   getTodaySummary,
   getBranchTrendSeriesWithFallback,
   getAccommodationTodayMetricsUi,
@@ -135,6 +136,8 @@ export default function BranchOverviewPage() {
   // F&B live revenue delta: computed from fnb_daily_metrics (overrides stale branch_status_current value).
   // undefined = not yet fetched (fall back to branch_status_current); null = fetched but insufficient data.
   const [fnbRevenueDeltaPct, setFnbRevenueDeltaPct] = useState<number | null | undefined>(undefined);
+  // Accommodation live revenue delta: same pattern — overrides stale branch_status_current.revenue_change_pct_day.
+  const [accRevenueDeltaPct, setAccRevenueDeltaPct] = useState<number | null | undefined>(undefined);
   // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
   const [freshnessDatesFromRaw, setFreshnessDatesFromRaw] = useState<string[]>([]);
   const [freshnessLoaded, setFreshnessLoaded] = useState(false);
@@ -450,7 +453,10 @@ export default function BranchOverviewPage() {
         getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
         getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
         getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
+        getAccommodationRevenueDeltaPct(branch.id).then(setAccRevenueDeltaPct);
         fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
+      } else {
+        setAccRevenueDeltaPct(undefined);
       }
     }
     getBranchLearningStatus(branch.id).then(setLearningStatus);
@@ -507,6 +513,7 @@ export default function BranchOverviewPage() {
           getAccommodationConfidenceLevel(branch.id).then(setConfidenceLevelFromCoverage);
           getEarlySignalFromAccommodationEarlySignal(branch.id).then(setAccommodationEarlySignal);
           getAccommodationTodayMetricsUi(branch.id).then(setAccTodayUiRow);
+          getAccommodationRevenueDeltaPct(branch.id).then(setAccRevenueDeltaPct);
           fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
         }
         if (branch.moduleType === 'fnb') {
@@ -1494,13 +1501,16 @@ export default function BranchOverviewPage() {
         : null;
 
     if (isAcc && !isFnb) {
+      // Prefer live-computed delta from accommodation_daily_metrics over the stale branch_status_current value.
+      // accRevenueDeltaPct=undefined means the fetch hasn't resolved yet → fall back to stale value.
+      const accDelta = accRevenueDeltaPct !== undefined ? accRevenueDeltaPct : revenueDeltaPct;
       return {
         accommodation: {
           occupancyRate: row.occupancy_rate,
           roomsSold: row.rooms_sold,
           totalRooms: row.rooms_available,
           revenue: rev,
-          revenueDeltaPct,
+          revenueDeltaPct: accDelta,
           adr: row.adr,
           revpar: row.revpar,
           healthScore: row.health_score,
@@ -1527,7 +1537,7 @@ export default function BranchOverviewPage() {
     }
 
     return { accommodation: null, fnb: null };
-  }, [branch?.moduleType, todaySummaryRow, fnbRevenueDeltaPct]);
+  }, [branch?.moduleType, todaySummaryRow, fnbRevenueDeltaPct, accRevenueDeltaPct]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development' || !branch?.id || !todaySummaryRow) return;
