@@ -441,17 +441,24 @@ export default function BranchTrendsPage() {
         const dow = (d.getDay() + 6) % 7;
         buckets[dow]!.push(dowSrc[i]!);
       });
-      const avgs = buckets
-        .map((b) => (b.length > 0 ? b.reduce((s, v) => s + v, 0) / b.length : null))
-        .filter((v): v is number => v !== null);
-      if (avgs.length < 2) {
+      const allAvgs = buckets.map((b) => (b.length > 0 ? b.reduce((s, v) => s + v, 0) / b.length : null));
+      const weekdayAvgs = allAvgs.slice(0, 5).filter((v): v is number => v !== null); // Mon–Fri
+      const weekendAvgs = allAvgs.slice(5).filter((v): v is number => v !== null);    // Sat–Sun
+      if (weekdayAvgs.length === 0 || weekendAvgs.length === 0) {
         chart5 = { signal: 'info', text: t('accTrendSignals.dowNoData') };
       } else {
-        const maxA = Math.max(...avgs);
-        const minA = Math.min(...avgs);
-        const gap = maxA > 0 ? Math.round(((maxA - minA) / maxA) * 100) : 0;
-        if (gap >= 30) chart5 = { signal: 'amber', text: t('accTrendSignals.dowWideGap', { gap: String(gap) }) };
-        else chart5 = { signal: 'green', text: t('accTrendSignals.dowConsistent') };
+        const weekdayAvg = Math.round(weekdayAvgs.reduce((s, v) => s + v, 0) / weekdayAvgs.length);
+        const weekendAvg = Math.round(weekendAvgs.reduce((s, v) => s + v, 0) / weekendAvgs.length);
+        const gap = weekendAvg - weekdayAvg; // positive = weekends busier (pp)
+        if (gap < 0) {
+          chart5 = { signal: 'info', text: t('accTrendSignals.dowWeekdayBusier', { weekday_avg: String(weekdayAvg), weekend_avg: String(weekendAvg) }) };
+        } else if (gap > 30) {
+          chart5 = { signal: 'amber', text: t('accTrendSignals.dowWideGap', { gap: String(gap), weekend_avg: String(weekendAvg), weekday_avg: String(weekdayAvg) }) };
+        } else if (gap >= 15) {
+          chart5 = { signal: 'amber', text: t('accTrendSignals.dowModerateGap', { gap: String(gap) }) };
+        } else {
+          chart5 = { signal: 'green', text: t('accTrendSignals.dowBalanced', { gap: String(gap) }) };
+        }
       }
     }
 

@@ -369,8 +369,10 @@ export const translations = {
       breakevenAbove: 'RevPAR is above breakeven — cost discipline is paying off.',
       breakevenNotEnough: 'Not enough data to compare RevPAR against breakeven yet.',
       // Chart 5: Day of week
-      dowWideGap: 'Weekend–weekday gap is {gap}% — consider weekday promotions.',
-      dowConsistent: 'Demand is consistent across the week — no major day-of-week gap.',
+      dowWideGap: 'Weekends average {gap}pts above weekdays ({weekend_avg}% vs {weekday_avg}%) — a weekday package could recover those rooms.',
+      dowModerateGap: 'Weekends run {gap}pts higher than weekdays — consider a midweek offer to balance demand.',
+      dowBalanced: 'Occupancy is fairly balanced across the week — weekends lead by only {gap}pts.',
+      dowWeekdayBusier: 'Your weekdays outperform weekends ({weekday_avg}% vs {weekend_avg}%) — unusual pattern worth investigating.',
       dowNoData: 'Log more days to see day-of-week demand patterns.',
       // Chart 6: Heatmap
       heatmapAbove: 'This week is tracking above last week — momentum is building.',
@@ -853,8 +855,10 @@ export const translations = {
       breakevenAbove: 'RevPAR อยู่เหนือจุดคุ้มทุน — การควบคุมต้นทุนกำลังให้ผล',
       breakevenNotEnough: 'ข้อมูลไม่เพียงพอสำหรับการเปรียบเทียบจุดคุ้มทุน',
       // Chart 5: Day of week
-      dowWideGap: 'ช่วงห่างระหว่างวันหยุดและวันธรรมดาอยู่ที่ {gap}% — ควรจัดโปรโมชั่นวันธรรมดา',
-      dowConsistent: 'ดีมานด์สม่ำเสมอตลอดสัปดาห์ — ไม่มีช่วงห่างระหว่างวันที่เด่นชัด',
+      dowWideGap: 'สุดสัปดาห์สูงกว่าวันธรรมดา {gap} จุดเปอร์เซ็นต์ ({weekend_avg}% vs {weekday_avg}%) — แพ็คเกจวันธรรมดาอาจช่วยเพิ่มการเข้าพักได้',
+      dowModerateGap: 'สุดสัปดาห์สูงกว่าวันธรรมดา {gap} จุดเปอร์เซ็นต์ — พิจารณาโปรโมชั่นกลางสัปดาห์เพื่อสมดุลความต้องการ',
+      dowBalanced: 'อัตราการเข้าพักค่อนข้างสมดุลตลอดสัปดาห์ — สุดสัปดาห์นำแค่ {gap} จุดเปอร์เซ็นต์',
+      dowWeekdayBusier: 'วันธรรมดาของคุณดีกว่าสุดสัปดาห์ ({weekday_avg}% vs {weekend_avg}%) — รูปแบบผิดปกติที่ควรตรวจสอบ',
       dowNoData: 'บันทึกข้อมูลเพิ่มเติมเพื่อดูรูปแบบดีมานด์ตามวันในสัปดาห์',
       // Chart 6: Heatmap
       heatmapAbove: 'สัปดาห์นี้ดีกว่าสัปดาห์ที่แล้ว — โมเมนตัมกำลังสร้างตัว',
