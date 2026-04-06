@@ -4,6 +4,12 @@
  */
 
 import { getSupabaseClient, isSupabaseAvailable } from '../../lib/supabase/client';
+import {
+  isPostgrestObjectMissingError,
+  isPostgrestResourceKnownMissing,
+  markPostgrestResourceMissing,
+  POSTGREST_RESOURCE_KEYS,
+} from '../../lib/supabase/postgrest-missing-resource';
 
 export type PurchaseType = 'food_beverage' | 'non_food_supplies';
 
@@ -56,12 +62,15 @@ export async function saveFnbPurchase(
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!branchId) return { ok: false, error: 'branchId required' };
   if (!isSupabaseAvailable()) return { ok: false, error: 'Supabase not available' };
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.fnb_purchase_log)) {
+    return { ok: false, error: 'Purchase log table is not set up yet.' };
+  }
   const supabase = getSupabaseClient();
   if (!supabase) return { ok: false, error: 'No client' };
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase as any)
+    const { data, error, status } = await (supabase as any)
       .from('fnb_purchase_log')
       .insert({
         branch_id: branchId,
@@ -74,6 +83,13 @@ export async function saveFnbPurchase(
       .single();
 
     if (error) {
+      if (isPostgrestObjectMissingError(error, status)) {
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.fnb_purchase_log);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[FnbPurchaseService] fnb_purchase_log missing — run add-fnb-purchase-log.sql');
+        }
+        return { ok: false, error: 'Purchase log table is not set up yet.' };
+      }
       console.error('[FnbPurchaseService] saveFnbPurchase error:', error);
       return { ok: false, error: error.message };
     }
@@ -96,12 +112,13 @@ export async function getFnbPurchases(
 ): Promise<FnbPurchaseRow[]> {
   if (!branchId) return [];
   if (!isSupabaseAvailable()) return [];
+  if (isPostgrestResourceKnownMissing(POSTGREST_RESOURCE_KEYS.fnb_purchase_log)) return [];
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase as any)
+    const { data, error, status } = await (supabase as any)
       .from('fnb_purchase_log')
       .select('id, branch_id, purchase_date, purchase_type, amount, note, created_at')
       .eq('branch_id', branchId)
@@ -111,6 +128,13 @@ export async function getFnbPurchases(
       .order('created_at', { ascending: false });
 
     if (error) {
+      if (isPostgrestObjectMissingError(error, status)) {
+        markPostgrestResourceMissing(POSTGREST_RESOURCE_KEYS.fnb_purchase_log);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[FnbPurchaseService] fnb_purchase_log missing — run add-fnb-purchase-log.sql');
+        }
+        return [];
+      }
       console.error('[FnbPurchaseService] getFnbPurchases error:', error);
       return [];
     }

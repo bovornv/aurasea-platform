@@ -13,6 +13,8 @@ export const POSTGREST_RESOURCE_KEYS = {
   branch_alerts_today: 'table:branch_alerts_today',
   get_alerts_critical: 'rpc:get_alerts_critical',
   branch_recommendations: 'table:branch_recommendations',
+  /** F&B purchase log (add-fnb-purchase-log.sql); optional until migration is applied. */
+  fnb_purchase_log: 'table:fnb_purchase_log',
   today_priorities_view: 'table:today_priorities_view',
   /** Canonical branch priorities snapshot (latest metric_date per branch); branch Today section reads only this. */
   branch_priorities_current: 'table:branch_priorities_current',

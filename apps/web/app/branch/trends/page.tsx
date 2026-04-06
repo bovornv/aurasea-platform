@@ -307,30 +307,90 @@ export default function BranchTrendsPage() {
     return result.sort((a, b) => a.weekStart.localeCompare(b.weekStart));
   }, [isFnb, fnbPurchasesAllWeeks, dailyMetrics]);
 
-  /** F&B Breakeven chart points — constant breakeven line from monthly fixed cost + weekly avg food cost */
+  /** F&B Breakeven chart points — revenue-weighted daily food cost + 5 reliability guards */
   const fnbBreakevenChartPoints = useMemo(() => {
     if (!isFnb || dailyMetrics.length === 0) return [];
     if (!fnbMonthlyFixedCost || fnbMonthlyFixedCost <= 0) {
-      return dailyMetrics.map((m) => ({ date: m.date, actualCustomers: m.customers ?? 0, breakevenCustomers: null as number | null }));
+      return dailyMetrics.map((m) => ({
+        date: m.date,
+        actualCustomers: m.customers ?? 0,
+        breakevenCustomers: null as number | null,
+      }));
     }
     const today = new Date();
     const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
     const dailyFixedCost = fnbMonthlyFixedCost / daysInMonth;
-    // Avg daily food & bev cost from all purchases over available weeks
-    const foodBevTotal = fnbPurchasesAllWeeks
-      .filter((p) => p.purchase_type === 'food_beverage')
-      .reduce((s, p) => s + p.amount, 0);
-    const uniqueDays = new Set(fnbPurchasesAllWeeks.map((p) => p.purchase_date)).size;
-    const avgDailyFoodCost = uniqueDays > 0 ? foodBevTotal / uniqueDays : null;
+
+    // Helper: get Monday ISO string for a given date
+    function getMondayKey(dateStr: string): string {
+      const d = new Date(`${dateStr}T12:00:00`);
+      const dow = (d.getDay() + 6) % 7; // 0=Mon..6=Sun
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - dow);
+      return monday.toISOString().slice(0, 10);
+    }
+
+    // Build week → food bev purchases map
+    const weekPurchaseMap = new Map<string, number>();
+    for (const p of fnbPurchasesAllWeeks) {
+      if (p.purchase_type !== 'food_beverage') continue;
+      const key = getMondayKey(p.purchase_date);
+      weekPurchaseMap.set(key, (weekPurchaseMap.get(key) ?? 0) + p.amount);
+    }
+
+    // Build week → total revenue map (from daily metrics)
+    const weekRevenueMap = new Map<string, number>();
+    for (const m of dailyMetrics) {
+      const key = getMondayKey(m.date);
+      weekRevenueMap.set(key, (weekRevenueMap.get(key) ?? 0) + (m.revenue ?? 0));
+    }
 
     return dailyMetrics.map((m) => {
       const revenue = m.revenue ?? 0;
       const customers = m.customers ?? 0;
-      let bk: number | null = null;
-      if (avgDailyFoodCost != null && revenue > 0 && customers > 0) {
-        const gp = (revenue - avgDailyFoodCost) / customers;
-        if (gp > 0) bk = Math.ceil(dailyFixedCost / gp);
+
+      // GUARD 1: Minimum customers threshold — skip unreliable days
+      if (customers < 5) {
+        return { date: m.date, actualCustomers: customers, breakevenCustomers: null as number | null };
       }
+
+      const mondayKey = getMondayKey(m.date);
+      const weeklyFoodPurchases = weekPurchaseMap.get(mondayKey) ?? null;
+      const weeklyRevenue = weekRevenueMap.get(mondayKey) ?? 0;
+
+      // GUARD 5: Revenue-weighted daily food cost estimate
+      let dailyFoodCostEst: number;
+      if (weeklyFoodPurchases == null || weeklyFoodPurchases === 0) {
+        dailyFoodCostEst = 0;
+      } else if (weeklyRevenue > 0 && revenue > 0) {
+        // Assign food cost proportional to this day's share of weekly revenue
+        dailyFoodCostEst = (revenue / weeklyRevenue) * weeklyFoodPurchases;
+      } else {
+        // Fallback: equal daily split across 7 days
+        dailyFoodCostEst = weeklyFoodPurchases / 7;
+      }
+
+      const grossProfit = revenue - dailyFoodCostEst;
+
+      // GUARD 2: Gross profit must be positive
+      if (grossProfit <= 0) {
+        return { date: m.date, actualCustomers: customers, breakevenCustomers: null as number | null };
+      }
+
+      const gpPerCustomer = grossProfit / customers;
+
+      // GUARD 3: Gross profit per customer minimum (฿10 floor)
+      if (gpPerCustomer < 10) {
+        return { date: m.date, actualCustomers: customers, breakevenCustomers: null as number | null };
+      }
+
+      const bk = Math.ceil(dailyFixedCost / gpPerCustomer);
+
+      // GUARD 4: Breakeven cap — above 500 signals a calculation error
+      if (bk > 500) {
+        return { date: m.date, actualCustomers: customers, breakevenCustomers: null as number | null };
+      }
+
       return { date: m.date, actualCustomers: customers, breakevenCustomers: bk };
     });
   }, [isFnb, dailyMetrics, fnbMonthlyFixedCost, fnbPurchasesAllWeeks]);
@@ -928,7 +988,7 @@ export default function BranchTrendsPage() {
                     </p>
                   </div>
 
-                  {/* 1. Customers + Revenue — Primary (customers left axis, revenue right) */}
+                  {/* 1. Customers + Revenue — full width */}
                   <TrendChartCard
                     legend={[
                       { label: locale === 'th' ? 'จำนวนลูกค้า' : 'Customers', color: '#2563eb' },
@@ -956,7 +1016,7 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
-                  {/* 2. Customers + Avg Ticket — Primary */}
+                  {/* 2. Customers + Avg Ticket — full width */}
                   <TrendChartCard
                     legend={[
                       { label: locale === 'th' ? 'จำนวนลูกค้า' : 'Customers', color: '#2563eb' },
@@ -983,13 +1043,13 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
-                  {/* 3. Revenue + Avg Ticket — Secondary */}
+                  {/* 3. Revenue + Avg Ticket — full width (standalone on its row) */}
                   <TrendChartCard
                     legend={[
                       { label: locale === 'th' ? 'รายได้' : 'Revenue', color: '#16a34a' },
                       { label: locale === 'th' ? 'ค่าใช้จ่ายเฉลี่ยต่อบิล' : 'Avg Ticket', color: '#7c3aed' },
                     ]}
-                    cols={6}
+                    cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
                     insight={fnbSignals?.chart3 ?? null}
                   >
@@ -1010,22 +1070,6 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
-                  {/* 4. Customers by day of week — Secondary */}
-                  <TrendChartCard
-                    titleLabel={locale === 'th' ? 'จำนวนลูกค้าตามวันในสัปดาห์' : 'Customers by day of week'}
-                    cols={6}
-                    locale={locale === 'th' ? 'th' : 'en'}
-                    insight={fnbSignals?.chart4 ?? null}
-                  >
-                    <DayOfWeekChart
-                      values={customersValues.length >= 2 ? customersValues : revenueValues}
-                      dates={chartDates.slice(0, (customersValues.length >= 2 ? customersValues : revenueValues).length)}
-                      highlightWeekend={true}
-                      formatValue={(v) => (customersValues.length >= 2 ? String(Math.round(v)) : `฿${Math.round(v)}`)}
-                      emptyMessage={emptyMsg}
-                    />
-                  </TrendChartCard>
-
                   {/* Section header: Cost & Profitability */}
                   <div style={{ gridColumn: 'span 12', paddingTop: 8, paddingBottom: 2 }}>
                     <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase', margin: 0 }}>
@@ -1033,11 +1077,11 @@ export default function BranchTrendsPage() {
                     </p>
                   </div>
 
-                  {/* 5. Food Cost % by Week */}
+                  {/* 4. Food Cost % by Week — half width (desktop side-by-side with breakeven) */}
                   <TrendChartCard
                     titleLabel={locale === 'th' ? 'ต้นทุนอาหาร % รายสัปดาห์' : 'Food Cost % by Week'}
-                    subtitle={locale === 'th' ? 'อัตราส่วนการซื้อวัตถุดิบต่อรายได้ (เป้าหมาย 28–35%)' : 'Purchase cost as % of revenue (target 28–35%)'}
-                    cols={12}
+                    subtitle={locale === 'th' ? 'ต้นทุนการซื้อเป็น % ของรายได้ (เป้าหมาย 28–35%) จันทร์–อาทิตย์' : 'Purchase cost as % of revenue (target 28–35%), Monday–Sunday'}
+                    cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
                     insight={fnbSignals?.fcChart ?? null}
                   >
@@ -1048,14 +1092,14 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
-                  {/* 6. Actual vs. Breakeven Customers */}
+                  {/* 5. No. of Customers (Actual vs Breakeven) — half width (desktop side-by-side with food cost) */}
                   <TrendChartCard
-                    titleLabel={locale === 'th' ? 'ลูกค้าจริง vs. จุดคุ้มทุน' : 'Actual vs. Breakeven Customers'}
+                    titleLabel={locale === 'th' ? 'จำนวนลูกค้า (จริง vs จุดคุ้มทุน)' : 'No. of Customers (Actual vs Breakeven)'}
                     legend={[
                       { label: locale === 'th' ? 'ลูกค้าจริง' : 'Actual', color: '#2563eb' },
                       { label: locale === 'th' ? 'จุดคุ้มทุน' : 'Breakeven', color: '#ef4444' },
                     ]}
-                    cols={12}
+                    cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
                     insight={fnbSignals?.bkChart ?? null}
                   >
@@ -1073,7 +1117,27 @@ export default function BranchTrendsPage() {
                     </p>
                   </div>
 
-                  {/* 7. Weekly Revenue Heatmap — F&B */}
+                  {/* 6. Customers by day of week — half width, first under Demand Patterns */}
+                  <TrendChartCard
+                    titleLabel={locale === 'th' ? 'จำนวนลูกค้าตามวันในสัปดาห์' : 'Customers by day of week'}
+                    subtitle={locale === 'th' ? 'จำนวนลูกค้าเฉลี่ยต่อวันในสัปดาห์ (30 วันที่ผ่านมา)' : 'Avg. number of customers per day of week (last 30 days)'}
+                    cols={6}
+                    locale={locale === 'th' ? 'th' : 'en'}
+                    insight={fnbSignals?.chart4 ?? null}
+                  >
+                    <DayOfWeekChart
+                      values={customersValues.length >= 2 ? customersValues : revenueValues}
+                      dates={chartDates.slice(0, (customersValues.length >= 2 ? customersValues : revenueValues).length)}
+                      highlightWeekend={true}
+                      formatValue={(v) => (customersValues.length >= 2 ? String(Math.round(v)) : `฿${Math.round(v)}`)}
+                      emptyMessage={emptyMsg}
+                      height={220}
+                      yAxisLabel={customersValues.length >= 2 ? (locale === 'th' ? 'ลูกค้า' : 'Customers') : undefined}
+                      yHeadroom={1.2}
+                    />
+                  </TrendChartCard>
+
+                  {/* 7. Weekly Revenue Heatmap — half width */}
                   <TrendChartCard
                     titleLabel={locale === 'th' ? 'ตารางประสิทธิภาพรายสัปดาห์' : 'Weekly Performance Heatmap'}
                     cols={6}

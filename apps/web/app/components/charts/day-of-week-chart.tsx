@@ -25,6 +25,10 @@ interface DayOfWeekChartProps {
   formatValue?: (v: number) => string;
   emptyMessage?: string;
   height?: number;
+  /** Optional Y-axis rotated label (e.g. "Customers") */
+  yAxisLabel?: string;
+  /** Y-axis headroom multiplier — 1.0 = bars reach 100%, 1.2 = 20% headroom above tallest bar. Default: 1.0 */
+  yHeadroom?: number;
 }
 
 /** Map JS getDay(): 0=Sun, 1=Mon, ... 6=Sat → index 0=Mon, 1=Tue, ... 6=Sun */
@@ -39,6 +43,8 @@ export function DayOfWeekChart({
   formatValue = (v) => String(Math.round(v)),
   emptyMessage = 'No data',
   height = DEFAULT_HEIGHT,
+  yAxisLabel,
+  yHeadroom = 1.0,
 }: DayOfWeekChartProps) {
   const bars = useMemo(() => {
     if (!values.length || !dates.length || values.length !== dates.length) return null;
@@ -53,7 +59,9 @@ export function DayOfWeekChart({
     return sums.map((s, i) => ({ avg: counts[i] ? s / counts[i] : 0, isWeekend: i >= 5 }));
   }, [values, dates]);
 
-  const maxVal = useMemo(() => (bars ? Math.max(...bars.map((b) => b.avg), 1) : 1), [bars]);
+  const rawMax = useMemo(() => (bars ? Math.max(...bars.map((b) => b.avg), 1) : 1), [bars]);
+  const maxVal = rawMax; // kept for compatibility
+  const yMax = rawMax * Math.max(1.0, yHeadroom);
   const weekendStyle = useMemo(() => getWeekendStyle(), []);
   const chartWidth = 400;
   const chartHeight = height - PAD_TOP - PAD_BOTTOM;
@@ -63,26 +71,38 @@ export function DayOfWeekChart({
   const yTicks = useMemo(() => {
     const out: { v: number; y: number }[] = [];
     for (let i = 0; i <= tickCount; i++) {
-      const v = (maxVal * (tickCount - i)) / tickCount;
+      const v = (yMax * (tickCount - i)) / tickCount;
       const y = height - PAD_BOTTOM - (chartHeight * (tickCount - i)) / tickCount;
       out.push({ v, y });
     }
     return out;
-  }, [maxVal, chartHeight]);
+  }, [yMax, chartHeight, height]);
 
   if (!bars || bars.every((b) => b.avg === 0)) {
     return (
-      <div style={{ height: '100%', minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 13 }}>
+      <div style={{ height: height, minHeight: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 13 }}>
         {emptyMessage}
       </div>
     );
   }
 
   return (
-    <div style={{ height: '100%', width: '100%', minHeight: 220 }}>
-      <svg width="100%" height="100%" viewBox={`0 0 ${chartWidth} ${height}`} preserveAspectRatio="xMidYMid meet">
+    <div style={{ width: '100%' }}>
+      <svg width="100%" height={height} viewBox={`0 0 ${chartWidth} ${height}`} preserveAspectRatio="xMidYMid meet">
         <line x1={PAD_LEFT} y1={PAD_TOP} x2={PAD_LEFT} y2={height - PAD_BOTTOM} stroke={AXIS_COLOR} strokeWidth="1" />
         <line x1={PAD_LEFT} y1={height - PAD_BOTTOM} x2={chartWidth - PAD_RIGHT} y2={height - PAD_BOTTOM} stroke={AXIS_COLOR} strokeWidth="1" />
+        {yAxisLabel && (
+          <text
+            x={8}
+            y={PAD_TOP + (height - PAD_TOP - PAD_BOTTOM) / 2}
+            textAnchor="middle"
+            fontSize="10"
+            fill="#9ca3af"
+            transform={`rotate(-90, 8, ${PAD_TOP + (height - PAD_TOP - PAD_BOTTOM) / 2})`}
+          >
+            {yAxisLabel}
+          </text>
+        )}
         {yTicks.map((t, i) => (
           <g key={i}>
             <line x1={PAD_LEFT} y1={t.y} x2={PAD_LEFT - 4} y2={t.y} stroke={AXIS_COLOR} strokeWidth="1" />
@@ -93,7 +113,7 @@ export function DayOfWeekChart({
         ))}
         {bars.map((b, i) => {
           const x = PAD_LEFT + i * barW + gap / 2;
-          const h = maxVal > 0 ? (b.avg / maxVal) * chartHeight : 0;
+          const h = yMax > 0 ? (b.avg / yMax) * chartHeight : 0;
           const y = height - PAD_BOTTOM - h;
           return (
             <g key={i}>
