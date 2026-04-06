@@ -1095,10 +1095,6 @@ export default function BranchTrendsPage() {
                   {/* 5. No. of Customers (Actual vs Breakeven) — half width (desktop side-by-side with food cost) */}
                   <TrendChartCard
                     titleLabel={locale === 'th' ? 'จำนวนลูกค้า (จริง vs จุดคุ้มทุน)' : 'No. of Customers (Actual vs Breakeven)'}
-                    legend={[
-                      { label: locale === 'th' ? 'ลูกค้าจริง' : 'Actual', color: '#2563eb' },
-                      { label: locale === 'th' ? 'จุดคุ้มทุน' : 'Breakeven', color: '#ef4444' },
-                    ]}
                     cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
                     insight={fnbSignals?.bkChart ?? null}
