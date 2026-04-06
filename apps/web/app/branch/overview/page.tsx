@@ -47,7 +47,8 @@ import {
 import { TrendChartCard } from '../../components/charts/trend-chart-card';
 import { DecisionTrendChart } from '../../components/charts/decision-trend-chart';
 import { ForwardDemandChart } from '../../components/charts/forward-demand-chart';
-import { trendInsightDual } from '../../utils/trend-chart-insights';
+import { trendInsightDual, compareLastToPriorWeekTrend } from '../../utils/trend-chart-insights';
+import type { TrendSignal } from '../../components/charts/trend-chart-card';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
 import { getDataFreshness } from '../../lib/dataFreshness';
 import { isSupabaseAvailable } from '../../lib/supabase/client';
@@ -808,22 +809,46 @@ export default function BranchOverviewPage() {
     const loc = locale === 'th' ? 'th' : 'en';
     if (!driverChartData) return null;
     if (isAccommodation) {
+      // Compute one-line signal insights for the 2 accommodation charts
+      const PCT = 5;
+      function dir(cmp: ReturnType<typeof compareLastToPriorWeekTrend>): 'above' | 'below' | 'inline' | null {
+        if (!cmp) return null;
+        if (cmp.pctDiff > PCT) return 'above';
+        if (cmp.pctDiff < -PCT) return 'below';
+        return 'inline';
+      }
+      const occDir = dir(compareLastToPriorWeekTrend(driverChartData.occupancy));
+      const adrDir = dir(
+        compareLastToPriorWeekTrend(
+          driverChartData.adr.length === driverChartData.occupancy.length ? driverChartData.adr : []
+        )
+      );
+      const revparDir = dir(
+        compareLastToPriorWeekTrend(
+          driverChartData.revpar.length === driverChartData.occupancy.length ? driverChartData.revpar : []
+        )
+      );
+
+      // Chart 1 signal: Occ + ADR
+      let occAdrSignal: TrendSignal;
+      if (occDir === 'above' && adrDir === 'above') occAdrSignal = { signal: 'green', text: t('accTrendSignals.occAdrBothUp') };
+      else if (occDir === 'above' && adrDir === 'below') occAdrSignal = { signal: 'amber', text: t('accTrendSignals.occAdrOccUpAdrDown') };
+      else if (occDir === 'below' && adrDir === 'above') occAdrSignal = { signal: 'amber', text: t('accTrendSignals.occAdrOccDownAdrUp') };
+      else if (occDir === 'below' && adrDir === 'below') occAdrSignal = { signal: 'red', text: t('accTrendSignals.occAdrBothDown') };
+      else occAdrSignal = { signal: 'info', text: t('accTrendSignals.occAdrStable') };
+
+      // Chart 2 signal: Occ + RevPAR
+      let occRevSignal: TrendSignal;
+      if (occDir === 'above' && revparDir === 'above') occRevSignal = { signal: 'green', text: t('accTrendSignals.occRevBothUp') };
+      else if (occDir === 'above' && revparDir === 'below') occRevSignal = { signal: 'amber', text: t('accTrendSignals.occRevOccUpRevDown') };
+      else if (occDir === 'below' && revparDir === 'above') occRevSignal = { signal: 'amber', text: t('accTrendSignals.occRevOccDownRevUp') };
+      else if (occDir === 'below' && revparDir === 'below') occRevSignal = { signal: 'red', text: t('accTrendSignals.occRevBothDown') };
+      else occRevSignal = { signal: 'info', text: t('accTrendSignals.occRevStable') };
+
       return {
         kind: 'acc' as const,
-        occAdr: trendInsightDual(
-          { values: driverChartData.occupancy, metric: 'occupancy' },
-          driverChartData.adr.length === driverChartData.occupancy.length
-            ? { values: driverChartData.adr, metric: 'adr' }
-            : null,
-          loc
-        ),
-        occRev: trendInsightDual(
-          { values: driverChartData.occupancy, metric: 'occupancy' },
-          driverChartData.revpar.length === driverChartData.occupancy.length
-            ? { values: driverChartData.revpar, metric: 'revpar' }
-            : null,
-          loc
-        ),
+        occAdr: occAdrSignal,
+        occRev: occRevSignal,
       };
     }
     if (isFnb) {
@@ -846,7 +871,7 @@ export default function BranchOverviewPage() {
       };
     }
     return null;
-  }, [driverChartData, isAccommodation, isFnb, locale]);
+  }, [driverChartData, isAccommodation, isFnb, locale, t]);
 
   /** Same filtering as `filterTodayBranchPriorityRows` (company Today uses the same helper). */
   const filteredBranchPriorities = useMemo(() => {
@@ -2029,8 +2054,7 @@ export default function BranchOverviewPage() {
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occAdr.problem : ''}
-                    recommendation={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occAdr.recommendation : ''}
+                    insight={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occAdr : null}
                   >
                     <DecisionTrendChart
                       values={driverChartData.occupancy}
@@ -2056,8 +2080,7 @@ export default function BranchOverviewPage() {
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occRev.problem : ''}
-                    recommendation={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occRev.recommendation : ''}
+                    insight={performanceDriverInsights?.kind === 'acc' ? performanceDriverInsights.occRev : null}
                   >
                     <DecisionTrendChart
                       values={driverChartData.occupancy}

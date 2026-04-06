@@ -39,6 +39,52 @@ function median(sorted: number[]): number {
   return percentile(sorted, 50);
 }
 
+/** Signal key for the ADR band one-line insight. */
+export type AdrBandSignalKey = 'adrBandNoData' | 'adrAboveBand' | 'adrBelowBand' | 'adrInBand';
+
+/**
+ * Computes the ADR band signal key for the Trends page one-line insight system.
+ * Returns a signal severity + translation key so the caller can render dot+text.
+ */
+export function computeAdrBandSignalKey(
+  adrValues: number[],
+  occupancyValues: number[],
+  dates: string[]
+): { key: AdrBandSignalKey; signal: 'green' | 'amber' | 'info' } {
+  const has60Days = dates.length >= 60 && adrValues.length >= 60;
+  if (!has60Days || adrValues.length !== occupancyValues.length || adrValues.length < 60) {
+    return { key: 'adrBandNoData', signal: 'info' };
+  }
+
+  const n = adrValues.length;
+  const lastAdr = adrValues[n - 1]!;
+  const lastOcc = occupancyValues[n - 1]!;
+  const lastOccNorm = lastOcc > 1 ? lastOcc / 100 : lastOcc;
+
+  // Use same bucket logic as the chart (±2.5% occupancy around the last day's occ)
+  const bucketLow = Math.floor(lastOccNorm / 0.05) * 0.05;
+  const bucketHigh = bucketLow + 0.05;
+
+  const peers = adrValues
+    .filter((v, i) => {
+      if (i === n - 1) return false; // exclude today from its own benchmark
+      const occ = occupancyValues[i]! > 1 ? occupancyValues[i]! / 100 : occupancyValues[i]!;
+      return occ >= bucketLow && occ < bucketHigh && v > 0;
+    })
+    .sort((a, b) => a - b);
+
+  if (peers.length < 5) {
+    return { key: 'adrInBand', signal: 'info' };
+  }
+
+  const lo = percentile(peers, 50); // median
+  const hi = percentile(peers, 90); // 90th percentile
+
+  if (lastAdr > hi) return { key: 'adrAboveBand', signal: 'green' };
+  if (lastAdr < lo) return { key: 'adrBelowBand', signal: 'amber' };
+  return { key: 'adrInBand', signal: 'info' };
+}
+
 export interface AdrOpportunityBandChartProps {
   revparValues: number[];
   adrValues: number[];

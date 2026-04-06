@@ -1,6 +1,7 @@
 /**
  * TrendChartCard — [Bold inline label as title] [Chart] Problem / Recommendation.
  * No separate title; legend or titleLabel acts as title (bold 14px). Localized insight headers.
+ * Also supports a one-line signal insight (colored dot + sentence) via the `insight` prop.
  */
 'use client';
 
@@ -8,6 +9,22 @@ export interface LegendItem {
   label: string;
   color: string;
 }
+
+/** Signal severity for the one-line insight dot system. */
+export type SignalColor = 'green' | 'amber' | 'red' | 'info';
+
+/** One-line colored-dot insight (replaces Problem/Recommendation when provided). */
+export interface TrendSignal {
+  signal: SignalColor;
+  text: string;
+}
+
+const SIGNAL_COLORS: Record<SignalColor, string> = {
+  green: '#16a34a',
+  amber: '#d97706',
+  red: '#ef4444',
+  info: '#6b7280',
+};
 
 interface TrendChartCardProps {
   /** When no legend: single line as chart title (e.g. "Occupancy by day of week"). Bold 14px. */
@@ -19,6 +36,8 @@ interface TrendChartCardProps {
   children: React.ReactNode;
   problem?: string | null;
   recommendation?: string | null;
+  /** One-line signal insight. When provided, renders colored dot + text instead of Problem/Recommendation. */
+  insight?: TrendSignal | null;
   /** For "Problem:" / "Recommendation:" translation */
   locale?: 'th' | 'en';
   cols?: 6 | 12;
@@ -31,6 +50,7 @@ export function TrendChartCard({
   children,
   problem,
   recommendation,
+  insight,
   locale = 'en',
   cols = 12,
 }: TrendChartCardProps) {
@@ -73,7 +93,23 @@ export function TrendChartCard({
           </div>
         ) : null}
         <div style={{ flex: 1, minHeight: 140 }}>{children}</div>
-        {hasInsight ? (
+        {insight ? (
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: SIGNAL_COLORS[insight.signal],
+                flexShrink: 0,
+                marginTop: 4,
+              }}
+            />
+            <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.4 }}>
+              {insight.text}
+            </p>
+          </div>
+        ) : hasInsight ? (
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {problem && problem.trim() ? (
               <p style={{ fontSize: 13, color: '#6b7280', margin: 0, lineHeight: 1.4 }}>

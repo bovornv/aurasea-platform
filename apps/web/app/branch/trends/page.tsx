@@ -24,9 +24,12 @@ import { AdrOpportunityBandChart } from '../../components/charts/adr-opportunity
 import {
   BreakevenRevParChart,
   computeBreakevenProblemRecommendation,
+  computeBreakevenSeries,
 } from '../../components/charts/breakeven-revpar-chart';
+import { computeAdrBandSignalKey } from '../../components/charts/adr-opportunity-band-chart';
 import { WeeklyHeatmapChart } from '../../components/charts/weekly-heatmap-chart';
-import { trendInsightDual, trendInsightFromSeries } from '../../utils/trend-chart-insights';
+import { trendInsightDual, trendInsightFromSeries, compareLastToPriorWeekTrend } from '../../utils/trend-chart-insights';
+import type { TrendSignal } from '../../components/charts/trend-chart-card';
 
 const PAGE_PADDING_TOP = 8;
 const PAGE_PADDING_SIDES = 24;
@@ -51,7 +54,7 @@ function aligned<T>(arr: T[], n: number): T[] | undefined {
 }
 
 export default function BranchTrendsPage() {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const router = useRouter();
   const paths = useOrgBranchPaths();
   const { branch } = useCurrentBranch();
@@ -360,6 +363,119 @@ export default function BranchTrendsPage() {
     avgTicketValues,
   ]);
 
+  // ── Accommodation one-line signal insights (PART 2) ──────────────────────────────
+  const accSignals = useMemo((): {
+    chart1: TrendSignal;
+    chart2: TrendSignal;
+    chart3: TrendSignal;
+    chart4: TrendSignal;
+    chart5: TrendSignal;
+    chart6: TrendSignal;
+  } | null => {
+    if (!isAccommodation) return null;
+
+    const PCT = 5;
+    function dir(cmp: ReturnType<typeof compareLastToPriorWeekTrend>): 'above' | 'below' | 'inline' | null {
+      if (!cmp) return null;
+      if (cmp.pctDiff > PCT) return 'above';
+      if (cmp.pctDiff < -PCT) return 'below';
+      return 'inline';
+    }
+
+    const occCmp = compareLastToPriorWeekTrend(occupancyValues);
+    const adrCmp = compareLastToPriorWeekTrend(adrValues.length === occupancyValues.length ? adrValues : []);
+    const revparCmp = compareLastToPriorWeekTrend(revparValues.length === occupancyValues.length ? revparValues : []);
+    const occDir = dir(occCmp);
+    const adrDir = dir(adrCmp);
+    const revparDir = dir(revparCmp);
+
+    // Chart 1: Occ + ADR
+    let chart1: TrendSignal;
+    if (occDir === 'above' && adrDir === 'above') chart1 = { signal: 'green', text: t('accTrendSignals.occAdrBothUp') };
+    else if (occDir === 'above' && adrDir === 'below') chart1 = { signal: 'amber', text: t('accTrendSignals.occAdrOccUpAdrDown') };
+    else if (occDir === 'below' && adrDir === 'above') chart1 = { signal: 'amber', text: t('accTrendSignals.occAdrOccDownAdrUp') };
+    else if (occDir === 'below' && adrDir === 'below') chart1 = { signal: 'red', text: t('accTrendSignals.occAdrBothDown') };
+    else chart1 = { signal: 'info', text: t('accTrendSignals.occAdrStable') };
+
+    // Chart 2: Occ + RevPAR
+    let chart2: TrendSignal;
+    if (occDir === 'above' && revparDir === 'above') chart2 = { signal: 'green', text: t('accTrendSignals.occRevBothUp') };
+    else if (occDir === 'above' && revparDir === 'below') chart2 = { signal: 'amber', text: t('accTrendSignals.occRevOccUpRevDown') };
+    else if (occDir === 'below' && revparDir === 'above') chart2 = { signal: 'amber', text: t('accTrendSignals.occRevOccDownRevUp') };
+    else if (occDir === 'below' && revparDir === 'below') chart2 = { signal: 'red', text: t('accTrendSignals.occRevBothDown') };
+    else chart2 = { signal: 'info', text: t('accTrendSignals.occRevStable') };
+
+    // Chart 3: RevPAR + ADR band
+    const bandResult = computeAdrBandSignalKey(
+      adrValues.length === revparValues.length ? adrValues : [],
+      occupancyValues.length === revparValues.length ? occupancyValues : [],
+      chartDates.length === revparValues.length ? chartDates : []
+    );
+    const chart3: TrendSignal = { signal: bandResult.signal, text: t(`accTrendSignals.${bandResult.key}`) };
+
+    // Chart 4: Breakeven RevPAR
+    let chart4: TrendSignal;
+    const { points: bkPts, hasBreakeven: bkHas, costDataMissing: bkMissing } = computeBreakevenSeries(dailyMetrics90, totalRooms);
+    if (bkMissing) {
+      chart4 = { signal: 'info', text: t('accTrendSignals.breakevenNoData') };
+    } else if (bkPts.length < 7 || !bkHas) {
+      chart4 = { signal: 'info', text: t('accTrendSignals.breakevenNotEnough') };
+    } else {
+      const bkLast = bkPts[bkPts.length - 1]!;
+      const bkLast3 = bkPts.slice(-3);
+      const consecutive = bkLast3.length === 3 && bkLast3.every((p) => p.breakevenRevpar != null && p.actualRevpar < p.breakevenRevpar!);
+      if (consecutive) chart4 = { signal: 'red', text: t('accTrendSignals.breakevenConsecutiveBelow') };
+      else if (bkLast.breakevenRevpar != null && bkLast.actualRevpar < bkLast.breakevenRevpar) chart4 = { signal: 'amber', text: t('accTrendSignals.breakevenLastBelow') };
+      else chart4 = { signal: 'green', text: t('accTrendSignals.breakevenAbove') };
+    }
+
+    // Chart 5: Day of week occupancy gap
+    let chart5: TrendSignal;
+    const dowSrc = occupancyValues.length >= 7 ? occupancyValues : [];
+    if (dowSrc.length < 7 || chartDates.length < 7) {
+      chart5 = { signal: 'info', text: t('accTrendSignals.dowNoData') };
+    } else {
+      const buckets: number[][] = [[], [], [], [], [], [], []]; // 0=Mon … 6=Sun
+      chartDates.slice(0, dowSrc.length).forEach((ds, i) => {
+        const d = new Date(`${ds}T12:00:00`);
+        const dow = (d.getDay() + 6) % 7;
+        buckets[dow]!.push(dowSrc[i]!);
+      });
+      const avgs = buckets
+        .map((b) => (b.length > 0 ? b.reduce((s, v) => s + v, 0) / b.length : null))
+        .filter((v): v is number => v !== null);
+      if (avgs.length < 2) {
+        chart5 = { signal: 'info', text: t('accTrendSignals.dowNoData') };
+      } else {
+        const maxA = Math.max(...avgs);
+        const minA = Math.min(...avgs);
+        const gap = maxA > 0 ? Math.round(((maxA - minA) / maxA) * 100) : 0;
+        if (gap >= 30) chart5 = { signal: 'amber', text: t('accTrendSignals.dowWideGap', { gap: String(gap) }) };
+        else chart5 = { signal: 'green', text: t('accTrendSignals.dowConsistent') };
+      }
+    }
+
+    // Chart 6: Heatmap — overall week-over-week occupancy trend
+    let chart6: TrendSignal;
+    const heatSrc = occupancyValues.length >= 2 ? occupancyValues : revparValues;
+    const heatCmp = compareLastToPriorWeekTrend(heatSrc);
+    const heatDir = dir(heatCmp);
+    if (heatDir === 'above') chart6 = { signal: 'green', text: t('accTrendSignals.heatmapAbove') };
+    else if (heatDir === 'below') chart6 = { signal: 'amber', text: t('accTrendSignals.heatmapBelow') };
+    else chart6 = { signal: 'info', text: t('accTrendSignals.heatmapStable') };
+
+    return { chart1, chart2, chart3, chart4, chart5, chart6 };
+  }, [
+    isAccommodation,
+    occupancyValues,
+    adrValues,
+    revparValues,
+    chartDates,
+    dailyMetrics90,
+    totalRooms,
+    t,
+  ]);
+
   const hasAnyData = revenueValues.length >= 2 || occupancyValues.length >= 2 || customersValues.length >= 2;
   const loading = kpiLoading || dailyLoading;
   const emptyMsg = locale === 'th' ? 'ไม่มีข้อมูล' : 'No data';
@@ -428,6 +544,20 @@ export default function BranchTrendsPage() {
             >
               {isAccommodation && (
                 <>
+                  {/* Section header: Revenue & Rate Performance (charts 1–4) */}
+                  <div style={{ gridColumn: 'span 12', paddingTop: 4, paddingBottom: 2 }}>
+                    <p style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: '#9ca3af',
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      margin: 0,
+                    }}>
+                      {t('accTrendSignals.revenueRatePerformance')}
+                    </p>
+                  </div>
+
                   {/* 1. Occupancy + ADR (dual axis) — Primary */}
                   <TrendChartCard
                     legend={[
@@ -436,8 +566,7 @@ export default function BranchTrendsPage() {
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={branchTrendInsights.accOccAdr?.problem ?? ''}
-                    recommendation={branchTrendInsights.accOccAdr?.recommendation ?? ''}
+                    insight={accSignals?.chart1 ?? null}
                   >
                     <DecisionTrendChart
                       values={occupancyValues}
@@ -465,8 +594,7 @@ export default function BranchTrendsPage() {
                     ]}
                     cols={12}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={branchTrendInsights.accOccRev?.problem ?? ''}
-                    recommendation={branchTrendInsights.accOccRev?.recommendation ?? ''}
+                    insight={accSignals?.chart2 ?? null}
                   >
                     <DecisionTrendChart
                       values={occupancyValues}
@@ -493,8 +621,7 @@ export default function BranchTrendsPage() {
                     ]}
                     cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={branchTrendInsights.accRevparAdr?.problem ?? ''}
-                    recommendation={branchTrendInsights.accRevparAdr?.recommendation ?? ''}
+                    insight={accSignals?.chart3 ?? null}
                   >
                     <AdrOpportunityBandChart
                       revparValues={revparValues}
@@ -515,8 +642,7 @@ export default function BranchTrendsPage() {
                     ]}
                     cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={breakevenProblemRecommendation?.problem ?? ''}
-                    recommendation={breakevenProblemRecommendation?.recommendation ?? ''}
+                    insight={accSignals?.chart4 ?? null}
                   >
                     <BreakevenRevParChart
                       dailyMetrics={dailyMetrics90.length >= 7 ? dailyMetrics90 : []}
@@ -525,14 +651,27 @@ export default function BranchTrendsPage() {
                     />
                   </TrendChartCard>
 
+                  {/* Section header: Demand Patterns (charts 5–6) */}
+                  <div style={{ gridColumn: 'span 12', paddingTop: 8, paddingBottom: 2 }}>
+                    <p style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: '#9ca3af',
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      margin: 0,
+                    }}>
+                      {t('accTrendSignals.demandPatterns')}
+                    </p>
+                  </div>
+
                   {/* 5. Occupancy by day of week — Row 3 left (half width) */}
                   <TrendChartCard
                     titleLabel={locale === 'th' ? 'อัตราการเข้าพักตามวันในสัปดาห์' : 'Occupancy by day of week'}
                     subtitle={locale === 'th' ? 'อัตราการเข้าพักเฉลี่ยต่อวันในสัปดาห์ (30 วันล่าสุด)' : 'Average occupancy % per day of week (last 30 days)'}
                     cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
-                    problem={branchTrendInsights.accDow?.problem ?? ''}
-                    recommendation={branchTrendInsights.accDow?.recommendation ?? ''}
+                    insight={accSignals?.chart5 ?? null}
                   >
                     <DayOfWeekChart
                       values={occupancyValues.length >= 2 ? occupancyValues : revenueValues}
@@ -548,6 +687,7 @@ export default function BranchTrendsPage() {
                     titleLabel={locale === 'th' ? 'ตารางประสิทธิภาพรายสัปดาห์' : 'Weekly Performance Heatmap'}
                     cols={6}
                     locale={locale === 'th' ? 'th' : 'en'}
+                    insight={accSignals?.chart6 ?? null}
                   >
                     <WeeklyHeatmapChart
                       dailyMetrics={dailyMetrics90.length >= 7 ? dailyMetrics90 : dailyMetrics}

@@ -340,6 +340,43 @@ export const translations = {
       occupancyRate: 'Occupancy Rate',
       customerVolume: 'Customer Volume',
     },
+    // Accommodation trend signals — one-line dot+text insight system
+    accTrendSignals: {
+      // Trends page section headers
+      revenueRatePerformance: 'Revenue & Rate Performance',
+      demandPatterns: 'Demand Patterns',
+      // Chart 1: Occupancy + ADR
+      occAdrBothUp: 'Occupancy and ADR are both trending up — strong revenue momentum.',
+      occAdrOccUpAdrDown: 'Occupancy is rising but ADR is softening — consider holding rates.',
+      occAdrOccDownAdrUp: 'ADR is up but occupancy is declining — monitor for volume drop.',
+      occAdrBothDown: 'Both occupancy and ADR are trending down — review pricing and demand.',
+      occAdrStable: 'Occupancy and ADR are stable — continue monitoring trends.',
+      // Chart 2: Occupancy + RevPAR
+      occRevBothUp: 'Occupancy and RevPAR are climbing — healthy yield momentum.',
+      occRevOccUpRevDown: 'Demand is growing but RevPAR is slipping — check rate dilution.',
+      occRevOccDownRevUp: 'RevPAR is improving despite lower occupancy — rate strategy is working.',
+      occRevBothDown: 'Occupancy and RevPAR are both down — demand and rate recovery needed.',
+      occRevStable: 'RevPAR and occupancy are tracking steadily.',
+      // Chart 3: RevPAR + ADR band
+      adrBandNoData: 'Accumulate 60+ days of data to unlock the ADR benchmark band.',
+      adrAboveBand: 'ADR is above the typical band for this occupancy — strong pricing.',
+      adrBelowBand: 'ADR is below the typical band — consider raising rates at this occupancy.',
+      adrInBand: 'ADR is within the expected range for current occupancy.',
+      // Chart 4: Breakeven RevPAR
+      breakevenNoData: 'Enter monthly fixed costs in Finance Setup to see your breakeven line.',
+      breakevenConsecutiveBelow: 'RevPAR has been below breakeven 3 days running — urgent action needed.',
+      breakevenLastBelow: "Today's RevPAR is below breakeven — increase rate or fill rooms.",
+      breakevenAbove: 'RevPAR is above breakeven — cost discipline is paying off.',
+      breakevenNotEnough: 'Not enough data to compare RevPAR against breakeven yet.',
+      // Chart 5: Day of week
+      dowWideGap: 'Weekend–weekday gap is {gap}% — consider weekday promotions.',
+      dowConsistent: 'Demand is consistent across the week — no major day-of-week gap.',
+      dowNoData: 'Log more days to see day-of-week demand patterns.',
+      // Chart 6: Heatmap
+      heatmapAbove: 'This week is tracking above last week — momentum is building.',
+      heatmapBelow: 'This week is trailing last week — check for demand shifts.',
+      heatmapStable: 'Performance is steady week over week.',
+    },
     // Dashboard
     hospitality: {
       dashboard: {
@@ -779,6 +816,43 @@ export const translations = {
       staffCount: 'จำนวนพนักงาน',
       occupancyRate: 'อัตราการเข้าพัก',
       customerVolume: 'ปริมาณลูกค้า',
+    },
+    // Accommodation trend signals — one-line dot+text insight system
+    accTrendSignals: {
+      // Trends page section headers
+      revenueRatePerformance: 'รายได้และประสิทธิภาพราคา',
+      demandPatterns: 'รูปแบบความต้องการ',
+      // Chart 1: Occupancy + ADR
+      occAdrBothUp: 'อัตราการเข้าพักและราคาห้องเพิ่มขึ้นพร้อมกัน — โมเมนตัมรายได้แข็งแกร่ง',
+      occAdrOccUpAdrDown: 'อัตราการเข้าพักสูงขึ้นแต่ราคาห้องลดลง — ควรรักษาระดับราคาไว้',
+      occAdrOccDownAdrUp: 'ราคาห้องสูงขึ้นแต่อัตราการเข้าพักลดลง — ติดตามผลกระทบต่อปริมาณ',
+      occAdrBothDown: 'อัตราการเข้าพักและราคาห้องลดลงพร้อมกัน — ทบทวนกลยุทธ์ราคาและดีมานด์',
+      occAdrStable: 'อัตราการเข้าพักและราคาห้องเสถียร — ติดตามแนวโน้มต่อเนื่อง',
+      // Chart 2: Occupancy + RevPAR
+      occRevBothUp: 'อัตราการเข้าพักและ RevPAR เพิ่มขึ้นพร้อมกัน — ผลตอบแทนดีต่อเนื่อง',
+      occRevOccUpRevDown: 'ดีมานด์เพิ่มขึ้นแต่ RevPAR ลดลง — ตรวจสอบการลดราคาที่มากเกินไป',
+      occRevOccDownRevUp: 'RevPAR ดีขึ้นแม้อัตราการเข้าพักลดลง — กลยุทธ์ราคาได้ผล',
+      occRevBothDown: 'อัตราการเข้าพักและ RevPAR ลดลงพร้อมกัน — ต้องฟื้นฟูดีมานด์และราคา',
+      occRevStable: 'RevPAR และอัตราการเข้าพักเคลื่อนไหวสม่ำเสมอ',
+      // Chart 3: RevPAR + ADR band
+      adrBandNoData: 'สะสมข้อมูล 60+ วันเพื่อเปิดใช้เกณฑ์เปรียบเทียบ ADR',
+      adrAboveBand: 'ADR อยู่เหนือช่วงปกติสำหรับระดับการเข้าพักนี้ — กลยุทธ์ราคาดีมาก',
+      adrBelowBand: 'ADR ต่ำกว่าช่วงปกติ — ควรพิจารณาปรับขึ้นราคาที่ระดับการเข้าพักนี้',
+      adrInBand: 'ADR อยู่ในช่วงที่คาดหวังสำหรับระดับการเข้าพักปัจจุบัน',
+      // Chart 4: Breakeven RevPAR
+      breakevenNoData: 'กรอกต้นทุนคงที่รายเดือนในการตั้งค่าการเงินเพื่อดูเส้นจุดคุ้มทุน',
+      breakevenConsecutiveBelow: 'RevPAR ต่ำกว่าจุดคุ้มทุน 3 วันติดต่อกัน — ต้องดำเนินการด่วน',
+      breakevenLastBelow: 'RevPAR วันนี้ต่ำกว่าจุดคุ้มทุน — เพิ่มราคาหรืออัตราการเข้าพัก',
+      breakevenAbove: 'RevPAR อยู่เหนือจุดคุ้มทุน — การควบคุมต้นทุนกำลังให้ผล',
+      breakevenNotEnough: 'ข้อมูลไม่เพียงพอสำหรับการเปรียบเทียบจุดคุ้มทุน',
+      // Chart 5: Day of week
+      dowWideGap: 'ช่วงห่างระหว่างวันหยุดและวันธรรมดาอยู่ที่ {gap}% — ควรจัดโปรโมชั่นวันธรรมดา',
+      dowConsistent: 'ดีมานด์สม่ำเสมอตลอดสัปดาห์ — ไม่มีช่วงห่างระหว่างวันที่เด่นชัด',
+      dowNoData: 'บันทึกข้อมูลเพิ่มเติมเพื่อดูรูปแบบดีมานด์ตามวันในสัปดาห์',
+      // Chart 6: Heatmap
+      heatmapAbove: 'สัปดาห์นี้ดีกว่าสัปดาห์ที่แล้ว — โมเมนตัมกำลังสร้างตัว',
+      heatmapBelow: 'สัปดาห์นี้ต่ำกว่าสัปดาห์ที่แล้ว — ตรวจสอบการเปลี่ยนแปลงของดีมานด์',
+      heatmapStable: 'ประสิทธิภาพเสถียรเมื่อเทียบสัปดาห์ต่อสัปดาห์',
     },
     // Dashboard
     hospitality: {
