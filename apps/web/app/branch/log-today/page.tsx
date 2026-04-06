@@ -216,47 +216,62 @@ export default function LogTodayPage() {
 
     const today = getTodayDateString();
 
-    // Accommodation: fetch latest row from accommodation_daily_metrics (same pattern for rooms, staff, variable_cost_per_room)
+    // Accommodation: auto-fill sparse fields from accommodation_daily_metrics.
+    // Three separate queries ensure we get the last non-null value for each sparse column
+    // (variable_cost_per_room and cash_balance are not set on every row).
     if (moduleType === 'accommodation') {
       const supabase = getSupabaseClient();
       if (supabase) {
-        supabase
+        const qLatest = supabase
           .from('accommodation_daily_metrics')
-          .select('rooms_available, staff_count, monthly_fixed_cost, variable_cost_per_room')
+          .select('rooms_available, staff_count, monthly_fixed_cost')
           .eq('branch_id', branch.id)
           .order('metric_date', { ascending: false })
           .limit(1)
-          .maybeSingle()
-          .then(({ data }) => {
-            const row = data as {
-              rooms_available?: number | null;
-              staff_count?: number | null;
-              monthly_fixed_cost?: number | null;
-              variable_cost_per_room?: number | null;
-            } | null;
-            if (row) {
-              const rooms = row.rooms_available != null ? Number(row.rooms_available) : null;
-              const staffRaw = row.staff_count;
-              const staff = staffRaw != null ? Number(staffRaw) : null;
-              const mfc = row.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : null;
-              const vcrRaw = row.variable_cost_per_room != null ? Number(row.variable_cost_per_room) : null;
-              const vcrOk = vcrRaw != null && vcrRaw > 0;
-              setAccommodationCapacityFromMetrics({ rooms_available: rooms, staff_count: staff, monthly_fixed_cost: mfc });
-              setAccommodationVariableCostFromDb(vcrOk);
-              setFinanceData((prev) => ({
-                ...prev,
-                totalRoomsAvailable: rooms != null && rooms > 0 ? String(rooms) : prev.totalRoomsAvailable,
-                accommodationStaffCount: staff != null && staff > 0 ? String(staff) : prev.accommodationStaffCount,
-                variableCostPerRoom: vcrOk ? String(Math.round(vcrRaw)) : prev.variableCostPerRoom,
-              }));
-              setOriginalValues((prev) => prev ? {
-                ...prev,
-                totalRoomsAvailable: rooms != null && rooms > 0 ? String(rooms) : prev.totalRoomsAvailable,
-                accommodationStaffCount: staff != null && staff > 0 ? String(staff) : prev.accommodationStaffCount,
-                variableCostPerRoom: vcrOk ? String(Math.round(vcrRaw)) : prev.variableCostPerRoom,
-              } : null);
-            }
-          });
+          .maybeSingle();
+        const qVcr = supabase
+          .from('accommodation_daily_metrics')
+          .select('variable_cost_per_room')
+          .eq('branch_id', branch.id)
+          .not('variable_cost_per_room', 'is', null)
+          .gt('variable_cost_per_room', 0)
+          .order('metric_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const qCb = supabase
+          .from('accommodation_daily_metrics')
+          .select('cash_balance')
+          .eq('branch_id', branch.id)
+          .not('cash_balance', 'is', null)
+          .order('metric_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        Promise.all([qLatest, qVcr, qCb]).then(([{ data: d1 }, { data: d2 }, { data: d3 }]) => {
+          const row = d1 as { rooms_available?: number | null; staff_count?: number | null; monthly_fixed_cost?: number | null } | null;
+          const vcrRow = d2 as { variable_cost_per_room?: number | null } | null;
+          const cbRow = d3 as { cash_balance?: number | null } | null;
+          const rooms = row?.rooms_available != null ? Number(row.rooms_available) : null;
+          const staff = row?.staff_count != null ? Number(row.staff_count) : null;
+          const mfc = row?.monthly_fixed_cost != null ? Number(row.monthly_fixed_cost) : null;
+          const vcrRaw = vcrRow?.variable_cost_per_room != null ? Number(vcrRow.variable_cost_per_room) : null;
+          const vcrOk = vcrRaw != null && vcrRaw > 0;
+          const cbRaw = cbRow?.cash_balance != null ? Number(cbRow.cash_balance) : null;
+          setAccommodationCapacityFromMetrics({ rooms_available: rooms, staff_count: staff, monthly_fixed_cost: mfc });
+          setAccommodationVariableCostFromDb(vcrOk);
+          setFinanceData((prev) => ({
+            ...prev,
+            totalRoomsAvailable: rooms != null && rooms > 0 ? String(rooms) : prev.totalRoomsAvailable,
+            accommodationStaffCount: staff != null && staff > 0 ? String(staff) : prev.accommodationStaffCount,
+            variableCostPerRoom: vcrOk ? String(Math.round(vcrRaw!)) : prev.variableCostPerRoom,
+            cashBalance: cbRaw != null ? String(Math.round(cbRaw)) : prev.cashBalance,
+          }));
+          setOriginalValues((prev) => prev ? {
+            ...prev,
+            totalRoomsAvailable: rooms != null && rooms > 0 ? String(rooms) : prev.totalRoomsAvailable,
+            accommodationStaffCount: staff != null && staff > 0 ? String(staff) : prev.accommodationStaffCount,
+            variableCostPerRoom: vcrOk ? String(Math.round(vcrRaw!)) : prev.variableCostPerRoom,
+          } : null);
+        });
       }
     }
 
@@ -598,8 +613,12 @@ export default function LogTodayPage() {
         date: today,
         revenue: calculatedRevenue, // Always required
         cost: undefined, // Will be estimated by system
-        cashBalance: safeNumber(financeData.cashBalance, undefined) ?? 0,
       };
+      // Cash balance: only include when the field has a value so we don't overwrite an
+      // existing saved value with null on every save. If the user clears the field and
+      // saves, cbVal = undefined → omitted → existing DB value preserved.
+      const cbVal = safeNumber(financeData.cashBalance, undefined);
+      if (cbVal !== undefined) dailyMetric.cashBalance = cbVal;
       
       // Accommodation: save rooms_available and staff_count from current form values. Upsert ON CONFLICT (branch_id, metric_date).
       if (isAccommodation) {
@@ -686,7 +705,7 @@ export default function LogTodayPage() {
         calculatedRevenue,
         isAccommodation ? safeNumber(todayData.roomsSold, undefined) : undefined,
         isFnb ? safeNumber(todayData.customers, undefined) : undefined,
-        isOwner && financeData.cashBalance ? safeNumber(financeData.cashBalance, undefined) : undefined,
+        isManager && financeData.cashBalance ? safeNumber(financeData.cashBalance, undefined) : undefined,
         undefined, // actualCost - will be estimated
         setup,
         history
@@ -1284,11 +1303,12 @@ export default function LogTodayPage() {
                       : 'If skipped, system estimates automatically.'}
                   </div>
                   
-                  {/* Cash Balance (Owner Only) */}
-                  {isOwner && (
+                  {/* Cash Balance (Owner + Manager) */}
+                  {isAccommodation && isManager && (
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
                         {locale === 'th' ? 'อัปเดตยอดเงินสด' : 'Update Cash Balance'}
+                        <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>({locale === 'th' ? 'ไม่บังคับ' : 'optional'})</span>
                       </label>
                     <div style={{ position: 'relative' }}>
                       <input
@@ -1317,46 +1337,16 @@ export default function LogTodayPage() {
                         color: '#6b7280',
                       }}>THB</span>
                     </div>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
+                      {locale === 'th'
+                        ? 'เติมจากรายการล่าสุด อัปเดตเมื่อยอดเงินสดเปลี่ยน'
+                        : 'Auto-filled from last entry. Update when cash position changes.'}
+                    </div>
                     </div>
                   )}
-                  
+
                   {/* Monthly Fixed Cost: owner-only, configured in Branch Settings → Finance Setup */}
-                  
-                  {/* Debt Payment (Owner Only) */}
-                  {isOwner && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
-                        {locale === 'th' ? 'อัปเดตการชำระหนี้รายเดือน' : 'Update Debt Payment'}
-                      </label>
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type="text"
-                        value={formatDisplayNumber(financeData.debtPayment)}
-                        onChange={(e) => {
-                          const parsed = parseInputNumber(e.target.value);
-                          setFinanceData({ ...financeData, debtPayment: parsed });
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '0.625rem 3rem 0.625rem 0.75rem',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '6px',
-                          fontSize: '14px',
-                          textAlign: 'right',
-                        }}
-                        placeholder="0"
-                      />
-                      <span style={{
-                        position: 'absolute',
-                        right: '0.75rem',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        fontSize: '13px',
-                        color: '#6b7280',
-                      }}>THB</span>
-                    </div>
-                    </div>
-                  )}
+                  {/* Update Debt Payment: removed from UI (column and TypeScript interfaces preserved) */}
                   
                   {/* Accommodation: variable cost per room — auto-filled from latest daily metric row (same pattern as rooms/staff) */}
                   {isAccommodation && (

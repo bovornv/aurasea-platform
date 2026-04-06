@@ -86,7 +86,7 @@ function buildAccommodationPayload(metric: DailyMetricInput): Record<string, unk
   delete out.monthly_fixed_cost;
   delete out.adr;
   delete out.cost;
-  delete out.cash_balance;
+  delete out.cash_balance; // stripped from rest; re-add below only when explicitly provided
   // Log Today (accommodation) no longer sends additional_cost_today — omit so upsert does not clear it
   if (metric.additionalCostToday === undefined) {
     delete out.additional_cost_today;
@@ -95,6 +95,8 @@ function buildAccommodationPayload(metric: DailyMetricInput): Record<string, unk
   if (metric.roomsOnBooks7 !== undefined) out.rooms_on_books_7 = metric.roomsOnBooks7;
   if (metric.roomsOnBooks14 !== undefined) out.rooms_on_books_14 = metric.roomsOnBooks14;
   if (metric.variableCostPerRoom !== undefined) out.variable_cost_per_room = metric.variableCostPerRoom;
+  // Cash balance: only include when explicitly set so upsert does not overwrite existing DB value
+  if (metric.cashBalance !== undefined) out.cash_balance = metric.cashBalance;
   return out;
 }
 

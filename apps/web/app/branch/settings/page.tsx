@@ -889,7 +889,7 @@ export default function BranchSettingsPage() {
                 <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '0.5rem' }}>
                   {locale === 'th'
                     ? 'รวมเงินเดือนพนักงานทั้งหมด กำหนดโดยเจ้าของเท่านั้น'
-                    : 'Total staff salary expense. Configured by owner only.'}
+                    : 'Total staff salary expense and loan repayments. Configured by owner only.'}
                 </p>
                 {ownerFinanceLoaded ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
