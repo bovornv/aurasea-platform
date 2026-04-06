@@ -163,6 +163,11 @@ export default function LogTodayPage() {
     monthly_fixed_cost: number | null;
   } | null>(null);
 
+  // F&B: last non-zero staff_count from fnb_daily_metrics (for auto-fill)
+  const [fnbCapacityFromMetrics, setFnbCapacityFromMetrics] = useState<{
+    staff_count: number | null;
+  } | null>(null);
+
   // Accommodation: setup mode = no previous record with both rooms_available > 0 AND staff_count > 0
   const isAccommodationSetupMode = useMemo(() => {
     if (!isAccommodation) return false;
@@ -172,6 +177,14 @@ export default function LogTodayPage() {
     const staff = cap.staff_count ?? 0;
     return rooms <= 0 || staff <= 0;
   }, [isAccommodation, accommodationCapacityFromMetrics]);
+
+  // F&B: setup mode = no previous fnb_daily_metrics record with staff_count > 0
+  const isFnbSetupMode = useMemo(() => {
+    if (!isFnb) return false;
+    const cap = fnbCapacityFromMetrics;
+    if (!cap) return true;
+    return (cap.staff_count ?? 0) <= 0;
+  }, [isFnb, fnbCapacityFromMetrics]);
 
   // Accommodation: save blocked when rooms_available or staff_count is missing/0
   const accommodationCapacityInvalid = useMemo(() => {
@@ -296,6 +309,32 @@ export default function LogTodayPage() {
             variableCostPerRoom: vcrOk ? String(Math.round(vcrRaw!)) : prev.variableCostPerRoom,
           } : null);
         });
+      }
+    }
+
+    // F&B: auto-fill staff_count from most recent non-null, non-zero fnb_daily_metrics entry
+    if (moduleType === 'fnb') {
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('fnb_daily_metrics')
+          .select('staff_count')
+          .eq('branch_id', branch.id)
+          .not('staff_count', 'is', null)
+          .gt('staff_count', 0)
+          .order('metric_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          .then(({ data }: { data: { staff_count?: number | null } | null }) => {
+            const staffCount = data?.staff_count != null ? Number(data.staff_count) : null;
+            setFnbCapacityFromMetrics({ staff_count: staffCount });
+            if (staffCount != null && staffCount > 0) {
+              const s = String(staffCount);
+              setFinanceData((prev) => ({ ...prev, fnbStaffCount: prev.fnbStaffCount || s }));
+              setOriginalValues((prev) => prev ? { ...prev, fnbStaffCount: prev.fnbStaffCount || s } : null);
+            }
+          });
       }
     }
 
@@ -464,7 +503,6 @@ export default function LogTodayPage() {
       todayData.roomsOnBooks14 !== originalValues.roomsOnBooks14 ||
       todayData.customers !== originalValues.customers ||
       todayData.top3MenuRevenue !== originalValues.top3MenuRevenue ||
-      todayData.additionalCostToday !== originalValues.additionalCostToday ||
       financeData.totalRoomsAvailable !== originalValues.totalRoomsAvailable ||
       financeData.accommodationStaffCount !== originalValues.accommodationStaffCount ||
       financeData.variableCostPerRoom !== originalValues.variableCostPerRoom ||
@@ -472,7 +510,7 @@ export default function LogTodayPage() {
     );
   }, [originalValues, todayData, financeData]);
 
-  const todayFields = ['revenue', 'roomsSold', 'roomsOnBooks7', 'roomsOnBooks14', 'customers', 'top3MenuRevenue', 'additionalCostToday'] as const;
+  const todayFields = ['revenue', 'roomsSold', 'roomsOnBooks7', 'roomsOnBooks14', 'customers', 'top3MenuRevenue'] as const;
   const financeFields = ['totalRoomsAvailable', 'accommodationStaffCount', 'variableCostPerRoom', 'fnbStaffCount'] as const;
   const currentValueFor = (field: keyof NonNullable<typeof originalValues>) =>
     todayFields.includes(field as any) ? (todayData as Record<string, string>)[field] : (financeData as Record<string, string>)[field];
@@ -543,8 +581,8 @@ export default function LogTodayPage() {
       }
     }
 
-    // F&B: first-time config — F&B Staff Count required when not yet set on branch
-    const fnbNeedsConfig = isFnb && branch?.fnbStaffCount == null;
+    // F&B: first-time config — F&B Staff Count required when no previous entry exists
+    const fnbNeedsConfig = isFnb && isFnbSetupMode;
     if (fnbNeedsConfig) {
       const fnbStaffVal = safeNumber(financeData.fnbStaffCount, undefined);
       if (fnbStaffVal == null || fnbStaffVal < 0) {
@@ -612,14 +650,6 @@ export default function LogTodayPage() {
           : 'Top 3 menu revenue cannot exceed total revenue';
       }
     }
-    // Additional Cost Today (F&B only): optional, must be >= 0
-    if (isFnb && todayData.additionalCostToday) {
-      const additionalCost = safeNumber(todayData.additionalCostToday, -1);
-      if (additionalCost < 0) {
-        newErrors.additionalCostToday = locale === 'th' ? 'ต้องมากกว่าหรือเท่ากับ 0' : 'Must be >= 0';
-      }
-    }
-    
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -670,12 +700,6 @@ export default function LogTodayPage() {
           }
         }
       }
-      // Additional cost today — F&B only (accommodation: omit so DB column is not updated on save)
-      if (isFnb) {
-        const parsedAdditionalCost = todayData.additionalCostToday ? safeNumber(todayData.additionalCostToday, undefined) : undefined;
-        dailyMetric.additionalCostToday = parsedAdditionalCost != null && parsedAdditionalCost >= 0 ? Math.round(parsedAdditionalCost) : 0;
-      }
-      
       // Save to database (branch type routes to accommodation_daily_metrics vs fnb_daily_metrics)
       await saveDailyMetric({
         ...dailyMetric,
@@ -1173,56 +1197,6 @@ export default function LogTodayPage() {
                 </div>
               )}
 
-              {/* Other Cost Today (optional) — F&B only */}
-              {isFnb && (
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
-                    {locale === 'th' ? 'ค่าใช้จ่ายอื่นๆ วันนี้' : 'Other Cost Today'}
-                    <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: '0.25rem' }}>
-                      ({locale === 'th' ? 'ไม่บังคับ' : 'optional'})
-                    </span>
-                  </label>
-                  <p style={{ fontSize: '11px', color: '#9ca3af', margin: '0 0 0.375rem 0', lineHeight: 1.4 }}>
-                    {locale === 'th'
-                      ? 'ค่าใช้จ่ายเฉพาะกิจวันนี้ เช่น ค่าซ่อม อุปกรณ์ฉุกเฉิน มื้ออาหารพนักงาน ไม่ต้องรวมการซื้อวัตถุดิบ — บันทึกด้านล่างแทน'
-                      : 'One-off costs today (repairs, emergency supplies, staff meals). Do not include food purchases here — log those below.'}
-                  </p>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type="text"
-                      value={formatDisplayNumber(todayData.additionalCostToday)}
-                      onChange={(e) => {
-                        const filtered = parseInputNumber(e.target.value);
-                        setTodayData({ ...todayData, additionalCostToday: filtered });
-                        if (errors.additionalCostToday) setErrors({ ...errors, additionalCostToday: '' });
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '0.625rem 3rem 0.625rem 0.75rem',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                        textAlign: 'right',
-                        ...inputStyleFor('additionalCostToday', errors.additionalCostToday),
-                      }}
-                      placeholder="0"
-                    />
-                    <span style={{
-                      position: 'absolute',
-                      right: '0.75rem',
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      fontSize: '13px',
-                      color: '#6b7280',
-                    }}>THB</span>
-                  </div>
-                  {errors.additionalCostToday && (
-                    <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>
-                      {errors.additionalCostToday}
-                    </div>
-                  )}
-                </div>
-              )}
-              
               {/* PART 5: Hide Save button for view-only role */}
               {role && !role.canViewOnly && (
                 <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -1509,7 +1483,7 @@ export default function LogTodayPage() {
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#6b7280', marginBottom: '0.375rem' }}>
                         {locale === 'th' ? 'จำนวนพนักงาน F&B' : 'F&B Staff Count'}
-                        {(branch?.fnbStaffCount == null)
+                        {isFnbSetupMode
                           ? (
                               <span style={{ fontSize: '11px', color: '#dc2626', fontWeight: 500, marginLeft: '0.25rem' }}>
                                 ({locale === 'th' ? 'จำเป็นในการตั้งค่าแรก' : 'required on first setup'})
@@ -1538,6 +1512,11 @@ export default function LogTodayPage() {
                         }}
                         placeholder="0"
                       />
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '0.25rem' }}>
+                        {isFnbSetupMode
+                          ? (locale === 'th' ? 'กรอกครั้งแรก (จำเป็น)' : 'Required on first setup.')
+                          : (locale === 'th' ? 'เติมจากรายการล่าสุด แก้ไขได้เมื่อจำนวนพนักงานเปลี่ยน' : 'Auto-filled from last entry. Edit only if staff count changed.')}
+                      </div>
                       {errors.fnbStaffCount && (
                         <div style={{ fontSize: '12px', color: '#ef4444', marginTop: '0.25rem' }}>{errors.fnbStaffCount}</div>
                       )}
