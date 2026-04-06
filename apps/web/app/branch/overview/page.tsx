@@ -837,8 +837,49 @@ export default function BranchOverviewPage() {
     return null;
   }, [driverChartData, isAccommodation, isFnb, locale]);
 
-  const branchPriorityNext = useMemo(() => branchPriorities.slice(1), [branchPriorities]);
-  const branchPriorityFirst = branchPriorities[0] ?? null;
+  /**
+   * Guard stale priority alerts:
+   *
+   * Bug 1 (wrong date): branch_priorities_current reads from today_priorities (physical table),
+   * which is not updated when new daily metrics are saved. Revenue Drop alerts from prior days
+   * remain and show incorrectly when revenue is actually up.
+   * Fix: suppress "Revenue Drop" for F&B when the live delta (from fnb_daily_metrics) is > -10%.
+   *
+   * Bug 2 (฿0 at risk): a negative alert with ฿0 impact is contradictory and should never surface.
+   * Fix: filter out any negative/warning alert type where impact_thb is 0 or null.
+   */
+  const filteredBranchPriorities = useMemo(() => {
+    if (!branchPriorities.length) return branchPriorities;
+
+    const NEGATIVE_KEYWORDS = ['drop', 'low', 'pressure', 'worsening', 'down', 'compression'];
+    const isNegativeAlert = (alertType: string | null | undefined): boolean => {
+      const lower = (alertType ?? '').toLowerCase();
+      return NEGATIVE_KEYWORDS.some((kw) => lower.includes(kw));
+    };
+
+    return branchPriorities.filter((row) => {
+      // Bug 2 guard: never show a negative alert with ฿0 or null impact
+      if (isNegativeAlert(row.alert_type)) {
+        const impact = row.impact_thb ?? row.impact_estimate_thb;
+        if (impact === null || impact === undefined || impact === 0) return false;
+      }
+
+      // Bug 1 guard: suppress Revenue Drop for F&B when live delta shows revenue is not down
+      if (isFnb) {
+        const alertLower = (row.alert_type ?? '').toLowerCase();
+        const isRevDrop = alertLower.includes('revenue') && alertLower.includes('drop');
+        if (isRevDrop && fnbRevenueDeltaPct !== undefined) {
+          // fnbRevenueDeltaPct = null means no prior day data; let the alert through in that case
+          if (fnbRevenueDeltaPct !== null && fnbRevenueDeltaPct > -10) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [branchPriorities, isFnb, fnbRevenueDeltaPct]);
+
+  const branchPriorityNext = useMemo(() => filteredBranchPriorities.slice(1), [filteredBranchPriorities]);
+  const branchPriorityFirst = filteredBranchPriorities[0] ?? null;
 
   const revenueNow = useMemo(() => {
     const ts = todaySummaryRow;
