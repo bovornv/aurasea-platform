@@ -52,7 +52,9 @@ import { ForwardDemandChart } from '../../components/charts/forward-demand-chart
 import { compareLastToPriorWeekTrend } from '../../utils/trend-chart-insights';
 import type { TrendSignal } from '../../components/charts/trend-chart-card';
 import { getAccommodationMonthlyFixedCostStatus, getFreshnessDatesFromRawTable } from '../../services/db/daily-metrics-service';
-import { getFnbWeeklyPurchases, type FnbPurchaseSummary } from '../../services/db/fnb-purchase-service';
+import { getFnbWeeklyPurchases, getFnbLastWeekPurchases, getFnbRolling7DayPurchases, getMondayOfCurrentWeek, type FnbPurchaseSummary } from '../../services/db/fnb-purchase-service';
+import { FnbBreakevenMiniChart } from '../../components/charts/fnb-breakeven-mini-chart';
+import { FnbFoodCostMiniChart } from '../../components/charts/fnb-food-cost-mini-chart';
 import { computeFnbWeeklyMetrics, type FnbWeeklyMetrics } from '../../utils/fnb-weekly-metrics';
 import { getDataFreshness } from '../../lib/dataFreshness';
 import { isSupabaseAvailable } from '../../lib/supabase/client';
@@ -145,6 +147,10 @@ export default function BranchOverviewPage() {
   const [fnbTodayExtras, setFnbTodayExtras] = useState<FnbTodayExtras | null>(null);
   // F&B weekly purchase log (Mon – today)
   const [fnbWeeklyPurchaseData, setFnbWeeklyPurchaseData] = useState<FnbPurchaseSummary | null>(null);
+  // F&B last week purchases (Mon–Sun of previous calendar week) — fallback for Monday Cost Pulse
+  const [fnbLastWeekPurchaseData, setFnbLastWeekPurchaseData] = useState<FnbPurchaseSummary | null>(null);
+  // F&B rolling 7-day purchases (today-6 through today) — for rolling food cost % in metrics bar
+  const [fnbRolling7DayPurchaseData, setFnbRolling7DayPurchaseData] = useState<FnbPurchaseSummary | null>(null);
   // Accommodation live revenue delta: same pattern — overrides stale branch_status_current.revenue_change_pct_day.
   const [accRevenueDeltaPct, setAccRevenueDeltaPct] = useState<number | null | undefined>(undefined);
   // Freshness: metric_date from raw table only (accommodation_daily_metrics / fnb_daily_metrics)
@@ -455,6 +461,8 @@ export default function BranchOverviewPage() {
       getFnbRevenueDeltaPct(branch.id).then(setFnbRevenueDeltaPct);
       getFnbTodayExtras(branch.id).then(setFnbTodayExtras);
       getFnbWeeklyPurchases(branch.id).then(setFnbWeeklyPurchaseData);
+      getFnbLastWeekPurchases(branch.id).then(setFnbLastWeekPurchaseData);
+      getFnbRolling7DayPurchases(branch.id).then(setFnbRolling7DayPurchaseData);
       fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
     } else {
       setFnbRevenueDeltaPct(undefined);
@@ -533,6 +541,8 @@ export default function BranchOverviewPage() {
           getFnbRevenueDeltaPct(branch.id).then(setFnbRevenueDeltaPct);
           getFnbTodayExtras(branch.id).then(setFnbTodayExtras);
           getFnbWeeklyPurchases(branch.id).then(setFnbWeeklyPurchaseData);
+          getFnbLastWeekPurchases(branch.id).then(setFnbLastWeekPurchaseData);
+          getFnbRolling7DayPurchases(branch.id).then(setFnbRolling7DayPurchaseData);
           fetchCompanyStatusCurrentByBranchId(branch.id).then(setCompanyStatusCurrentRow).catch(() => setCompanyStatusCurrentRow(null));
         }
       }
@@ -1578,6 +1588,40 @@ export default function BranchOverviewPage() {
     );
   }, [isFnb, fnbWeeklyPurchaseData, dailyMetricsForTrends, fnbTodayExtras?.monthlyFixedCost]);
 
+  /** Rolling 7-day food cost % — preferred over calendar-week; shown in metrics bar. */
+  const fnbRolling7DayFoodCostPct = useMemo(() => {
+    if (!isFnb || !fnbRolling7DayPurchaseData || !dailyMetricsForTrends?.length) return null;
+    if (fnbRolling7DayPurchaseData.foodBevTotal === 0) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    const fromDate = new Date(`${today}T12:00:00`);
+    fromDate.setDate(fromDate.getDate() - 6);
+    const from = fromDate.toISOString().slice(0, 10);
+    const rollingRevenue = dailyMetricsForTrends
+      .filter((m) => m.date >= from && m.date <= today)
+      .reduce((s, m) => s + (m.revenue ?? 0), 0);
+    if (rollingRevenue === 0) return null;
+    return Math.round((fnbRolling7DayPurchaseData.foodBevTotal / rollingRevenue) * 1000) / 10;
+  }, [isFnb, fnbRolling7DayPurchaseData, dailyMetricsForTrends]);
+
+  /** Last-week food cost % — used as Cost Pulse fallback when current week has no purchases (Monday). */
+  const fnbLastWeekFoodCostPct = useMemo(() => {
+    if (!isFnb || !fnbLastWeekPurchaseData || fnbLastWeekPurchaseData.foodBevTotal === 0) return null;
+    if (!dailyMetricsForTrends?.length) return null;
+    const currentMonday = getMondayOfCurrentWeek();
+    const mondayDate = new Date(`${currentMonday}T12:00:00`);
+    const lastMondayDate = new Date(mondayDate);
+    lastMondayDate.setDate(lastMondayDate.getDate() - 7);
+    const lastSundayDate = new Date(mondayDate);
+    lastSundayDate.setDate(lastSundayDate.getDate() - 1);
+    const lastMonday = lastMondayDate.toISOString().slice(0, 10);
+    const lastSunday = lastSundayDate.toISOString().slice(0, 10);
+    const lastWeekRevenue = dailyMetricsForTrends
+      .filter((m) => m.date >= lastMonday && m.date <= lastSunday)
+      .reduce((s, m) => s + (m.revenue ?? 0), 0);
+    if (lastWeekRevenue === 0) return null;
+    return Math.round((fnbLastWeekPurchaseData.foodBevTotal / lastWeekRevenue) * 1000) / 10;
+  }, [isFnb, fnbLastWeekPurchaseData, dailyMetricsForTrends]);
+
   /** Branch Today metric strip — public.branch_status_current only (via getTodaySummary). */
   const todaySummary = useMemo(() => {
     const row = todaySummaryRow;
@@ -1615,8 +1659,8 @@ export default function BranchOverviewPage() {
       // Prefer live-computed delta from fnb_daily_metrics over the stale branch_status_current value.
       // fnbRevenueDeltaPct=undefined means the fetch hasn't resolved yet → fall back to stale value.
       const fnbDelta = fnbRevenueDeltaPct !== undefined ? fnbRevenueDeltaPct : revenueDeltaPct;
-      // Food Cost % from weekly purchase log (preferred over today-only additionalCostToday)
-      const foodCostPct = fnbWeeklyMetrics?.foodCostPct ?? null;
+      // Food Cost %: rolling 7d preferred (avoids Monday blank), falls back to calendar-week
+      const foodCostPct = fnbRolling7DayFoodCostPct ?? fnbWeeklyMetrics?.foodCostPct ?? null;
       return {
         accommodation: null,
         fnb: {
@@ -1632,7 +1676,7 @@ export default function BranchOverviewPage() {
     }
 
     return { accommodation: null, fnb: null };
-  }, [branch?.moduleType, todaySummaryRow, fnbRevenueDeltaPct, accRevenueDeltaPct, fnbTodayExtras, fnbWeeklyMetrics]);
+  }, [branch?.moduleType, todaySummaryRow, fnbRevenueDeltaPct, accRevenueDeltaPct, fnbTodayExtras, fnbWeeklyMetrics, fnbRolling7DayFoodCostPct]);
 
   /** Breakeven Customers — F&B only. Derived from fnbWeeklyMetrics (purchase log + fixed cost). */
   const fnbBreakevenCustomers = useMemo((): number | null => {
@@ -2023,68 +2067,92 @@ export default function BranchOverviewPage() {
         ) : null}
 
         {/* 2b. F&B Cost Pulse — weekly purchase log summary (F&B only) */}
-        {isFnb && fnbWeeklyPurchaseData != null && (
-          <div style={{ marginTop: 12, marginBottom: 4, background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
-            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: 0, marginBottom: 12 }}>
-              {locale === 'th' ? 'ต้นทุนสัปดาห์นี้' : "This Week's Cost Pulse"}
-            </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
-                <span style={{ color: '#6b7280', fontWeight: 500 }}>
-                  {locale === 'th' ? 'ซื้อวัตถุดิบสัปดาห์นี้' : 'Food & Bev Purchases'}
-                </span>
-                <span style={{ fontWeight: 600, color: '#111827' }}>
-                  {fnbWeeklyPurchaseData.foodBevTotal > 0
-                    ? `฿${fnbWeeklyPurchaseData.foodBevTotal.toLocaleString()}`
-                    : '—'}
-                </span>
-              </div>
-              {fnbWeeklyMetrics?.foodCostPct != null ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
-                  <span style={{ color: '#6b7280', fontWeight: 500 }}>
-                    {locale === 'th' ? 'ต้นทุนอาหาร %' : 'Food Cost %'}
-                    <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 4 }}>
-                      {locale === 'th' ? '(เป้า 28–35%)' : '(target 28–35%)'}
-                    </span>
-                  </span>
-                  <span style={{
-                    fontWeight: 700,
-                    color: fnbWeeklyMetrics.foodCostPct > 45 ? '#dc2626'
-                      : fnbWeeklyMetrics.foodCostPct > 35 ? '#d97706'
-                      : '#059669',
-                    fontSize: 14,
-                  }}>
-                    {fnbWeeklyMetrics.foodCostPct.toFixed(1)}%
-                  </span>
-                </div>
-              ) : null}
-              {fnbWeeklyMetrics?.breakevenCustomers != null && (
-                <div style={{ borderTop: '1px solid #f3f4f6', marginTop: 4, paddingTop: 8 }}>
+        {isFnb && fnbWeeklyPurchaseData != null && (() => {
+          // Determine which data to show: current week preferred, fallback to last week on Monday
+          const usingLastWeek = fnbWeeklyPurchaseData.foodBevTotal === 0 && (fnbLastWeekPurchaseData?.foodBevTotal ?? 0) > 0;
+          const displayPurchases = usingLastWeek ? (fnbLastWeekPurchaseData?.foodBevTotal ?? 0) : fnbWeeklyPurchaseData.foodBevTotal;
+          const displayFoodCostPct = usingLastWeek ? fnbLastWeekFoodCostPct : (fnbWeeklyMetrics?.foodCostPct ?? null);
+          const noPurchasesAtAll = fnbWeeklyPurchaseData.foodBevTotal === 0 && (fnbLastWeekPurchaseData?.foodBevTotal ?? 0) === 0;
+          return (
+            <div style={{ marginTop: 12, marginBottom: 4, background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#111827', margin: 0, marginBottom: usingLastWeek ? 4 : 12 }}>
+                {locale === 'th' ? 'ต้นทุนสัปดาห์นี้' : "This Week's Cost Pulse"}
+              </h2>
+              {usingLastWeek && (
+                <p style={{ fontSize: 11, color: '#9ca3af', margin: '0 0 10px 0' }}>
+                  {locale === 'th' ? 'แสดงข้อมูลสัปดาห์ที่แล้ว (ยังไม่มีการซื้อสัปดาห์นี้)' : 'Last week (no purchases logged yet this week)'}
+                </p>
+              )}
+              {noPurchasesAtAll ? (
+                <p style={{ fontSize: 13, color: '#9ca3af', margin: 0 }}>
+                  {locale === 'th' ? 'ยังไม่มีการซื้อวัตถุดิบ — บันทึกการซื้อเพื่อติดตามต้นทุน' : 'No purchases logged yet — log food purchases to track costs'}
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
                     <span style={{ color: '#6b7280', fontWeight: 500 }}>
-                      {locale === 'th' ? 'ลูกค้าจุดคุ้มทุน' : 'Breakeven Customers'}
+                      {locale === 'th' ? 'ซื้อวัตถุดิบสัปดาห์นี้' : 'Food & Bev Purchases'}
                     </span>
                     <span style={{ fontWeight: 600, color: '#111827' }}>
-                      {fnbWeeklyMetrics.breakevenCustomers}
+                      {displayPurchases > 0 ? `฿${displayPurchases.toLocaleString()}` : '—'}
                     </span>
                   </div>
-                  {fnbWeeklyMetrics.aboveBreakeven != null && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 13 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: fnbWeeklyMetrics.aboveBreakeven ? '#059669' : '#dc2626', flexShrink: 0, display: 'inline-block' }} />
-                      <span style={{ color: fnbWeeklyMetrics.aboveBreakeven ? '#059669' : '#dc2626', fontWeight: 500 }}>
-                        {fnbWeeklyMetrics.aboveBreakeven
-                          ? (locale === 'th'
-                              ? `เกินจุดคุ้มทุน (${fnbWeeklyMetrics.todayCustomers} ลูกค้า)`
-                              : `Above breakeven (${fnbWeeklyMetrics.todayCustomers} customers today)`)
-                          : (locale === 'th'
-                              ? `ต่ำกว่าจุดคุ้มทุน (${fnbWeeklyMetrics.todayCustomers ?? '—'} ลูกค้า)`
-                              : `Below breakeven (${fnbWeeklyMetrics.todayCustomers ?? '—'} customers today)`)}
+                  {displayFoodCostPct != null ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                      <span style={{ color: '#6b7280', fontWeight: 500 }}>
+                        {locale === 'th' ? 'ต้นทุนอาหาร %' : 'Food Cost %'}
+                        <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 4 }}>
+                          {locale === 'th' ? '(เป้า 28–35%)' : '(target 28–35%)'}
+                        </span>
                       </span>
+                      <span style={{
+                        fontWeight: 700,
+                        color: displayFoodCostPct > 45 ? '#dc2626'
+                          : displayFoodCostPct > 35 ? '#d97706'
+                          : '#059669',
+                        fontSize: 14,
+                      }}>
+                        {displayFoodCostPct.toFixed(1)}%
+                      </span>
+                    </div>
+                  ) : null}
+                  {!usingLastWeek && fnbWeeklyMetrics?.breakevenCustomers != null && (
+                    <div style={{ borderTop: '1px solid #f3f4f6', marginTop: 4, paddingTop: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                        <span style={{ color: '#6b7280', fontWeight: 500 }}>
+                          {locale === 'th' ? 'ลูกค้าจุดคุ้มทุน' : 'Breakeven Customers'}
+                        </span>
+                        <span style={{ fontWeight: 600, color: '#111827' }}>
+                          {fnbWeeklyMetrics.breakevenCustomers}
+                        </span>
+                      </div>
+                      {fnbWeeklyMetrics.aboveBreakeven != null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 13 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: fnbWeeklyMetrics.aboveBreakeven ? '#059669' : '#dc2626', flexShrink: 0, display: 'inline-block' }} />
+                          <span style={{ color: fnbWeeklyMetrics.aboveBreakeven ? '#059669' : '#dc2626', fontWeight: 500 }}>
+                            {fnbWeeklyMetrics.aboveBreakeven
+                              ? (locale === 'th'
+                                  ? `เกินจุดคุ้มทุน (${fnbWeeklyMetrics.todayCustomers} ลูกค้า)`
+                                  : `Above breakeven (${fnbWeeklyMetrics.todayCustomers} customers today)`)
+                              : (locale === 'th'
+                                  ? `ต่ำกว่าจุดคุ้มทุน (${fnbWeeklyMetrics.todayCustomers ?? '—'} ลูกค้า)`
+                                  : `Below breakeven (${fnbWeeklyMetrics.todayCustomers ?? '—'} customers today)`)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               )}
             </div>
+          );
+        })()}
+
+        {/* 2c. F&B compact charts — Breakeven (7-day) + Food Cost % (4-week) */}
+        {isFnb && branch?.id && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12, marginTop: 12, marginBottom: 4 }}>
+            <FnbBreakevenMiniChart branchId={branch.id} locale={locale === 'th' ? 'th' : 'en'} />
+            <FnbFoodCostMiniChart branchId={branch.id} locale={locale === 'th' ? 'th' : 'en'} />
           </div>
         )}
 

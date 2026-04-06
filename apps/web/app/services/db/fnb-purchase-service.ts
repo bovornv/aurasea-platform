@@ -162,6 +162,38 @@ export async function getFnbWeeklyPurchases(branchId: string): Promise<FnbPurcha
 }
 
 /**
+ * Fetch last week's purchases (Mon–Sun of the previous calendar week).
+ */
+export async function getFnbLastWeekPurchases(branchId: string): Promise<FnbPurchaseSummary> {
+  const currentMonday = getMondayOfCurrentWeek();
+  const mondayDate = new Date(`${currentMonday}T12:00:00`);
+  const lastMondayDate = new Date(mondayDate);
+  lastMondayDate.setDate(lastMondayDate.getDate() - 7);
+  const lastSundayDate = new Date(mondayDate);
+  lastSundayDate.setDate(lastSundayDate.getDate() - 1);
+  const lastMonday = lastMondayDate.toISOString().slice(0, 10);
+  const lastSunday = lastSundayDate.toISOString().slice(0, 10);
+  const rows = await getFnbPurchases(branchId, lastMonday, lastSunday);
+  const foodBevTotal = rows.filter((r) => r.purchase_type === 'food_beverage').reduce((s, r) => s + r.amount, 0);
+  const nonFoodTotal = rows.filter((r) => r.purchase_type === 'non_food_supplies').reduce((s, r) => s + r.amount, 0);
+  return { rows, foodBevTotal, nonFoodTotal };
+}
+
+/**
+ * Fetch rolling 7-day purchases (today-6 through today inclusive).
+ */
+export async function getFnbRolling7DayPurchases(branchId: string): Promise<FnbPurchaseSummary> {
+  const today = getTodayIso();
+  const fromDate = new Date(`${today}T12:00:00`);
+  fromDate.setDate(fromDate.getDate() - 6);
+  const from = fromDate.toISOString().slice(0, 10);
+  const rows = await getFnbPurchases(branchId, from, today);
+  const foodBevTotal = rows.filter((r) => r.purchase_type === 'food_beverage').reduce((s, r) => s + r.amount, 0);
+  const nonFoodTotal = rows.filter((r) => r.purchase_type === 'non_food_supplies').reduce((s, r) => s + r.amount, 0);
+  return { rows, foodBevTotal, nonFoodTotal };
+}
+
+/**
  * Fetch purchases grouped by week for the last N complete weeks.
  * Returns one entry per week+type combination.
  */
